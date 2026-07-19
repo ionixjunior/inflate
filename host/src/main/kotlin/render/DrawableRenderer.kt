@@ -60,6 +60,8 @@ open class DrawableRenderer(
   /** Tracks the last previewed overlay so a document switch forces an app-repo re-index (see LayoutRenderer). */
   private var lastOverlayName: String? = null
 
+  private val adaptiveIconRenderer = AdaptiveIconRenderer()
+
   /** Result of loading + resolving the previewed drawable, shared by the render subclasses. */
   protected class Loaded(
     val drawable: Drawable,
@@ -138,6 +140,21 @@ open class DrawableRenderer(
     val requested = request.config.drawable?.states ?: emptyList()
     val stateArray = mergedStateArray(requested)
 
+    // DRW-06 / P1-C AC6: an <adaptive-icon> is composed from its background + foreground *layers*
+    // under a circular mask in host drawing code. The layers are inflated directly (the pinned engine
+    // cannot resolve an <adaptive-icon> XML itself under the dynamic-id scheme).
+    if (root == "adaptive-icon") {
+      val density = adapter.displayDensity
+      val size = px(ADAPTIVE_ICON_DP, density)
+      val bg = loadLayer(BG_LAYER.find(content)?.groupValues?.get(1), session)
+      val fg = loadLayer(FG_LAYER.find(content)?.groupValues?.get(1), session)
+      val composed = adaptiveIconRenderer.compose(bg, fg, size)
+      return renderLoadedDrawable(
+        request, bg ?: ColorDrawable(0), warnings, dependencies, prepareMs, session.rebuilt, totalStart,
+        precomputedImage = composed,
+      )
+    }
+
     val drawable: Drawable = when (request.docKind) {
       DocKind.color -> {
         val id = session.resourceId(overlayName, "color")
@@ -148,8 +165,9 @@ open class DrawableRenderer(
       }
       else -> {
         val id = session.resourceId(overlayName, "drawable")
-        adapter.loadDrawable(id)
-          ?: return error(request, "could not load drawable '$overlayName'", totalStart, warnings, dependencies, session.rebuilt)
+        runCatching { adapter.loadDrawable(id) }.getOrElse {
+          return error(request, "could not load drawable '$overlayName': ${it.message}", totalStart, warnings, dependencies, session.rebuilt)
+        } ?: return error(request, "could not load drawable '$overlayName'", totalStart, warnings, dependencies, session.rebuilt)
       }
     }
 
@@ -188,6 +206,13 @@ open class DrawableRenderer(
     )
   }
 
+  /** Load an adaptive-icon layer drawable by its `@drawable/name` (null name or load failure → null). */
+  private fun loadLayer(name: String?, session: EngineAdapter.ProjectSession): Drawable? {
+    if (name == null) return null
+    val id = session.resourceId(name, "drawable")
+    return runCatching { adapter.loadDrawable(id) }.getOrNull()
+  }
+
   /** Resolve a `<ripple android:color="...">` value (`#hex` or `@color/name`) to ARGB, or null. */
   private fun rippleColorArgb(content: String, session: EngineAdapter.ProjectSession, state: IntArray): Int? {
     val value = RIPPLE_COLOR.find(content)?.groupValues?.get(1)?.trim() ?: return DEFAULT_RIPPLE_ARGB
@@ -220,6 +245,7 @@ open class DrawableRenderer(
     matched: rpc.MatchedStateItem? = null,
     stateSensitive: Boolean? = null,
     rippleOverlayArgb: Int? = null,
+    precomputedImage: BufferedImage? = null,
   ): RenderResponse {
     val density = adapter.displayDensity
     val override = request.config.drawable?.sizeDp
@@ -231,7 +257,7 @@ open class DrawableRenderer(
     }
 
     val renderStart = System.nanoTime()
-    var image: BufferedImage = try {
+    var image: BufferedImage = precomputedImage ?: try {
       drawToImage(drawable, w, h, applyState)
     } catch (t: Throwable) {
       return error(request, t.message ?: "drawable render failed", totalStart, warnings, dependencies, sessionRebuilt)
@@ -383,6 +409,12 @@ open class DrawableRenderer(
 
     /** The 50% preview level for level-based drawables (spec §Drawable types "level 5000"). */
     private const val LEVEL_DEFAULT: Int = 5000
+
+    /** Adaptive-icon canvas edge (dp) — adaptive icon layers are authored at 108dp. */
+    private const val ADAPTIVE_ICON_DP: Int = 108
+
+    private val BG_LAYER = Regex("""<background\b[^>]*?android:drawable\s*=\s*"@(?:\w+:)?drawable/(\w+)"""", RegexOption.DOT_MATCHES_ALL)
+    private val FG_LAYER = Regex("""<foreground\b[^>]*?android:drawable\s*=\s*"@(?:\w+:)?drawable/(\w+)"""", RegexOption.DOT_MATCHES_ALL)
 
     /** Picker states that activate a ripple's settled overlay (P1-D AC4). */
     private val RIPPLE_TRIGGER = setOf(
