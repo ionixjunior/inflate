@@ -10,8 +10,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/android-xml-preview/design.md`
 **Spec**: `.specs/features/android-xml-preview/spec.md`
-**Status**: Approved (user, 2026-07-19)
+**Status**: Approved (user, 2026-07-19) — **IN EXECUTION**
 **Date**: 2026-07-19
+
+**Execution progress** (orchestrator-maintained):
+- ✅ **Phase 1 (M0), T1–T9** — complete 2026-07-19. Commits 857a4b8…0fb303c. M0 gate PASSED (architecture validated); item 4 fallback → AD-013. Timings: cold 1956 ms / warm 30 ms / rebuild 9 ms; engine download 159.9 MB.
+- ▶ **Batch 2 = Phase 2 (T10–T13) + Phase 3 (T14–T19)** — dispatched (sonnet).
+- ⬜ Phases 4–10 pending. Batch plan: B3=P4(session) · B4=P5(sonnet) · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier.
 
 **Commit policy (user requirement)**: one atomic commit per task, committed immediately when the task's gate passes. Commit titles start with an imperative verb ("Create", "Add", "Implement", "Update", "Wire", "Document", "Pin", …), ≤ 72 chars, body explains what/why when non-obvious. Never batch tasks into one commit.
 

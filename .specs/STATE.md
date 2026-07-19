@@ -97,6 +97,14 @@
 - **Date**: 2026-07-19
 - **Status**: active
 
+### AD-013
+- **Decision**: (Refines AD-007.) Unknown/custom view placeholders are produced by **preprocessor tag substitution** (`preprocess.UnknownViewSubstitutor` → labeled `TextView` box + LogBridge `substitutedClass` warning), NOT by relying on layoutlib's MockView fallback. This is the design's pre-agreed plan B (§D2), promoted to the active strategy during M0.
+- **Reason**: M0 (T7) empirically established that Paparazzi's `PaparazziCallback.loadView` rethrows for a genuinely-missing class and layoutlib's `BridgeInflater` only auto-substitutes a MockView when the callback *returns* one (Android Studio's callback does; Paparazzi's does not). So `inflate` returns null and the whole file fails — MockView is NOT free under Paparazzi. Verified against Paparazzi 1.3.5 sources, not assumed.
+- **Trade-off**: Unknown-view handling now lives in the Preprocessor rather than the inflater; the substitution must run before inflation and be kept consistent with the class-scan warnings.
+- **Scope**: Preprocessor (Phase 5 — T29–T32 should absorb/generalize `UnknownViewSubstitutor`), LayoutRenderer custom-view placeholder path (Phase 6 — T35 AC5), AD-007 posture.
+- **Date**: 2026-07-19
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: android-xml-preview (`.specs/features/android-xml-preview/`)
@@ -117,8 +125,10 @@
   `/Library/Java/.../microsoft-17.jdk`. `host/.engine-cache/` is gitignored — later engineTest gates require
   `./gradlew fetchEngine` first. engineTest task sets layoutlib runtime/resources props + JPMS `--add-opens` + `forkEvery(1)`.
   `resourcePackageNames` MUST stay empty (no R class; dynamic ids, Q3). Paparazzi 1.3.5 sources cached in scratchpad for reference.
+- **M0 gate (orchestrator)**: Architecture VALIDATED. 5/6 M0 items PASS primary; item 4 used the design's named fallback (no architecture change, bounded strategy swap). Fallback recorded as **AD-013** (refines AD-007). Batch 1 released; Batch 2 dispatched.
 - **In-progress** (file:line): none
-- **Next step**: Phase 2 (M1a Protocol Contract) — T10–T13 (protocol.md + shared fixtures, TS/Kotlin DTOs, RpcServer with LSP framing).
+- **Next step**: **Batch 2 = Phase 2 (T10–T13) + Phase 3 (T14–T19)** dispatched on model `sonnet` (protocol DTOs + host lifecycle). Carry forward to B4 (Phase 5) and B5 (Phase 6): AD-013 — Preprocessor should absorb/generalize `UnknownViewSubstitutor`; T35 custom-view placeholder relies on it, not MockView.
+- **Batch plan**: B1=P1✅ · B2=P2+P3(sonnet)▶ · B3=P4(session) · B4=P5(sonnet) · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier (session).
 - **Blockers**: none
-- **Uncommitted files**: none after T9 commit
+- **Uncommitted files**: none after state-update commit
 - **Branch**: main
