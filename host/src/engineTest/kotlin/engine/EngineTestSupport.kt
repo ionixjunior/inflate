@@ -32,6 +32,26 @@ object EngineTestSupport {
     return destRes
   }
 
+  /** Repo-level `fixtures/` dir (engineTest working dir is `host/`, so fixtures live at `../fixtures`). */
+  fun fixturesRoot(): File {
+    val candidates = listOf(
+      File(System.getProperty("user.dir"), "../fixtures"),
+      File("../fixtures"),
+      File("fixtures"),
+    )
+    return candidates.map { it.absoluteFile.normalize() }.firstOrNull { it.isDirectory }
+      ?: error("fixtures dir not found (user.dir=${System.getProperty("user.dir")})")
+  }
+
+  /** Copy a repo fixture tree (e.g. `"gradle-sample"`) into a fresh writable temp dir; return it. */
+  fun copyFixtureTree(name: String): File {
+    val src = File(fixturesRoot(), name)
+    require(src.isDirectory) { "fixture tree '$name' missing at $src" }
+    val dest = Files.createTempDirectory("inflate-tree-$name").toFile()
+    src.copyRecursively(dest, overwrite = true)
+    return dest
+  }
+
   /** Center-pixel ARGB of an image (used to assert a rendered color). */
   fun centerArgb(image: java.awt.image.BufferedImage): Int =
     image.getRGB(image.width / 2, image.height / 2)
