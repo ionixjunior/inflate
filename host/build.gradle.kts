@@ -70,6 +70,99 @@ tasks.register<JavaExec>("fetchEngine") {
   args(layout.projectDirectory.dir(".engine-cache").asFile.absolutePath)
 }
 
+// --- T15: engine-manifest.json generation (design §D4/§D6/§Data Models, AD-011) ---
+//
+// Two phases, mirroring T3's fetchEngine/EngineFetcher split, because Gradle's dependency
+// resolution API (Configuration, ResolvedArtifact) is only reachable from the build script
+// itself — never from the project's own compiled main sourceSet — while we want the actual
+// manifest-building logic (kind classification, SHA-256, URL construction, JSON schema) to be
+// plain, testable Kotlin (manifest.ManifestGenerator, exercised directly by ManifestTaskTest with
+// tiny fixtures, no live download):
+//
+//   Phase 1 (resolveEngineManifestArtifacts, below): resolves the pinned closure via a detached
+//   Configuration and writes each artifact's raw facts to a TSV handoff file.
+//   Phase 2 (generateEngineManifest, JavaExec): runs manifest.ManifestGeneratorMainKt on the
+//   already-compiled main sourceSet classpath, which reads that TSV and writes engine-manifest.json.
+
+// Top-level androidx/Material pins (design §D4) — MIRRORS EngineArtifacts.androidxAars
+// (host/src/main/kotlin/engine/EngineArtifacts.kt). Build scripts can't import the project's own
+// main sourceSet, so this small (9-entry) coordinate list is intentionally duplicated here; keep
+// both lists in sync when the D4 pin table changes.
+val manifestAndroidxNotations = listOf(
+  "com.google.android.material:material:1.12.0",
+  "androidx.appcompat:appcompat:1.7.0",
+  "androidx.constraintlayout:constraintlayout:2.2.1",
+  "androidx.core:core:1.13.1",
+  "androidx.recyclerview:recyclerview:1.3.2",
+  "androidx.cardview:cardview:1.0.0",
+  "androidx.coordinatorlayout:coordinatorlayout:1.2.0",
+  "androidx.fragment:fragment:1.8.5",
+  "androidx.viewpager2:viewpager2:1.1.0",
+)
+
+// Layoutlib triple (both macOS arches) + tools jars (design §D6) — mirrors EngineArtifacts too.
+val manifestFixedNotations = listOf(
+  "com.android.tools.layoutlib:layoutlib:14.0.11",
+  "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:mac-arm@jar",
+  "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:mac@jar",
+  "com.android.tools.layoutlib:layoutlib-resources:14.0.11",
+  "com.android.tools.layoutlib:layoutlib-api:31.4.2",
+  "com.android.tools:common:31.4.2",
+  "com.android.tools:sdk-common:31.4.2",
+  "com.android.tools:ninepatch:31.4.2",
+)
+
+val resolveEngineManifestArtifacts = tasks.register("resolveEngineManifestArtifacts") {
+  group = "engine"
+  description = "Phase 1 of generateEngineManifest: resolves the pinned dependency closure via " +
+    "Gradle's Configuration API and writes a TSV handoff file for the Phase-2 JVM."
+
+  val resolvedTsv = layout.buildDirectory.file("engineManifest/resolved-artifacts.tsv")
+  outputs.file(resolvedTsv)
+
+  doLast {
+    val notations = (manifestFixedNotations + manifestAndroidxNotations).map { project.dependencies.create(it) }
+    val config = configurations.detachedConfiguration(*notations.toTypedArray())
+    val resolvedArtifacts = config.resolvedConfiguration.resolvedArtifacts
+
+    val lines = resolvedArtifacts
+      .filter { artifact ->
+        val group = artifact.moduleVersion.id.group
+        group == "com.android.tools.layoutlib" || group == "com.android.tools" ||
+          group.startsWith("androidx.") || group == "com.google.android.material"
+      }
+      .map { artifact ->
+        val id = artifact.moduleVersion.id
+        listOf(
+          id.group,
+          artifact.name,
+          id.version,
+          artifact.classifier ?: "",
+          artifact.extension ?: "jar",
+          artifact.file.absolutePath,
+        ).joinToString("\t")
+      }
+
+    val outFile = resolvedTsv.get().asFile
+    outFile.parentFile.mkdirs()
+    outFile.writeText(if (lines.isEmpty()) "" else lines.joinToString("\n") + "\n")
+  }
+}
+
+tasks.register<JavaExec>("generateEngineManifest") {
+  group = "engine"
+  description = "Phase 2: builds extension/engine-manifest.json (sha256/url/kind/schema) from the " +
+    "resolved artifact closure — committed to the repo, never hand-maintained (AD-011)."
+  dependsOn(resolveEngineManifestArtifacts)
+  classpath = sourceSets.main.get().runtimeClasspath
+  mainClass.set("manifest.ManifestGeneratorMainKt")
+  doFirst {
+    val resolvedTsv = resolveEngineManifestArtifacts.get().outputs.files.singleFile
+    val outputManifest = layout.projectDirectory.dir("../extension").file("engine-manifest.json").asFile
+    args(resolvedTsv.absolutePath, outputManifest.absolutePath)
+  }
+}
+
 val engineCacheDir = layout.projectDirectory.dir(".engine-cache")
 
 val engineTestTask = tasks.register<Test>("engineTest") {
