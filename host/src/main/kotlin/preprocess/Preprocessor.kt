@@ -77,6 +77,7 @@ object Preprocessor {
     roots: List<File>,
     overlayBaseDir: File = defaultOverlayBaseDir(),
     log: LogBridge = LogBridge(),
+    isLoadable: (String) -> Boolean = ::defaultIsLoadable,
   ): PreprocessResult {
     val error = validate(content)
     if (error != null) {
@@ -93,15 +94,16 @@ object Preprocessor {
     val afterTools = ToolsAttributes.apply(content).content
     val binding = DataBinding.unwrap(afterTools, LineMap.identity(afterTools), log)
     val structural = Structural.process(binding.content, docPath, roots, log)
+    val scan = Scan.scan(structural.content, isLoadable, log)
 
-    val overlayFile = writeOverlay(structural.content, docKind, docPath, overlayBaseDir)
+    val overlayFile = writeOverlay(scan.content, docKind, docPath, overlayBaseDir)
 
     return PreprocessResult(
       overlayFile = overlayFile,
       lineMap = binding.lineMap,
       warnings = log.warnings(),
-      referencedResources = emptyList(),
-      customClasses = emptyList(),
+      referencedResources = scan.referencedResources,
+      customClasses = scan.customClasses,
       syntaxError = null,
     )
   }
@@ -142,4 +144,13 @@ object Preprocessor {
    * Callers needing determinism across runs (or test isolation) pass an explicit [overlayBaseDir].
    */
   private fun defaultOverlayBaseDir(): File = File(System.getProperty("java.io.tmpdir"), "inflate-overlay")
+
+  /** Real reflective probe used at runtime; tests inject a fake predicate instead (T32). */
+  private fun defaultIsLoadable(className: String): Boolean =
+    try {
+      Class.forName(className)
+      true
+    } catch (_: Throwable) {
+      false
+    }
 }
