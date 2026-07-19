@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      RES-02 (T39): this name ALSO exists in the bundled appcompat AAR
+      (`abc_decor_view_status_guard` = #ff000000, black). The project root repository sits ABOVE the
+      library repositories, so this red value must win when the layout references it.
+    -->
+    <color name="abc_decor_view_status_guard">#FFFF0000</color>
+</resources>

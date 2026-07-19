@@ -34,9 +34,20 @@ private fun buildBackend(params: InitializeParams): RenderBackend {
   val overlayBaseDir = File(params.overlayDir)
   val outputDir = File(params.outputDir).apply { mkdirs() }
 
-  val adapter = EngineAdapter(runtimeRoot = runtimeRoot, resourcesRoot = resourcesRoot)
+  // Bundled androidx/Material AAR res/ dirs → library resource repositories, and their package names
+  // → resourcePackageNames so PaparazziCallback.initResources registers the generated R ids (T39,
+  // LAY-05/RES-02). classpathJars (incl. each AAR's classes.jar) are assembled launcher-side.
+  val adapter = EngineAdapter(
+    runtimeRoot = runtimeRoot,
+    resourcesRoot = resourcesRoot,
+    libraryResDirs = params.libraryResDirs.map(::File),
+  )
   adapter.initBridgeOnce(
-    EngineAdapter.previewEnvironment(appTestDir = outputDir, roots = emptyList()),
+    EngineAdapter.previewEnvironment(
+      appTestDir = outputDir,
+      roots = emptyList(),
+      resourcePackageNames = params.libraryPackages,
+    ),
   )
   adapter.overlayDir = File(overlayBaseDir, "res")
   return RenderRouting(adapter, outputDir = outputDir, overlayBaseDir = overlayBaseDir)

@@ -363,10 +363,17 @@ export class ArtifactManager {
   }
 
   private resolvePaths(): EnginePaths {
-    const classpathJars = this.relevant
+    const aarArtifacts = this.relevant.filter((a) => a.kind === 'aar');
+    // Plain jars (layoutlib, tools) plus each AAR's extracted `<name>-classes.jar` (see finalize):
+    // the library view classes (MaterialButton, ConstraintLayout, …) MUST be on the host classpath or
+    // they inflate as MockView placeholders (LAY-05). Resource-only AARs have no classes.jar — skip.
+    const jarJars = this.relevant
       .filter((a) => a.kind === 'jar')
       .map((a) => path.join(this.jarsDir(), jarFileName(a)));
-    const aarArtifacts = this.relevant.filter((a) => a.kind === 'aar');
+    const aarClassesJars = aarArtifacts
+      .map((a) => path.join(this.jarsDir(), `${a.name}-classes.jar`))
+      .filter((p) => fs.existsSync(p));
+    const classpathJars = [...jarJars, ...aarClassesJars];
     const libraryResDirs = aarArtifacts.map((a) => path.join(this.aarResDir(a.name), 'res'));
     const libraryPackages = aarArtifacts
       .map((a) => this.readPackageName(a.name))

@@ -160,6 +160,9 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     expect(manager.isReady()).toBe(true);
     expect(paths.manifestHash).toBe(computeManifestHash(manifest));
     expect(paths.classpathJars.some((p) => p.endsWith('layoutlib-14.0.11.jar'))).toBe(true);
+    // T39/debt#1: each AAR's extracted classes.jar joins the host classpath, else Material/androidx
+    // view classes inflate as MockView placeholders (LAY-05).
+    expect(paths.classpathJars.some((p) => p.endsWith('material-classes.jar'))).toBe(true);
     expect(fs.existsSync(path.join(paths.layoutlibRuntimeRoot, 'build.prop'))).toBe(true);
     expect(paths.libraryResDirs.some((p) => p.endsWith(path.join('material', 'res')))).toBe(true);
     expect(fs.existsSync(path.join(paths.libraryResDirs[0], 'values', 'dummy.xml'))).toBe(true);
