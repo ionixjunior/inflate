@@ -100,10 +100,11 @@
 ## Handoff
 
 - **Feature**: android-xml-preview (`.specs/features/android-xml-preview/`)
-- **Phase / Task**: Design — COMPLETE and APPROVED by user (2026-07-19)
-- **Completed**: Specify (confirmed); Design research resolving Q1–Q4 from primary sources (Paparazzi 1.3.5 tag sources + POM, Google Maven HEAD checks): layoutlib pin = 14.0.11 (no independent bump), Q3 = overlay + unique-name resource inflation via public API, Q2 = state injection high-confidence (M0 confirms), Q4 = measured ≈165–175 MB; design.md (architecture, D2–D6 finalized, 18 components, protocol DTOs, error handling, risks, coverage matrix for all 37 IDs + NFRs, M0 checklist); AD-009..AD-012 appended.
+- **Phase / Task**: Tasks — tasks.md DRAFTED (2026-07-19), awaiting user approval
+- **Completed**: Specify (confirmed); Design (approved; Q1–Q4 resolved; AD-009..012); Tasks draft: 60 atomic tasks in 10 phases mapped to milestones M0–M7 (M1/M3 split at seams), test coverage matrix (user-confirmed stack: Vitest / JUnit 5 / Gradle `engineTest` source set / Node+pixelmatch corpus), gate commands, dependency DAGs, all three pre-approval checks pass (granularity, diagram cross-check, test co-location). Tools decision: built-in + WebFetch/WebSearch for M0 primary-source checks; no MCPs.
+- **Commit policy (user directive 2026-07-19)**: one atomic commit per task, immediately on gate pass; titles start with an imperative verb ("Create", "Add", "Implement", "Update", …), ≤72 chars.
 - **In-progress** (file:line): none
-- **Next step**: Tasks phase — write formal tasks.md from spec.md + design.md (Complex tier: full breakdown with dependencies + phase plan mapped to milestones M0–M7; task count will exceed one ~8-task batch → the sub-agent offer applies before Execute). Execute begins with the M0 empirical checklist (design.md last section). Read design.md §Components + §M0 checklist and spec.md §Traceability when deriving tasks.
-- **Blockers**: none (design has pre-agreed fallbacks for every M0 unknown)
-- **Uncommitted files**: `.specs/STATE.md` (modified), `.specs/features/android-xml-preview/design.md` (new, approved) — commit when user asks (suggested message: "Create design")
-- **Branch**: main (repo initialized; spec committed as c4717fe)
+- **Next step**: Execute (fresh session). tasks.md APPROVED by user (2026-07-19). **Sub-agent offer already made and ACCEPTED by user (2026-07-19) — do not re-offer**: dispatch batch workers (~9 batches, whole phases per tasks.md §Phase Execution Map, strictly sequential, compact summaries, one atomic verb-first commit per task). Execute starts with Phase 1 = M0 empirical checklist; on any M0 item failure apply the design's pre-agreed fallback and record it here. Verifier runs automatically after the final task of the run.
+- **Blockers**: none
+- **Uncommitted files**: none after "Create tasks" commit
+- **Branch**: main (spec c4717fe, design 62034cd)
