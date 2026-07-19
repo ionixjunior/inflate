@@ -122,7 +122,19 @@ open class DrawableRenderer(
     // State picker (P1-D): the requested state set, merged through a host view so enabled=false is
     // handled correctly. `stateSensitive` (root selector/ripple/animated-selector) tells the toolbar
     // whether to show the picker (P1-D AC3, DRW-07).
-    val stateSensitive = rootTag(content) in STATE_SENSITIVE_ROOTS
+    val root = rootTag(content)
+    val stateSensitive = root in STATE_SENSITIVE_ROOTS
+    // Animated types render their static initial frame + a badge (DRW-04, P1-C AC3); level-based
+    // types render at level 5000 (50%) with a levelDefault notice (DRW-02, spec §Drawable types).
+    val animated = root in ANIMATED_ROOTS
+    val isLevel = root in LEVEL_ROOTS
+    if (isLevel) {
+      warnings += Warning(
+        kind = WarningKind.levelDefault,
+        message = "Rendered at level $LEVEL_DEFAULT (50%); the level slider is deferred (P3).",
+        detail = "levelDefault",
+      )
+    }
     val requested = request.config.drawable?.states ?: emptyList()
     val stateArray = mergedStateArray(requested)
 
@@ -147,8 +159,12 @@ open class DrawableRenderer(
       if (index < 0) null else MatchedStateItem(index = index, stateAttrs = stateAttrNames(sld, index))
     }
 
-    // Apply the picked state before drawing (StateListDrawable selects its item; a ripple settles).
-    val applyState: (Drawable) -> Unit = { d -> d.state = stateArray }
+    // Apply the picked state before drawing (StateListDrawable selects its item; a ripple settles);
+    // a level-based drawable is set to level 5000 so clip/scale/rotate/level-list show their preview.
+    val applyState: (Drawable) -> Unit = { d ->
+      d.state = stateArray
+      if (isLevel) d.level = LEVEL_DEFAULT
+    }
 
     // P1-D AC4 settled ripple overlay. layoutlib's software Canvas does not render RippleDrawable's
     // pressed RippleForeground (verified: the overlay is fully transparent even after setHotspot +
@@ -168,6 +184,7 @@ open class DrawableRenderer(
       matched = matched,
       stateSensitive = stateSensitive,
       rippleOverlayArgb = rippleOverlay,
+      staticPreviewBadge = if (animated) true else null,
     )
   }
 
@@ -357,6 +374,15 @@ open class DrawableRenderer(
 
     /** Roots whose drawables are state-sensitive → the toolbar shows the state picker (P1-D AC1/AC3). */
     private val STATE_SENSITIVE_ROOTS = setOf("selector", "ripple", "animated-selector")
+
+    /** Animated roots → static initial frame + a "static preview" badge (DRW-04, P1-C AC3). */
+    private val ANIMATED_ROOTS = setOf("animated-vector", "animation-list", "animated-selector", "transition")
+
+    /** Level-based roots → rendered at [LEVEL_DEFAULT] with a levelDefault notice (DRW-02). */
+    private val LEVEL_ROOTS = setOf("clip", "scale", "rotate", "level-list")
+
+    /** The 50% preview level for level-based drawables (spec §Drawable types "level 5000"). */
+    private const val LEVEL_DEFAULT: Int = 5000
 
     /** Picker states that activate a ripple's settled overlay (P1-D AC4). */
     private val RIPPLE_TRIGGER = setOf(
