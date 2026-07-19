@@ -1,0 +1,23 @@
+# Engine pin matrix (design §D6, AD-008/AD-011). The whole matrix moves together.
+[versions]
+kotlin = "2.0.21"          # matches Paparazzi 1.3.5's own Kotlin pin (friend-paths metadata compatibility)
+paparazzi = "1.3.5"        # AD-008 engine pin
+layoutlib = "14.0.11"      # Android 14 / API 34 line; paired with Paparazzi 1.3.5
+tools = "31.4.2"           # com.android.tools:{common,sdk-common,layoutlib-api,ninepatch}
+moshi = "1.15.1"           # host RPC codec (already on Paparazzi classpath)
+kxml2 = "2.3.0"            # preprocessor parser (already on Paparazzi classpath)
+junit = "5.10.3"           # host unit + engineTest runner (JUnit 5)
+
+[libraries]
+paparazzi = { module = "app.cash.paparazzi:paparazzi", version.ref = "paparazzi" }
+tools-layoutlib-api = { module = "com.android.tools.layoutlib:layoutlib-api", version.ref = "tools" }
+tools-common = { module = "com.android.tools:common", version.ref = "tools" }
+tools-sdk-common = { module = "com.android.tools:sdk-common", version.ref = "tools" }
+tools-ninepatch = { module = "com.android.tools:ninepatch", version.ref = "tools" }
+moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
+kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -1,0 +1,21 @@
+# --- Kotlin/Gradle host ---
+host/.gradle/
+host/build/
+host/.engine-cache/
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- Node / extension ---
+node_modules/
+extension/node_modules/
+extension/out/
+extension/dist/
+*.vsix
+
+# --- OS / editor ---
+.DS_Store
+*.log
+.idea/
+*.iml
+.vscode-test/
