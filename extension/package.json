@@ -13,19 +13,55 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onCommand:inflate.helloPreview"
+    "onCommand:inflate.openPreview",
+    "onCommand:inflate.refreshPreview",
+    "onCommand:inflate.doctor",
+    "onCommand:inflate.clearEngineCache",
+    "onCommand:inflate.restartHost"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "inflate.helloPreview",
-        "title": "Inflate: Hello Preview (M0)"
+        "command": "inflate.openPreview",
+        "title": "Inflate: Open Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "inflate.refreshPreview",
+        "title": "Inflate: Refresh Preview"
+      },
+      {
+        "command": "inflate.doctor",
+        "title": "Inflate: Doctor"
+      },
+      {
+        "command": "inflate.clearEngineCache",
+        "title": "Inflate: Clear Engine Cache"
+      },
+      {
+        "command": "inflate.restartHost",
+        "title": "Inflate: Restart Render Host"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "inflate.openPreview",
+          "when": "inflate:eligibleDocument",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "inflate.openPreview",
+          "when": "inflate:eligibleDocument"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20",
-    "compile-tests": "tsc -p tsconfig.test.json",
+    "compile-tests": "rm -rf out && tsc -p tsconfig.test.json",
     "pretest:integration": "npm run build && npm run compile-tests",
     "test": "vitest run",
     "test:integration": "node ./out/test/integration/runTest.js"

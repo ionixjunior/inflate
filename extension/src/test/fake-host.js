@@ -15,9 +15,13 @@
 //                             (triggers the client-side render-timeout watchdog).
 'use strict';
 
+const path = require('path');
 const { createMessageConnection, StreamMessageReader, StreamMessageWriter } = require('vscode-jsonrpc/node');
 
 const mode = process.argv[2] || 'normal';
+// A real, tiny, already-committed PNG (T6) stands in for the host's rendered output — T18's
+// walking skeleton proves the wire end-to-end without needing the real LayoutRenderer (Phase 6).
+const FAKE_RENDERED_PNG = path.join(__dirname, '..', '..', 'media', 'hello.png');
 
 if (mode === 'crash-on-start') {
   process.stderr.write('fake-host: crash-on-start\n');
@@ -57,7 +61,7 @@ connection.onRequest('render', (...args) => {
   return {
     id: params.id,
     status: 'ok',
-    pngPath: '/tmp/fake.png',
+    pngPath: FAKE_RENDERED_PNG,
     imageWidth: 1,
     imageHeight: 1,
     warnings: [],

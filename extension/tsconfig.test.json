@@ -3,5 +3,12 @@
   "compilerOptions": {
     "types": ["node", "mocha"]
   },
-  "include": ["src/test/**/*.ts", "src/extension.ts", "src/webview.ts"]
+  "include": [
+    "src/test/**/*.ts",
+    "src/extension.ts",
+    "src/activation.ts",
+    "src/webview.ts",
+    "src/host.ts",
+    "src/protocol.ts"
+  ]
 }

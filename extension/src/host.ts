@@ -79,6 +79,7 @@ export class HostManager {
   private pendingReady?: Promise<void>;
   private intentionalKill = false;
   private stateListeners: Array<(s: HostState) => void> = [];
+  private stderrLineListeners: Array<(line: string) => void> = [];
 
   private readonly renderTimeoutMs: number;
   private readonly backoffMs: number[];
@@ -126,6 +127,22 @@ export class HostManager {
   /** Number of crash timestamps currently inside the rolling crash window. */
   crashCount(): number {
     return this.crashTimestamps.length;
+  }
+
+  /** PID of the currently running child, if any (Doctor/observability; T18 orphan-process checks). */
+  getChildPid(): number | undefined {
+    return this.child?.pid;
+  }
+
+  /** Notifies [cb] with each stderr line as it arrives (in addition to the ring buffer), so callers
+   * can mirror host output into the "Inflate" output channel with render IDs (P1-I AC5). */
+  onStderrLine(cb: (line: string) => void): Disposable {
+    this.stderrLineListeners.push(cb);
+    return {
+      dispose: () => {
+        this.stderrLineListeners = this.stderrLineListeners.filter((l) => l !== cb);
+      },
+    };
   }
 
   private setState(next: HostState): void {
@@ -323,6 +340,7 @@ export class HostManager {
   private appendStderr(text: string): void {
     const lines = text.split('\n').filter((l) => l.length > 0);
     this.stderrLines.push(...lines);
+    lines.forEach((line) => this.stderrLineListeners.forEach((l) => l(line)));
     if (this.stderrLines.length > this.ringBufferLines) {
       this.stderrLines = this.stderrLines.slice(this.stderrLines.length - this.ringBufferLines);
     }
