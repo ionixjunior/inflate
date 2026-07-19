@@ -98,6 +98,34 @@ class EngineArtifactsTest {
   }
 
   @Test
+  fun `androidx and material pins match the D4 set exactly with core held at 1_13_x`() {
+    // Source-of-truth guard for the D4 pin table (design §D4). A wrong pin silently breaks the
+    // whole manifest closure, so every top-level coordinate is asserted to its exact version.
+    val expected = mapOf(
+      "material" to "1.12.0",
+      "appcompat" to "1.7.0",
+      "constraintlayout" to "2.2.1",
+      "core" to "1.13.1",
+      "recyclerview" to "1.3.2",
+      "cardview" to "1.0.0",
+      "coordinatorlayout" to "1.2.0",
+      "fragment" to "1.8.5",
+      "viewpager2" to "1.1.0",
+    )
+    val byName = EngineArtifacts.androidxAars.associateBy { it.name }
+    assertEquals(expected.keys, byName.keys, "D4 top-level androidx/Material pin set")
+    for ((name, version) in expected) {
+      assertEquals(version, byName.getValue(name).version, "pinned version for $name")
+    }
+    // compileSdk-34 guard (design §D4): core must stay on the 1.13.x line — 1.15+ raises
+    // compileSdk to 35, past the layoutlib-14.0.11 platform pin (§D6).
+    assertTrue(
+      byName.getValue("core").version.startsWith("1.13."),
+      "core must stay 1.13.x to match compileSdk 34 (was ${byName.getValue("core").version})",
+    )
+  }
+
+  @Test
   fun `full set includes the layoutlib triple, four tools jars, and nine aars`() {
     val all = EngineArtifacts.all(HostArch.MAC_ARM)
     assertEquals(3 + 4 + 9, all.size)
