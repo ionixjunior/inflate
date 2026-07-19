@@ -81,7 +81,11 @@ class EngineAdapter(
   }
 
   /** Inflate a layout resource by numeric id in the current session. */
-  fun inflate(layoutId: Int): View = sdk!!.inflate(layoutId)
+  fun inflate(layoutId: Int): View =
+    checkNotNull(inflateOrNull(layoutId)) { "layout id $layoutId inflated to null" }
+
+  /** Inflate without the non-null assertion (unknown roots/children may yield null). */
+  fun inflateOrNull(layoutId: Int): View? = sdk!!.layoutInflater.inflate(layoutId, null)
 
   /** Resolve a resource id (name/type/package) via the engine's resources. */
   fun resourceId(name: String, type: String, packageName: String): Int =

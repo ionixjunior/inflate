@@ -45,9 +45,24 @@ interface is identical either way, so downstream phases are unaffected.
 | 1 | friend-paths compiles against Paparazzi 1.3.5 internals (AD-009 gate) | PASS (primary) — verified in T2 |
 | 2 | Bridge init once + AppResourceRepository rebuild (hot-reload gate) | PASS (primary) — T4; rebuild ~9 ms on the M0 machine |
 | 3 | Hello-render LinearLayout → PNG (end-to-end gate) | PASS (primary) — T5 (host PNG 200x200, alpha) + T6 (VS Code webview shows the PNG, lazy activation) |
-| 4 | MockView placeholder for unknown views (AD-007 gate) | pending T7 |
+| 4 | MockView placeholder for unknown views (AD-007 gate) | **FALLBACK-APPLIED** (plan B: preprocessor tag substitution) — see note below |
 | 5 | Drawable state injection ≥3 states (Q2 gate) | pending T8 |
 | 6 | Cold-start + warm-render timings vs NFR-01 | pending T9 |
+
+## M0 item 4 — fallback trigger + decision (T7)
+
+**Trigger (empirical, verified T7):** Paparazzi's `PaparazziCallback.loadView` throws
+`ClassNotFoundException` for a missing view class, and layoutlib's `BridgeInflater.createViewFromTag`
+only substitutes a MockView when its callback *returns* one — for a genuinely-missing class it calls
+`loadCustomView` (which returns null) and **rethrows**, so `LayoutInflater.inflate` returns null and
+the whole file fails to inflate (observed: `InflateException` → `ClassNotFoundException: com.example.FakeView`).
+Android Studio's own callback returns a MockView; Paparazzi's does not.
+
+**Decision:** Applied the design's pre-agreed plan B (§D2, AD-007) — **preprocessor tag substitution**.
+`preprocess.UnknownViewSubstitutor` replaces unknown fully-qualified view tags with a labeled
+`TextView` box (text = class name), and the LogBridge records a `substitutedClass` warning. The
+custom-view fixture then renders with no exception escaping. The adapter/LogBridge public interfaces
+are unchanged, so downstream phases are unaffected; the full preprocessor (Phase 5) generalises this.
 
 ## Appendix — measured artifact sizes (T3)
 
