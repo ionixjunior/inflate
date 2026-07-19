@@ -57,6 +57,15 @@ tasks.test {
   useJUnitPlatform()
 }
 
+// --- T3: dev-time engine artifact fetch (downloads ~170 MB into host/.engine-cache/) ---
+tasks.register<JavaExec>("fetchEngine") {
+  group = "engine"
+  description = "Downloads pinned layoutlib/tools/androidx artifacts into host/.engine-cache/."
+  classpath = sourceSets.main.get().runtimeClasspath
+  mainClass.set("engine.EngineFetcherKt")
+  args(layout.projectDirectory.dir(".engine-cache").asFile.absolutePath)
+}
+
 val engineTestTask = tasks.register<Test>("engineTest") {
   description = "Runs engine integration tests against cached layoutlib artifacts."
   group = "verification"

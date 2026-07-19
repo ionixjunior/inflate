@@ -51,4 +51,19 @@ interface is identical either way, so downstream phases are unaffected.
 
 ## Appendix — measured artifact sizes (T3)
 
-_Populated by the `fetchEngine` task in T3._
+Measured by `./gradlew fetchEngine` on macOS arm64 (2026-07-19). Cache layout:
+`host/.engine-cache/download/` (files + `.sha256` sidecars), `.../layoutlib/runtime/`
+(unzipped: `build.prop`, `data/{fonts,icu,keyboards,mac-arm}`), `.../layoutlib/resources/`
+(unzipped: `res/`, `resources*.bin`). Re-run is a checksum-verified no-op.
+
+| Artifact | Size | SHA-256 |
+| -------- | ---- | ------- |
+| layoutlib-14.0.11.jar | 48.2 MB | `9a8ab05c…4fe4dd59` |
+| layoutlib-runtime-14.0.11-mac-arm.jar | 72.0 MB | `df612670…35c5e29` |
+| layoutlib-resources-14.0.11.jar | 31.6 MB | `e9aa0422…785bd9259` |
+| layoutlib-api / common / sdk-common / ninepatch 31.4.2 | 2.1 MB | (4 jars) |
+| androidx/Material top-level AARs (9) | 6.5 MB | material 1.12.0, appcompat 1.7.0, constraintlayout 2.2.1, core 1.13.1, recyclerview 1.3.2, cardview 1.0.0, coordinatorlayout 1.2.0, fragment 1.8.5, viewpager2 1.1.0 |
+
+**Total (one arch, top-level only): 159.9 MB** — inside the Q4 estimate (150–250 MB). The full
+transitive androidx closure (T15 `generateEngineManifest`) adds the remaining ~5–10 MB toward the
+Q4 "~165–175 MB" refined figure.
