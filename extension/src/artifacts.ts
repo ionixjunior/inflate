@@ -1,0 +1,384 @@
+/**
+ * ArtifactManager (T16, design component #7, SETUP-02/AD-006/AD-011). Reads the bundled
+ * `engine-manifest.json` (T15), downloads whatever isn't cached yet to
+ * `globalStorage/engine/<manifestHash>/tmp/` with a streamed SHA-256 check per artifact, unzips
+ * runtime/resources/AAR contents into the design's cache layout, and atomically renames each
+ * verified artifact into place. A `.complete` marker file is the ONLY thing that makes
+ * {@link ArtifactManager.isReady}/`cacheState().ready` true — a half-installed cache (files present
+ * but no marker) is never reported ready, so a crash mid-install can't silently look "done".
+ *
+ * Cache layout (design §Data Models):
+ * ```
+ * engine/<manifestHash>/
+ *   .complete
+ *   layoutlib/runtime/            # unzipped runtime jar
+ *   layoutlib/resources/          # unzipped resources jar
+ *   jars/                         # layoutlib.jar, tools-*.jar, aar classes: <artifact>-classes.jar
+ *   aar-res/<artifact>/res/       # per-AAR resources (+ its AndroidManifest.xml, for package name)
+ * ```
+ *
+ * All I/O (network download, unzip) is injectable so tests exercise this against a real local HTTP
+ * fixture server with tiny synthetic artifacts — never the real ~170 MB engine download.
+ */
+
+import AdmZip from 'adm-zip';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
+import * as path from 'path';
+
+export type ArtifactKind = 'jar' | 'aar' | 'unzip';
+
+/** Matches the layoutlib-runtime classifier values in engine-manifest.json (AD-004: macOS only). */
+export type HostArch = 'mac-arm' | 'mac';
+
+export interface ManifestArtifact {
+  group: string;
+  name: string;
+  version: string;
+  classifier?: string;
+  kind: ArtifactKind;
+  url: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export interface EngineManifest {
+  pinName: string;
+  artifacts: ManifestArtifact[];
+}
+
+export interface EnginePaths {
+  layoutlibRuntimeRoot: string;
+  layoutlibResourcesRoot: string;
+  classpathJars: string[];
+  libraryResDirs: string[];
+  libraryPackages: string[];
+  manifestHash: string;
+}
+
+export interface ArtifactStatus {
+  key: string;
+  installed: boolean;
+  sizeBytes?: number;
+}
+
+export interface CacheReport {
+  manifestHash: string;
+  ready: boolean;
+  artifacts: ArtifactStatus[];
+}
+
+export interface DownloadProgress {
+  artifactKey: string;
+  bytesDownloaded: number;
+  totalBytes: number;
+}
+
+/** Thrown by {@link ArtifactManager.ensureInstalled} when installation cannot proceed because the
+ * network is unreachable and no complete cache already exists (P1-H AC1/AC4). */
+export class OfflineError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OfflineError';
+  }
+}
+
+export type DownloadFn = (
+  url: string,
+  destPath: string,
+  onProgress?: (bytesDownloaded: number, totalBytes: number) => void,
+) => Promise<void>;
+export type UnzipFn = (zipPath: string, destDir: string) => void;
+
+export interface ArtifactManagerOptions {
+  manifest: EngineManifest;
+  globalStorageDir: string;
+  arch: HostArch;
+  download?: DownloadFn;
+  unzip?: UnzipFn;
+}
+
+const MAX_ATTEMPTS = 3;
+
+function artifactKey(a: ManifestArtifact): string {
+  return a.classifier ? `${a.group}:${a.name}:${a.version}:${a.classifier}` : `${a.group}:${a.name}:${a.version}`;
+}
+
+function jarFileName(a: ManifestArtifact): string {
+  const base = `${a.name}-${a.version}`;
+  return a.classifier ? `${base}-${a.classifier}.jar` : `${base}.jar`;
+}
+
+/** Only one `layoutlib-runtime` classifier (the host's own arch) is ever needed at runtime — the
+ * manifest carries both so a single bundled manifest works on either Mac architecture (AD-004). */
+export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch): ManifestArtifact[] {
+  return manifest.artifacts.filter((a) => a.name !== 'layoutlib-runtime' || a.classifier === arch);
+}
+
+/** Cache-directory key (design: "cache dir keyed by manifest hash"). */
+export function computeManifestHash(manifest: EngineManifest): string {
+  return crypto.createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+}
+
+function isNetworkError(e: unknown): boolean {
+  const code = (e as { code?: string } | undefined)?.code;
+  return (
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ENETUNREACH' ||
+    code === 'EPIPE'
+  );
+}
+
+function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+/** Real default downloader: streams the HTTP(S) response to [destPath], reporting progress and
+ * following at most 5 redirects (Google Maven / a local fixture server both stay well under that). */
+export function defaultDownload(
+  targetUrl: string,
+  destPath: string,
+  onProgress?: (bytesDownloaded: number, totalBytes: number) => void,
+  redirectsLeft = 5,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const client = targetUrl.startsWith('https:') ? https : http;
+    const req = client.get(targetUrl, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        if (redirectsLeft <= 0) {
+          reject(new Error(`too many redirects fetching ${targetUrl}`));
+          return;
+        }
+        defaultDownload(res.headers.location, destPath, onProgress, redirectsLeft - 1).then(resolve, reject);
+        return;
+      }
+      if (status !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${status} fetching ${targetUrl}`));
+        return;
+      }
+      const total = Number(res.headers['content-length'] ?? 0);
+      let downloaded = 0;
+      const out = fs.createWriteStream(destPath);
+      res.on('data', (chunk: Buffer) => {
+        downloaded += chunk.length;
+        onProgress?.(downloaded, total);
+      });
+      res.on('error', (e) => {
+        out.destroy();
+        reject(e);
+      });
+      out.on('error', reject);
+      out.on('finish', () => resolve());
+      res.pipe(out);
+    });
+    req.on('error', reject);
+  });
+}
+
+/** Real default unzip: extracts the whole archive into [destDir]. */
+export function defaultUnzip(zipPath: string, destDir: string): void {
+  const zip = new AdmZip(zipPath);
+  zip.extractAllTo(destDir, true);
+}
+
+export class ArtifactManager {
+  readonly manifestHash: string;
+  private readonly relevant: ManifestArtifact[];
+  private readonly download: DownloadFn;
+  private readonly unzip: UnzipFn;
+
+  constructor(private readonly opts: ArtifactManagerOptions) {
+    this.relevant = selectRelevantArtifacts(opts.manifest, opts.arch);
+    this.manifestHash = computeManifestHash(opts.manifest);
+    this.download = opts.download ?? defaultDownload;
+    this.unzip = opts.unzip ?? defaultUnzip;
+  }
+
+  private engineDir(): string {
+    return path.join(this.opts.globalStorageDir, 'engine', this.manifestHash);
+  }
+  private tmpDir(): string {
+    return path.join(this.engineDir(), 'tmp');
+  }
+  private completeMarker(): string {
+    return path.join(this.engineDir(), '.complete');
+  }
+  private jarsDir(): string {
+    return path.join(this.engineDir(), 'jars');
+  }
+  private runtimeDir(): string {
+    return path.join(this.engineDir(), 'layoutlib', 'runtime');
+  }
+  private resourcesDir(): string {
+    return path.join(this.engineDir(), 'layoutlib', 'resources');
+  }
+  private aarResDir(artifactName: string): string {
+    return path.join(this.engineDir(), 'aar-res', artifactName);
+  }
+
+  /** `.complete` marker presence — the only signal that gates readiness (never a partial cache). */
+  isReady(): boolean {
+    return fs.existsSync(this.completeMarker());
+  }
+
+  async ensureInstalled(onProgress?: (event: DownloadProgress) => void): Promise<EnginePaths> {
+    if (this.isReady()) {
+      return this.resolvePaths();
+    }
+
+    fs.mkdirSync(this.tmpDir(), { recursive: true });
+    try {
+      for (const artifact of this.relevant) {
+        try {
+          await this.installOne(artifact, onProgress);
+        } catch (e) {
+          if (isNetworkError(e)) {
+            throw new OfflineError(
+              `Inflate needs a one-time network connection to download the render engine (~170 MB) ` +
+                `from Google Maven. Failed on ${artifact.name}: ${(e as Error).message}`,
+            );
+          }
+          throw e;
+        }
+      }
+      fs.writeFileSync(this.completeMarker(), new Date().toISOString());
+    } finally {
+      fs.rmSync(this.tmpDir(), { recursive: true, force: true });
+    }
+
+    return this.resolvePaths();
+  }
+
+  cacheState(): CacheReport {
+    const artifacts: ArtifactStatus[] = this.relevant.map((a) => {
+      const installed = this.isArtifactInstalled(a);
+      let sizeBytes: number | undefined;
+      if (installed && a.kind === 'jar') {
+        sizeBytes = fs.statSync(path.join(this.jarsDir(), jarFileName(a))).size;
+      }
+      return { key: artifactKey(a), installed, sizeBytes };
+    });
+    return { manifestHash: this.manifestHash, ready: this.isReady(), artifacts };
+  }
+
+  /** Deletes the whole `engine/<manifestHash>/` directory (design: "host stopped first" is the
+   * caller's responsibility — HostManager/T17 — this method only handles the filesystem side). */
+  clear(): void {
+    fs.rmSync(this.engineDir(), { recursive: true, force: true });
+  }
+
+  private isArtifactInstalled(artifact: ManifestArtifact): boolean {
+    switch (artifact.kind) {
+      case 'jar':
+        return fs.existsSync(path.join(this.jarsDir(), jarFileName(artifact)));
+      case 'unzip': {
+        const destDir = artifact.name === 'layoutlib-runtime' ? this.runtimeDir() : this.resourcesDir();
+        return fs.existsSync(destDir) && fs.readdirSync(destDir).length > 0;
+      }
+      case 'aar':
+        return fs.existsSync(path.join(this.aarResDir(artifact.name), 'res'));
+    }
+  }
+
+  private async installOne(artifact: ManifestArtifact, onProgress?: (event: DownloadProgress) => void): Promise<void> {
+    if (this.isArtifactInstalled(artifact)) return;
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const tmpFile = path.join(this.tmpDir(), `${artifactKey(artifact).replace(/[:@]/g, '_')}.part`);
+      try {
+        if (fs.existsSync(tmpFile)) fs.rmSync(tmpFile, { force: true });
+        await this.download(artifact.url, tmpFile, (b, t) =>
+          onProgress?.({ artifactKey: artifactKey(artifact), bytesDownloaded: b, totalBytes: t }),
+        );
+        const actualSha = await sha256File(tmpFile);
+        if (actualSha !== artifact.sha256) {
+          fs.rmSync(tmpFile, { force: true });
+          lastError = new Error(
+            `checksum mismatch for ${artifact.name}: expected ${artifact.sha256}, got ${actualSha}`,
+          );
+          continue;
+        }
+        this.finalize(artifact, tmpFile);
+        if (fs.existsSync(tmpFile)) fs.rmSync(tmpFile, { force: true });
+        return;
+      } catch (e) {
+        if (fs.existsSync(tmpFile)) fs.rmSync(tmpFile, { force: true });
+        if (isNetworkError(e)) throw e; // propagate immediately — retrying an unreachable host wastes time
+        lastError = e;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  /** Moves a verified tmp file into its final, atomic location per [ArtifactKind]. */
+  private finalize(artifact: ManifestArtifact, tmpFile: string): void {
+    switch (artifact.kind) {
+      case 'jar': {
+        fs.mkdirSync(this.jarsDir(), { recursive: true });
+        fs.renameSync(tmpFile, path.join(this.jarsDir(), jarFileName(artifact)));
+        break;
+      }
+      case 'unzip': {
+        const destDir = artifact.name === 'layoutlib-runtime' ? this.runtimeDir() : this.resourcesDir();
+        fs.mkdirSync(destDir, { recursive: true });
+        this.unzip(tmpFile, destDir);
+        break;
+      }
+      case 'aar': {
+        const destDir = this.aarResDir(artifact.name);
+        fs.mkdirSync(destDir, { recursive: true });
+        this.unzip(tmpFile, destDir);
+        fs.mkdirSync(this.jarsDir(), { recursive: true });
+        const classesJar = path.join(destDir, 'classes.jar');
+        if (fs.existsSync(classesJar)) {
+          fs.renameSync(classesJar, path.join(this.jarsDir(), `${artifact.name}-classes.jar`));
+        }
+        break;
+      }
+    }
+  }
+
+  private readPackageName(artifactName: string): string | undefined {
+    const manifestPath = path.join(this.aarResDir(artifactName), 'AndroidManifest.xml');
+    if (!fs.existsSync(manifestPath)) return undefined;
+    const xml = fs.readFileSync(manifestPath, 'utf8');
+    const match = xml.match(/package\s*=\s*"([^"]+)"/);
+    return match?.[1];
+  }
+
+  private resolvePaths(): EnginePaths {
+    const classpathJars = this.relevant
+      .filter((a) => a.kind === 'jar')
+      .map((a) => path.join(this.jarsDir(), jarFileName(a)));
+    const aarArtifacts = this.relevant.filter((a) => a.kind === 'aar');
+    const libraryResDirs = aarArtifacts.map((a) => path.join(this.aarResDir(a.name), 'res'));
+    const libraryPackages = aarArtifacts
+      .map((a) => this.readPackageName(a.name))
+      .filter((p): p is string => Boolean(p));
+
+    return {
+      layoutlibRuntimeRoot: this.runtimeDir(),
+      layoutlibResourcesRoot: this.resourcesDir(),
+      classpathJars,
+      libraryResDirs,
+      libraryPackages,
+      manifestHash: this.manifestHash,
+    };
+  }
+}
