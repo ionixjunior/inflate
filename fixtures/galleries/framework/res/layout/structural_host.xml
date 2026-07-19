@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  P1-A AC4: structural tags together — <include> (inflated), <ViewStub> (left collapsed),
-  and <fragment tools:layout> (inflated as its design-time layout). Also a plain <fragment>
-  without tools:layout to prove the labeled-placeholder path.
+  P1-A AC4: structural tags together — an include (inflated), a ViewStub (left collapsed), and a
+  fragment with tools:layout (inflated as its design-time layout). Also a plain fragment without
+  tools:layout to prove the labeled-placeholder path. (Comments avoid literal tag syntax: the
+  Phase 5 preprocessor is regex-based and not comment-aware.)
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"

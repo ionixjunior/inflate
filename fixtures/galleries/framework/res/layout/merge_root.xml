@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- P1-A AC4: a <merge> root. The Preprocessor wraps it in a match_parent FrameLayout. -->
+<!-- P1-A AC4: a merge root. The Preprocessor wraps it in a match_parent FrameLayout.
+     (Comments here avoid tag-like text: the Phase 5 preprocessor is regex-based, not
+     comment-aware, so a literal merge/layout/include tag in a comment would be rewritten too.) -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
     <TextView
         android:layout_width="wrap_content"

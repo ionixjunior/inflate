@@ -42,17 +42,32 @@ private val RENDER_THREAD_METHODS = setOf("render", "listThemes", "invalidate", 
  *
  * [overrideHandlers] lets callers (tests) replace a render-thread method's handler — used to
  * simulate an uncaught render-thread exception without needing a real engine.
+ *
+ * [backendFactory] (T35) wires the real engine: given no factory (unit tests), `render` returns the
+ * structured not-implemented stub and `listThemes`/`invalidate` their trivial successes. Given a
+ * factory, `initialize` builds a [RenderBackend] on the render thread (layoutlib is process-global
+ * and single-session, so its Bridge init must run there, before any render), and thereafter
+ * `render`/`listThemes`/`invalidate` route through it.
  */
 class RpcServer(
   input: InputStream,
   output: OutputStream,
   private val stderr: PrintStream = System.err,
   overrideHandlers: Map<String, (String) -> String> = emptyMap(),
+  private val backendFactory: ((InitializeParams) -> RenderBackend)? = null,
 ) {
   private val moshi = ProtocolMoshi.moshi
   private val anyAdapter = moshi.adapter(Any::class.java)
   private val envelopeAdapter = moshi.adapter(JsonRpcRequestEnvelope::class.java)
   private val errorBodyAdapter = moshi.adapter(JsonRpcErrorBody::class.java)
+  private val initializeParamsAdapter = moshi.adapter(InitializeParams::class.java)
+  private val renderRequestAdapter = moshi.adapter(RenderRequest::class.java)
+  private val renderResponseAdapter = moshi.adapter(RenderResponse::class.java)
+  private val listThemesParamsAdapter = moshi.adapter(ListThemesParams::class.java)
+  private val invalidateParamsAdapter = moshi.adapter(InvalidateParams::class.java)
+  private val themeListAdapter = moshi.adapter<List<ThemeInfo>>(
+    com.squareup.moshi.Types.newParameterizedType(List::class.java, ThemeInfo::class.java),
+  )
   private val reader = FrameReader(input)
   private val writer = FrameWriter(output)
   private val writeLock = Any()
@@ -60,6 +75,9 @@ class RpcServer(
     Executors.newSingleThreadExecutor { r -> Thread(r, "inflate-render").apply { isDaemon = true } }
 
   @Volatile private var stopRequested = false
+
+  /** The engine backend, built on `initialize` when a [backendFactory] is supplied (T35). */
+  @Volatile private var backend: RenderBackend? = null
 
   private val handlers: Map<String, (String) -> String> = defaultHandlers() + overrideHandlers
 
@@ -94,7 +112,12 @@ class RpcServer(
     val paramsJson = envelope.params?.let { anyAdapter.toJson(it) } ?: "{}"
 
     when (envelope.method) {
-      "initialize" -> respondRaw(id, DEFAULT_INITIALIZE_RESULT)
+      "initialize" ->
+        if (backendFactory != null) {
+          renderExecutor.execute { buildBackend(id, paramsJson) }
+        } else {
+          respondRaw(id, DEFAULT_INITIALIZE_RESULT)
+        }
       "shutdown" -> {
         respondRaw(id, "{}")
         stopRequested = true
@@ -136,12 +159,44 @@ class RpcServer(
     else -> "null"
   }
 
+  /** Build the engine backend on the render thread (see class doc), then ack `initialize`. */
+  private fun buildBackend(id: Any?, paramsJson: String) {
+    try {
+      val params = initializeParamsAdapter.fromJson(paramsJson)
+        ?: error("initialize params missing or unparseable")
+      backend = backendFactory!!.invoke(params)
+      respondRaw(id, DEFAULT_INITIALIZE_RESULT)
+    } catch (t: Throwable) {
+      stderr.println("[rpc] initialize failed: ${t.message}")
+      respondError(id, -32000, "initialize failed: ${t.message}")
+    }
+  }
+
   private fun defaultHandlers(): Map<String, (String) -> String> = mapOf(
-    "render" to ::defaultRenderStub,
-    "listThemes" to { _: String -> "[]" },
-    "invalidate" to { _: String -> "{}" },
+    "render" to ::renderDispatch,
+    "listThemes" to ::listThemesDispatch,
+    "invalidate" to ::invalidateDispatch,
     "warmup" to { _: String -> "{}" },
   )
+
+  /** Route `render` through the engine backend when present; otherwise the T13 not-implemented stub. */
+  private fun renderDispatch(paramsJson: String): String {
+    val b = backend ?: return defaultRenderStub(paramsJson)
+    val request = renderRequestAdapter.fromJson(paramsJson) ?: error("render params missing")
+    return renderResponseAdapter.toJson(b.render(request))
+  }
+
+  private fun listThemesDispatch(paramsJson: String): String {
+    val b = backend ?: return "[]"
+    val params = listThemesParamsAdapter.fromJson(paramsJson) ?: error("listThemes params missing")
+    return themeListAdapter.toJson(b.listThemes(params.roots, params.packageName))
+  }
+
+  private fun invalidateDispatch(paramsJson: String): String {
+    val b = backend ?: return "{}"
+    val params = invalidateParamsAdapter.fromJson(paramsJson) ?: InvalidateParams()
+    return """{"rebuildScheduled":${b.invalidate(params.paths)}}"""
+  }
 
   private fun defaultRenderStub(paramsJson: String): String {
     val requestId = try {

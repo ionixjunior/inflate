@@ -144,6 +144,19 @@ data class ThemeInfo(
   val source: ThemeSource,
 )
 
+/** Params for the `listThemes` RPC (design §D5): the resolved roots + package to enumerate over. */
+@JsonClass(generateAdapter = false)
+data class ListThemesParams(
+  val roots: List<String>,
+  val packageName: String,
+)
+
+/** Params for the `invalidate` RPC (design §D5): the changed dependency paths under a session root. */
+@JsonClass(generateAdapter = false)
+data class InvalidateParams(
+  val paths: List<String> = emptyList(),
+)
+
 /** Shared moshi instance for the protocol DTOs (host side). */
 object ProtocolMoshi {
   val moshi: Moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()

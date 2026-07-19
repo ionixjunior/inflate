@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- P1-A AC6: a data-binding layout. The Preprocessor unwraps <layout>/<data> and replaces the
-     @{...} expressions with type-appropriate defaults, emitting a bindingReplaced notice. -->
+<!-- P1-A AC6: a data-binding layout. The Preprocessor unwraps the layout/data wrapper and replaces
+     the binding expressions with type-appropriate defaults, emitting a bindingReplaced notice. -->
 <layout xmlns:android="http://schemas.android.com/apk/res/android">
     <data>
         <variable name="user" type="com.example.User" />
