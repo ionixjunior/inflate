@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      T40: a theme whose viewInflaterClass points at a class that cannot be loaded. The theme-aware
+      Factory2 must fall back to AppCompatViewInflater (so <Button> -> AppCompatButton) rather than
+      failing the render.
+    -->
+    <style name="BadInflaterTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="viewInflaterClass">com.example.DoesNotExistViewInflater</item>
+    </style>
+</resources>

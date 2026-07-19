@@ -193,6 +193,10 @@ class EngineAdapter(
       theme: String? = null,
     ): BufferedImage {
       sdk!!.unsafeUpdateConfig(deviceConfig = deviceConfig ?: this@EngineAdapter.deviceConfig, theme = theme)
+      // Install the theme-aware Factory2 on the freshly-recreated inflater (finding #6, T40) so
+      // <Button> etc. inflate per the resolved theme's viewInflaterClass (MaterialButton under
+      // Material themes) — Studio parity. No-op / framework-only when the theme sets no inflater.
+      ThemeAwareFactory.install(sdk!!.context, sdk!!.layoutInflater)
       return render(inflate(layoutId))
     }
   }
