@@ -39,6 +39,20 @@ dependencies {
   "engineTestImplementation"(libs.junit.jupiter)
 }
 
+// --- AD-009: friend-paths access to Paparazzi 1.3.5 internal machinery ---
+// Treat the pinned paparazzi jar as a "friend module" so its Kotlin `internal`
+// symbols (Renderer, SessionParamsBuilder, PaparazziCallback, PaparazziLogger,
+// LayoutPullParser, internal.resources.*) are usable from the host EngineAdapter.
+// If this flag is silently dropped, EngineSurfaceProbe.kt fails to compile.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+  val friendJars = configurations.named("compileClasspath").map { cfg ->
+    cfg.filter { it.name.matches(Regex("""paparazzi-\d[\d.]*\.jar""")) }.asPath
+  }
+  compilerOptions {
+    freeCompilerArgs.add(friendJars.map { "-Xfriend-paths=$it" })
+  }
+}
+
 tasks.test {
   useJUnitPlatform()
 }
