@@ -1,21 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import * as path from 'path';
 import {
+  ResourceRootResolver,
   RootsDeps,
+  detectEcosystem,
   discoverResourceRoot,
   isEligibleResourceFile,
   isResFolderName,
   isResourceTypeDir,
 } from './roots';
 
+/** Controllable in-memory deps: mutate `configured`/`workspaceRoot` to simulate setting changes. */
+interface FakeDeps extends RootsDeps {
+  configured: string[];
+  workspaceRoot?: string;
+}
+
 /**
  * In-memory {@link RootsDeps} over a set of directory paths. Only directories are modeled (the
  * walker never reads files); `readdir` returns the immediate child dir names of a path. Casing is
  * preserved exactly as given, so case-insensitive matching is tested independently of the host FS.
  */
-function fakeDeps(dirs: string[]): RootsDeps {
+function fakeDeps(dirs: string[], opts: { configured?: string[]; workspaceRoot?: string } = {}): FakeDeps {
   const set = new Set(dirs.map((d) => path.resolve(d)));
-  return {
+  const state: FakeDeps = {
+    configured: opts.configured ?? [],
+    workspaceRoot: opts.workspaceRoot,
     isDirectory: (p: string) => set.has(path.resolve(p)),
     readdir: (p: string) => {
       const rp = path.resolve(p);
@@ -26,7 +36,9 @@ function fakeDeps(dirs: string[]): RootsDeps {
       }
       return children;
     },
+    getConfiguredRoots: () => state.configured,
   };
+  return state;
 }
 
 // Gradle-shaped tree: .../app/src/main/res with layout/ + values/ + layout-sw600dp/.
@@ -140,5 +152,120 @@ describe('discoverResourceRoot (P1-G AC1, Q6)', () => {
     const deps = fakeDeps(['/tmp/snippet']);
     const root = discoverResourceRoot('/tmp/snippet/scratch.xml', deps);
     expect(root).toBeNull();
+  });
+});
+
+// --- T22: source-set enumeration, ordering, settings merge, ecosystem tag, memo ---
+
+// A single-module Gradle project with two source sets (main + free flavor) under app/, plus a
+// SEPARATE lib module that must NOT be auto-included (Q7).
+const GRADLE_MODULE_DIRS = [
+  '/w/proj',
+  '/w/proj/app',
+  '/w/proj/app/src',
+  '/w/proj/app/src/main',
+  '/w/proj/app/src/main/res',
+  '/w/proj/app/src/main/res/layout',
+  '/w/proj/app/src/free',
+  '/w/proj/app/src/free/res',
+  '/w/proj/app/src/free/res/values',
+  '/w/proj/lib',
+  '/w/proj/lib/src',
+  '/w/proj/lib/src/main',
+  '/w/proj/lib/src/main/res',
+  '/w/proj/lib/src/main/res/values',
+];
+
+describe('detectEcosystem', () => {
+  it('classifies gradle / dotnet / plain / none by root shape (RES-05)', () => {
+    expect(detectEcosystem(path.resolve('/w/proj/app/src/main/res'))).toBe('gradle');
+    expect(detectEcosystem(path.resolve('/w/dn/Resources'))).toBe('dotnet');
+    expect(detectEcosystem(path.resolve('/w/plain/res'))).toBe('plain');
+    expect(detectEcosystem(null)).toBe('none');
+  });
+});
+
+describe('ResourceRootResolver.resolve — ordering & ecosystem (P1-G AC5, Q7)', () => {
+  it('orders the containing module source sets: containing -> main -> alpha, excluding other modules', () => {
+    const deps = fakeDeps(GRADLE_MODULE_DIRS);
+    const info = new ResourceRootResolver(deps).resolve('/w/proj/app/src/main/res/layout/main.xml');
+    expect(info.ecosystem).toBe('gradle');
+    expect(info.roots).toEqual([
+      path.resolve('/w/proj/app/src/main/res'),
+      path.resolve('/w/proj/app/src/free/res'),
+    ]);
+    // The lib module's res is NOT auto-included (Q7 — configured roots would be required).
+    expect(info.roots).not.toContain(path.resolve('/w/proj/lib/src/main/res'));
+  });
+
+  it('puts the containing flavor source set first (flavor precedence)', () => {
+    const deps = fakeDeps(GRADLE_MODULE_DIRS);
+    const info = new ResourceRootResolver(deps).resolve('/w/proj/app/src/free/res/values/strings.xml');
+    expect(info.roots).toEqual([
+      path.resolve('/w/proj/app/src/free/res'),
+      path.resolve('/w/proj/app/src/main/res'),
+    ]);
+  });
+
+  it('appends configured roots (absolute + workspace-relative), after discovered roots', () => {
+    const deps = fakeDeps(GRADLE_MODULE_DIRS, {
+      configured: ['/abs/extra/res', 'shared/res'],
+      workspaceRoot: '/w',
+    });
+    const info = new ResourceRootResolver(deps).resolve('/w/proj/app/src/main/res/layout/main.xml');
+    expect(info.roots).toEqual([
+      path.resolve('/w/proj/app/src/main/res'),
+      path.resolve('/w/proj/app/src/free/res'),
+      path.resolve('/abs/extra/res'),
+      path.resolve('/w/shared/res'),
+    ]);
+  });
+
+  it('tags a bare conventional res tree as plain (single root)', () => {
+    const deps = fakeDeps(['/w/plain', '/w/plain/res', '/w/plain/res/layout']);
+    const info = new ResourceRootResolver(deps).resolve('/w/plain/res/layout/main.xml');
+    expect(info.ecosystem).toBe('plain');
+    expect(info.roots).toEqual([path.resolve('/w/plain/res')]);
+  });
+
+  it('tags a .NET Resources tree as dotnet (single root)', () => {
+    const deps = fakeDeps(['/w/dn', '/w/dn/Resources', '/w/dn/Resources/Layout']);
+    const info = new ResourceRootResolver(deps).resolve('/w/dn/Resources/Layout/Main.axml');
+    expect(info.ecosystem).toBe('dotnet');
+    expect(info.roots).toEqual([path.resolve('/w/dn/Resources')]);
+  });
+
+  it('single-file mode: no root -> ecosystem none, empty discovered roots (still merges configured)', () => {
+    const deps = fakeDeps(['/tmp/snip'], { configured: ['/abs/res'], workspaceRoot: '/w' });
+    const info = new ResourceRootResolver(deps).resolve('/tmp/snip/scratch.xml');
+    expect(info.ecosystem).toBe('none');
+    expect(info.roots).toEqual([path.resolve('/abs/res')]);
+  });
+});
+
+describe('ResourceRootResolver memoization & invalidation (P1-G AC5)', () => {
+  it('memoizes per document and refreshes only after invalidate on a setting change', () => {
+    const deps = fakeDeps(['/w/plain', '/w/plain/res', '/w/plain/res/layout'], {
+      configured: [],
+      workspaceRoot: '/w',
+    });
+    const resolver = new ResourceRootResolver(deps);
+    const doc = '/w/plain/res/layout/main.xml';
+
+    const first = resolver.resolve(doc);
+    expect(first.roots).toEqual([path.resolve('/w/plain/res')]);
+
+    // Simulate an `inflate.resourceRoots` setting change.
+    deps.configured = ['/extra/res'];
+
+    // Still cached — memo returns the pre-change result.
+    expect(resolver.resolve(doc).roots).toEqual([path.resolve('/w/plain/res')]);
+
+    // After invalidation the new configured root is picked up.
+    resolver.invalidate(doc);
+    expect(resolver.resolve(doc).roots).toEqual([
+      path.resolve('/w/plain/res'),
+      path.resolve('/extra/res'),
+    ]);
   });
 });
