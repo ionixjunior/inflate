@@ -4,6 +4,7 @@ import android.view.View
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Environment
 import app.cash.paparazzi.PaparazziSdk
+import app.cash.paparazzi.internal.resources.AarSourceResourceRepository
 import app.cash.paparazzi.internal.resources.AppResourceRepository
 import app.cash.paparazzi.internal.resources.FrameworkResourceRepository
 import com.android.ide.common.rendering.api.ResourceNamespace
@@ -28,6 +29,13 @@ class EngineAdapter(
   private val resourcesRoot: File,
   private val deviceConfig: DeviceConfig = DeviceConfig(),
   private val theme: String = "android:Theme.Material.NoActionBar.Fullscreen",
+  /**
+   * `res/` directories from the bundled androidx/Material AARs (design §D4). Built once into
+   * immutable [AarSourceResourceRepository] library repositories and merged BELOW the project roots
+   * in every session's [AppResourceRepository], so project resources override library resources of
+   * the same name (RES-02) while `@style/Widget.Material3.*` etc. resolve from the bundle (LAY-05).
+   */
+  private val libraryResDirs: List<File> = emptyList(),
 ) {
   private var sdk: PaparazziSdk? = null
   private var lastImage: BufferedImage? = null
@@ -56,6 +64,16 @@ class EngineAdapter(
     private set
 
   private var frameworkStyleRepo: AbstractResourceRepository? = null
+
+  /**
+   * The bundled library resource repositories (design §D4). Built once from [libraryResDirs] and
+   * reused for every session rebuild — "framework + AAR repositories immutable per process" (§D5).
+   */
+  private val libraryRepos: List<AarSourceResourceRepository> by lazy {
+    libraryResDirs.filter { it.isDirectory }.map { resDir ->
+      AarSourceResourceRepository.create(resDir.toPath(), resDir.parentFile?.name ?: resDir.name)
+    }
+  }
 
   private data class SessionKey(val rootPaths: List<String>, val packageName: String)
 
@@ -133,7 +151,7 @@ class EngineAdapter(
       val newAppRepo = AppResourceRepository.create(
         localResourceDirectories = ordered.reversed(),
         moduleResourceDirectories = emptyList(),
-        libraryRepositories = emptyList(),
+        libraryRepositories = libraryRepos,
       )
       PaparazziSdk.sessionParamsBuilder =
         PaparazziSdk.sessionParamsBuilder.copy(projectResources = newAppRepo)
@@ -285,13 +303,18 @@ class EngineAdapter(
       appTestDir: File,
       roots: List<File>,
       packageName: String = "com.inflate.preview",
+      /**
+       * Bundled androidx/Material AAR package names whose generated R classes ([RClassGenerator])
+       * are on the classpath (T39, LAY-05). `PaparazziCallback.initResources` loads each package's
+       * `R` and registers its ids → resource references so library styleables/attrs resolve. The
+       * PROJECT package stays absent: there is no generated R for arbitrary-file rendering (Q3).
+       */
+      resourcePackageNames: List<String> = emptyList(),
     ): Environment = Environment(
       appTestDir = appTestDir.absolutePath,
       packageName = packageName,
       compileSdkVersion = 34,
-      // Empty: there is no generated R class for arbitrary-file rendering (Q3). Resource ids are
-      // generated dynamically by PaparazziCallback and resolved via Resources.getIdentifier.
-      resourcePackageNames = emptyList(),
+      resourcePackageNames = resourcePackageNames,
       localResourceDirs = roots.map { it.absolutePath },
       moduleResourceDirs = emptyList(),
       libraryResourceDirs = emptyList(),

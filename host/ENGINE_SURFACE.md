@@ -64,6 +64,58 @@ Android Studio's own callback returns a MockView; Paparazzi's does not.
 custom-view fixture then renders with no exception escaping. The adapter/LogBridge public interfaces
 are unchanged, so downstream phases are unaffected; the full preprocessor (Phase 5) generalises this.
 
+## Framework-class delegation for library views (T38b, AD-014)
+
+**The gap (empirically verified T39/T38b).** layoutlib's `layoutlib_create` transform renames six
+framework classes to `_Original_*` and expects the *canonical* names to be resolvable **separately**:
+
+| Renamed original (present in `layoutlib-14.0.11.jar`) | Canonical name layoutlib expects (ABSENT from every published jar) |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| `android/os/_Original_Build` (+ `$VERSION`, `$VERSION_CODES`, `$Partition`) | `android/os/Build` (+ inner) |
+| `android/os/_Original_ServiceManager` (+ inner) | `android/os/ServiceManager` |
+| `android/view/_Original_SurfaceView` (+ inner) | `android/view/SurfaceView` |
+| `android/view/_Original_WindowManagerImpl` (+ inner) | `android/view/WindowManagerImpl` |
+| `android/view/textservice/_Original_TextServicesManager` | `android/view/textservice/TextServicesManager` |
+| `android/webkit/_Original_WebView` (+ inner) | `android/webkit/WebView` |
+
+Confirmed via `unzip -l`: the canonical `android/os/Build.class` is in **no** cached jar (layoutlib jar,
+runtime jar, resources jar, tools jars); only `_Original_Build` exists. The `create` package present in
+the layoutlib jar is metadata + runtime support only (`CreateInfo`, `NativeConfig`, `OverrideMethod`,
+`MethodAdapter`, `InjectMethodRunnables`) — the generating tool (`create.Main`/`AsmGenerator`) is **not
+published**.
+
+**How Paparazzi's own suite resolves it (the reference mechanism).** Paparazzi 1.3.5 pins the exact same
+`com.android.tools.layoutlib:layoutlib:14.0.11`. Its Gradle plugin adds **no** ASM transform (only an
+`UnzipTransform` for the native runtime). The canonical `android.os.Build` comes from the **mockable
+`android.jar`** the Android Gradle Plugin puts on every Android module's unit-test runtime classpath.
+`Renderer.configureBuildProperties()` then copies `_Original_Build`'s field values into it, and
+`PaparazziSdk.forcePlatformSdkVersion()` sets `Build.VERSION.SDK_INT`. Both **silently `return`** when
+`android.os.Build` is not loadable (`catch (ClassNotFoundException)`), which is why framework-only
+rendering (`LinearLayout`/`TextView`, which never force-resolve `Build`) worked through M0–M6 and the gap
+only surfaced when a real `MaterialButton` (`MaterialButton.<init>` reads `Build.VERSION.SDK_INT`) was
+first inflated in Phase 7 → `NoClassDefFoundError: android/os/Build$VERSION` → MockView substitution.
+
+**Our mechanism (SDK-free equivalent).** Inflate ships no Android SDK (AD-006), so we reconstruct the six
+canonical classes from layoutlib's own `_Original_*` copies — which ARE the real framework
+implementations — by a **byte-faithful ASM class rename** (`/_Original_` → `/`):
+`engine.FrameworkDelegateGenerator` (`org.ow2.asm:asm` + `asm-commons`, `ClassRemapper` +
+`ClassWriter.COMPUTE_MAXS`). This is strictly more faithful than hand-written stubs (every field, nested
+class and method is preserved) and cannot collide (layoutlib ships only `_Original_*`, never the
+canonical names, so the produced jar *adds* classes). A byte-identical `Build.<clinit>` is proven safe
+under the Bridge because Paparazzi's `configureBuildProperties()` already forces `_Original_Build.<clinit>`
+to run to copy values. The Gradle task `generateFrameworkDelegates` runs it against the resolved
+`layoutlib` jar and puts `framework-delegates.jar` on the `engineTest` classpath; the same
+`FrameworkDelegateGenerator.generate(layoutlibJar, outJar)` is reusable by the real host at engine setup.
+
+Verified (T38b): `engine.LibraryResourcesTest` inflates a real
+`com.google.android.material.button.MaterialButton` inside `androidx.constraintlayout.widget.ConstraintLayout`
+(no `NoClassDefFoundError`, no MockView) under `Theme.Material3.DayNight`.
+
+**New internal/library symbols touched.** `org.objectweb.asm.{ClassReader,ClassWriter}` and
+`org.objectweb.asm.commons.{ClassRemapper,Remapper}` (ASM 9.7). No new Paparazzi/layoutlib *internal*
+symbols beyond those already inventoried above; the delegation operates purely on layoutlib's published
+`_Original_*` bytecode.
+
 ## Appendix — measured artifact sizes (T3)
 
 Measured by `./gradlew fetchEngine` on macOS arm64 (2026-07-19). Cache layout:

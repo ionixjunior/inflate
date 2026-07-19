@@ -7,6 +7,7 @@ tools = "31.4.2"           # com.android.tools:{common,sdk-common,layoutlib-api,
 moshi = "1.15.1"           # host RPC codec (already on Paparazzi classpath)
 kxml2 = "2.3.0"            # preprocessor parser (already on Paparazzi classpath)
 junit = "5.10.3"           # host unit + engineTest runner (JUnit 5)
+asm = "9.7"                # framework-delegate class rename (T38b): _Original_* -> canonical names
 
 [libraries]
 paparazzi = { module = "app.cash.paparazzi:paparazzi", version.ref = "paparazzi" }
@@ -19,6 +20,8 @@ moshi-kotlin = { module = "com.squareup.moshi:moshi-kotlin", version.ref = "mosh
 kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

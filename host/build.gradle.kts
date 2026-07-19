@@ -34,6 +34,10 @@ dependencies {
   // reflection-based adapter factory for the protocol DTOs (rpc/Dto.kt) — no kapt/KSP needed.
   implementation(libs.moshi)
   implementation(libs.moshi.kotlin)
+  // T38b: ASM class rename to synthesise the framework "delegate" classes (android.os.Build etc.)
+  // that layoutlib renames to _Original_* but does not ship — see FrameworkDelegateGenerator.
+  implementation(libs.asm)
+  implementation(libs.asm.commons)
 
   testImplementation(platform(libs.junit.bom))
   testImplementation(libs.junit.jupiter)
@@ -165,11 +169,137 @@ tasks.register<JavaExec>("generateEngineManifest") {
 
 val engineCacheDir = layout.projectDirectory.dir(".engine-cache")
 
+// --- T39: bundled androidx/Material library artifacts for engineTest ---
+// Real Material rendering (P1-B, LAY-05) needs the AAR classes on the engine classpath and their
+// res/ dirs available as library resource repositories. This mirrors, for the in-JVM engineTest,
+// what `ArtifactManager` does per-user on the extension side: resolve the D4 closure, then extract
+// each AAR's `classes.jar` (→ engine classpath) and `res/` (→ library repositories), plus each
+// AAR's declared package name (→ generated R classes / resourcePackageNames).
+val engineTestLibs: Configuration by configurations.creating { isTransitive = true }
+dependencies {
+  manifestAndroidxNotations.forEach { engineTestLibs(it) }
+}
+
+val engineTestLibsDir = layout.buildDirectory.dir("engineTestLibs")
+
+val prepareEngineTestLibs = tasks.register("prepareEngineTestLibs") {
+  group = "engine"
+  description = "Extracts the androidx/Material AAR closure (classes.jar + res/ + package names) " +
+    "for the engineTest classpath and library resource repositories (T39)."
+  val libFiles = engineTestLibs
+  val outProvider = engineTestLibsDir
+  inputs.files(libFiles)
+  outputs.dir(outProvider)
+  doLast {
+    val out = outProvider.get().asFile
+    out.deleteRecursively()
+    val jarsDir = out.resolve("jars").apply { mkdirs() }
+    val resDir = out.resolve("res").apply { mkdirs() }
+    val rtxtDir = out.resolve("rtxt").apply { mkdirs() }
+    val pkgs = linkedSetOf<String>()
+    libFiles.files.forEach { f ->
+      when (f.extension) {
+        "jar" -> f.copyTo(jarsDir.resolve(f.name), overwrite = true)
+        "aar" -> {
+          val base = f.nameWithoutExtension
+          val tmp = out.resolve("unzip/$base").apply { mkdirs() }
+          project.copy {
+            from(project.zipTree(f))
+            into(tmp)
+          }
+          tmp.resolve("classes.jar").takeIf { it.exists() }
+            ?.copyTo(jarsDir.resolve("$base-classes.jar"), overwrite = true)
+          tmp.resolve("res").takeIf { it.isDirectory }
+            ?.copyRecursively(resDir.resolve(base).resolve("res"), overwrite = true)
+          val pkg = tmp.resolve("AndroidManifest.xml").takeIf { it.exists() }?.let { m ->
+            Regex("""package\s*=\s*"([^"]+)"""").find(m.readText())?.groupValues?.get(1)
+          }
+          if (pkg != null) {
+            pkgs.add(pkg)
+            // R.txt keyed by package, for the R-class generator (T39). No R.txt ⇒ resource-only AAR.
+            tmp.resolve("R.txt").takeIf { it.isFile }?.copyTo(rtxtDir.resolve("$pkg.txt"), overwrite = true)
+          }
+        }
+      }
+    }
+    out.resolve("packages.txt").writeText(pkgs.joinToString("\n"))
+  }
+}
+
+// AGP symbol machinery (sdk-common) + transitives (guava, kotlin-stdlib) for the R-class generator.
+val rClassTools: Configuration by configurations.creating
+dependencies {
+  rClassTools(libs.tools.sdk.common)
+  rClassTools(libs.tools.common)
+  rClassTools(libs.tools.layoutlib.api)
+}
+
+val engineTestRClassesJar = engineTestLibsDir.map { it.file("R-classes.jar") }
+val engineTestRPackagesFile = engineTestLibsDir.map { it.file("r-packages.txt") }
+
+val generateEngineTestRClasses = tasks.register<JavaExec>("generateEngineTestRClasses") {
+  group = "engine"
+  description = "Generates + compiles R classes for the bundled AAR closure so real Material/androidx " +
+    "view classes inflate under the dynamic-id scheme (T39)."
+  dependsOn(prepareEngineTestLibs)
+  classpath = sourceSets.main.get().output + rClassTools
+  mainClass.set("engine.RClassGeneratorKt")
+  inputs.dir(engineTestLibsDir.map { it.dir("rtxt") })
+  outputs.file(engineTestRClassesJar)
+  outputs.file(engineTestRPackagesFile)
+  doFirst {
+    args(
+      engineTestLibsDir.get().dir("rtxt").asFile.absolutePath,
+      engineTestLibsDir.get().dir("rgen").asFile.absolutePath,
+      engineTestRClassesJar.get().asFile.absolutePath,
+      engineTestRPackagesFile.get().asFile.absolutePath,
+    )
+  }
+}
+
+// --- T38b: framework-delegate classes (android.os.Build etc.) synthesised from layoutlib ---
+// layoutlib renames six framework classes to _Original_* and expects the canonical names to be
+// resolvable separately (from the mockable android.jar in a normal Android unit test). Inflate ships
+// no Android SDK (AD-006), so FrameworkDelegateGenerator ASM-renames those _Original_* classes back to
+// their canonical names into a jar that joins the engine classpath — otherwise library views whose
+// constructors read android.os.Build$VERSION.SDK_INT (e.g. MaterialButton) fail with NoClassDefFoundError.
+val layoutlibClasses: Configuration by configurations.creating { isTransitive = false }
+dependencies {
+  layoutlibClasses("com.android.tools.layoutlib:layoutlib:${libs.versions.layoutlib.get()}")
+}
+
+val frameworkDelegatesJar = engineTestLibsDir.map { it.file("framework-delegates.jar") }
+
+val generateFrameworkDelegates = tasks.register<JavaExec>("generateFrameworkDelegates") {
+  group = "engine"
+  description = "Synthesises the android.os.Build etc. framework delegate classes layoutlib omits, " +
+    "by ASM-renaming its _Original_* classes to canonical names (T38b, AD-014)."
+  classpath = sourceSets.main.get().output + configurations.runtimeClasspath.get()
+  mainClass.set("engine.FrameworkDelegateGeneratorKt")
+  val layoutlibJar = layoutlibClasses
+  inputs.files(layoutlibJar)
+  outputs.file(frameworkDelegatesJar)
+  doFirst {
+    args(layoutlibJar.singleFile.absolutePath, frameworkDelegatesJar.get().asFile.absolutePath)
+  }
+}
+
 val engineTestTask = tasks.register<Test>("engineTest") {
+  dependsOn(prepareEngineTestLibs, generateEngineTestRClasses, generateFrameworkDelegates)
   description = "Runs engine integration tests against cached layoutlib artifacts."
   group = "verification"
   testClassesDirs = engineTest.output.classesDirs
   classpath = engineTest.runtimeClasspath
+  // AAR/JAR classes + generated R classes from the bundled androidx/Material closure join the engine
+  // classpath so real Material widgets inflate (no MockView) — res dirs / package lists reach the
+  // test via props.
+  classpath += fileTree(engineTestLibsDir) { include("jars/*.jar") }
+  classpath += files(engineTestRClassesJar)
+  // Framework delegates (android.os.Build etc.) so library view constructors resolve them (T38b).
+  classpath += files(frameworkDelegatesJar)
+  systemProperty("inflate.engineTest.libResRoot", engineTestLibsDir.get().dir("res").asFile.absolutePath)
+  systemProperty("inflate.engineTest.libPackages", engineTestLibsDir.get().file("packages.txt").asFile.absolutePath)
+  systemProperty("inflate.engineTest.rPackages", engineTestRPackagesFile.get().asFile.absolutePath)
   useJUnitPlatform()
   shouldRunAfter(tasks.test)
   // engineTest is intentionally NOT wired into `check`/`build`: it needs the downloaded

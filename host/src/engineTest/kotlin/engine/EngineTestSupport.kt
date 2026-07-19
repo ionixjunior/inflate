@@ -52,6 +52,32 @@ object EngineTestSupport {
     return dest
   }
 
+  /**
+   * `res/` dirs of the bundled androidx/Material AAR closure, extracted by the `prepareEngineTestLibs`
+   * Gradle task (T39) and located via the `inflate.engineTest.libResRoot` system property. These feed
+   * [EngineAdapter]'s library resource repositories so `@style/Widget.Material3.*` etc. resolve.
+   */
+  fun libResDirs(): List<File> {
+    val root = File(System.getProperty("inflate.engineTest.libResRoot") ?: return emptyList())
+    if (!root.isDirectory) return emptyList()
+    return root.listFiles()?.sorted()?.mapNotNull { File(it, "res").takeIf(File::isDirectory) } ?: emptyList()
+  }
+
+  /** Declared package names of the bundled AAR closure (from the `prepareEngineTestLibs` task). */
+  fun libPackages(): List<String> {
+    val f = File(System.getProperty("inflate.engineTest.libPackages") ?: return emptyList())
+    return if (f.isFile) f.readLines().map(String::trim).filter(String::isNotEmpty) else emptyList()
+  }
+
+  /**
+   * Package names for which R classes were generated + compiled (`generateEngineTestRClasses`, T39).
+   * These feed `resourcePackageNames` so `PaparazziCallback.initResources` registers library ids.
+   */
+  fun rPackages(): List<String> {
+    val f = File(System.getProperty("inflate.engineTest.rPackages") ?: return emptyList())
+    return if (f.isFile) f.readLines().map(String::trim).filter(String::isNotEmpty) else emptyList()
+  }
+
   /** Center-pixel ARGB of an image (used to assert a rendered color). */
   fun centerArgb(image: java.awt.image.BufferedImage): Int =
     image.getRGB(image.width / 2, image.height / 2)
