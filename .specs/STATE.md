@@ -100,11 +100,25 @@
 ## Handoff
 
 - **Feature**: android-xml-preview (`.specs/features/android-xml-preview/`)
-- **Phase / Task**: Tasks — tasks.md DRAFTED (2026-07-19), awaiting user approval
-- **Completed**: Specify (confirmed); Design (approved; Q1–Q4 resolved; AD-009..012); Tasks draft: 60 atomic tasks in 10 phases mapped to milestones M0–M7 (M1/M3 split at seams), test coverage matrix (user-confirmed stack: Vitest / JUnit 5 / Gradle `engineTest` source set / Node+pixelmatch corpus), gate commands, dependency DAGs, all three pre-approval checks pass (granularity, diagram cross-check, test co-location). Tools decision: built-in + WebFetch/WebSearch for M0 primary-source checks; no MCPs.
-- **Commit policy (user directive 2026-07-19)**: one atomic commit per task, immediately on gate pass; titles start with an imperative verb ("Create", "Add", "Implement", "Update", …), ≤72 chars.
+- **Phase / Task**: Execute — **Phase 1 (M0 Engine Spike) COMPLETE** (T1–T9 done, 2026-07-19).
+- **Completed**: Specify; Design (AD-009..012); Tasks (60 tasks / 10 phases). **Phase 1 M0 (T1–T9)** all committed on `main`:
+  T1 Create host Gradle project (857a4b8) · T2 friend-paths + ENGINE_SURFACE (cb0b78e) · T3 fetchEngine (0b8e8cd) ·
+  T4 EngineAdapter split init + rebuildable repos (ed4e9a5) · T5 hello-render → PNG (63836dc) ·
+  T6 extension scaffold + webview (2d084b5) · T7 LogBridge + unknown-view fallback (bd8ec23) ·
+  T8 state injection spike (4545fa1) · T9 M0 findings (this commit).
+- **M0 checklist outcomes**: items 1,2,3,5,6 = **PASS (primary)**; item 4 (unknown-view MockView) = **FALLBACK-APPLIED**
+  (design plan B: `preprocess.UnknownViewSubstitutor` → labeled TextView + LogBridge substitutedClass warning).
+  Trigger + decision recorded in `host/ENGINE_SURFACE.md` and `docs/m0-findings.md`. AD-009 friend-paths mechanism
+  works (primary, no vendoring needed). Timings: cold start 1956 ms, warm render median 30 ms, repo rebuild ~9 ms;
+  measured engine download 159.9 MB (one arch, top-level).
+- **Test counts (Phase 1)**: host unit 24 (JUnit 5) · host engineTest 4 (EngineAdapter/HelloRender/MockView/StateInjection) ·
+  extension vitest 2 · extension integration 1 (@vscode/test-electron). Gates: host `./gradlew build test engineTest` green; extension `npm run build && npm test && npm run test:integration` green.
+- **Environment notes for later phases**: Gradle wrapper 8.10.2 (Kotlin 2.0.21 friend-paths); JDK 17 at
+  `/Library/Java/.../microsoft-17.jdk`. `host/.engine-cache/` is gitignored — later engineTest gates require
+  `./gradlew fetchEngine` first. engineTest task sets layoutlib runtime/resources props + JPMS `--add-opens` + `forkEvery(1)`.
+  `resourcePackageNames` MUST stay empty (no R class; dynamic ids, Q3). Paparazzi 1.3.5 sources cached in scratchpad for reference.
 - **In-progress** (file:line): none
-- **Next step**: Execute (fresh session). tasks.md APPROVED by user (2026-07-19). **Sub-agent offer already made and ACCEPTED by user (2026-07-19) — do not re-offer**: dispatch batch workers (~9 batches, whole phases per tasks.md §Phase Execution Map, strictly sequential, compact summaries, one atomic verb-first commit per task). Execute starts with Phase 1 = M0 empirical checklist; on any M0 item failure apply the design's pre-agreed fallback and record it here. Verifier runs automatically after the final task of the run.
+- **Next step**: Phase 2 (M1a Protocol Contract) — T10–T13 (protocol.md + shared fixtures, TS/Kotlin DTOs, RpcServer with LSP framing).
 - **Blockers**: none
-- **Uncommitted files**: none after "Create tasks" commit
-- **Branch**: main (spec c4717fe, design 62034cd)
+- **Uncommitted files**: none after T9 commit
+- **Branch**: main

@@ -47,7 +47,7 @@ interface is identical either way, so downstream phases are unaffected.
 | 3 | Hello-render LinearLayout → PNG (end-to-end gate) | PASS (primary) — T5 (host PNG 200x200, alpha) + T6 (VS Code webview shows the PNG, lazy activation) |
 | 4 | MockView placeholder for unknown views (AD-007 gate) | **FALLBACK-APPLIED** (plan B: preprocessor tag substitution) — see note below |
 | 5 | Drawable state injection ≥3 states (Q2 gate) | PASS (primary) — T8; 4 states render distinctly, findStateDrawableIndex correct. Fallback (re-inflate per state) not needed |
-| 6 | Cold-start + warm-render timings vs NFR-01 | pending T9 |
+| 6 | Cold-start + warm-render timings vs NFR-01 | PASS — T9; cold start 1956 ms (target 5 s), warm render median 30 ms (budget 700 ms). See docs/m0-findings.md |
 
 ## M0 item 4 — fallback trigger + decision (T7)
 
