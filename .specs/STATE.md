@@ -66,13 +66,44 @@
 - **Date**: 2026-07-19
 - **Status**: active
 
+### AD-009
+- **Decision**: The render host accesses Paparazzi 1.3.5 as a library, compiling its EngineAdapter with `-Xfriend-paths` against the pinned jar to reach Kotlin-`internal` machinery (resource repositories, SessionParamsBuilder, LayoutPullParser, callback/logger). The adapter re-implements `Renderer.prepare()` split into one-time Bridge init + rebuildable app-resource repositories. Every internal symbol touched is inventoried in `host/ENGINE_SURFACE.md`. Pre-agreed fallback: vendor the ~6 core files (Apache-2.0) if friend-paths breaks.
+- **Reason**: Verified in 1.3.5 source: `PaparazziSdk` holds process-global companion state building repositories exactly once per JVM — stock API cannot refresh resources, which hot reload (P1-F) requires. Repository build is separable from Bridge init (code order in `Renderer.prepare()`), enabling cheap invalidation.
+- **Trade-off**: Depends on an unstable compiler flag + internal APIs; contained by exact pinning, the surface inventory, the vendoring fallback, and the M0 gate.
+- **Scope**: Host build, engine upgrades, R1/R2 risk handling.
+- **Date**: 2026-07-19
+- **Status**: active
+
+### AD-010
+- **Decision**: Extension ↔ host protocol is LSP-style header-framed JSON-RPC over stdio (`vscode-jsonrpc` on the TS side, moshi + ~100-line framing on the host). Rendered images travel by file path (host writes PNG to a session output dir consumed via `asWebviewUri`), never base64-in-JSON. stdout carries only protocol frames; all host logging goes to stderr.
+- **Reason**: Battle-tested framing on both sides with off-the-shelf client; avoids 33% base64 overhead and MB-scale JSON parse churn; the webview needs a file URI anyway.
+- **Trade-off**: Output-dir lifecycle (sweeping, webview localResourceRoots registration) is ours to manage.
+- **Scope**: Protocol, HostManager, webview, all future host-backed features.
+- **Date**: 2026-07-19
+- **Status**: active
+
+### AD-011
+- **Decision**: (Refines AD-006 packaging.) The VSIX bundles the host fat-jar containing our code + Paparazzi + all Maven-Central transitives (~25–40 MB). Everything Google-Maven-hosted is downloaded to the versioned cache: layoutlib triple (14.0.11: layoutlib 50.6 MB, runtime-per-arch ~76 MB, resources 33 MB), tools jars (31.4.2), androidx/Material AAR set. Measured per-user one-time download ≈ 165–175 MB. The exact artifact closure is generated at build time into `engine-manifest.json` (URL + SHA-256 + size per artifact) by a Gradle task — never hand-maintained. Cache keyed by manifest hash.
+- **Reason**: Keeps NFR-04's "only network traffic is Google Maven" promise while keeping the VSIX reasonably small; measured sizes land inside the spec's 150–250 MB estimate (Q4 resolved).
+- **Trade-off**: VSIX carries ~25–40 MB of Maven-Central deps that never change per-user.
+- **Scope**: Packaging, ArtifactManager, supply-chain security, Doctor reporting.
+- **Date**: 2026-07-19
+- **Status**: active
+
+### AD-012
+- **Decision**: Repo layout is `extension/` (TypeScript VS Code extension incl. `webview-ui/`), `host/` (Kotlin JVM render host, built with Gradle at development time only), `fixtures/` (golden corpus: gradle-sample, dotnet-sample, galleries), `docs/protocol.md` (protocol contract, DTOs mirrored TS/Kotlin with shared-fixture tests). Gradle/MSBuild remain forbidden at user runtime (AD-001); Gradle is permitted as our own dev-time build tool.
+- **Reason**: Two toolchains need clean separation; the protocol contract needs one authoritative home; AD-001's no-build-system rule is about the user's machine, not our CI.
+- **Scope**: Repo structure, CI, contributor docs.
+- **Date**: 2026-07-19
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: android-xml-preview (`.specs/features/android-xml-preview/`)
-- **Phase / Task**: Specify — COMPLETE and confirmed (assumptions reviewed by user; Q1 resolved via AD-008; closure gate passes)
-- **Completed**: clarification rounds 1–2 (8 decisions), fact-verification research, spec.md, context.md, AD-001..AD-008
+- **Phase / Task**: Design — COMPLETE and APPROVED by user (2026-07-19)
+- **Completed**: Specify (confirmed); Design research resolving Q1–Q4 from primary sources (Paparazzi 1.3.5 tag sources + POM, Google Maven HEAD checks): layoutlib pin = 14.0.11 (no independent bump), Q3 = overlay + unique-name resource inflation via public API, Q2 = state injection high-confidence (M0 confirms), Q4 = measured ≈165–175 MB; design.md (architecture, D2–D6 finalized, 18 components, protocol DTOs, error handling, risks, coverage matrix for all 37 IDs + NFRs, M0 checklist); AD-009..AD-012 appended.
 - **In-progress** (file:line): none
-- **Next step**: Enter Design phase — write design.md; first activity is the M0 spike on the pinned engine (layoutlib pairing for Paparazzi 1.3.5, state injection Q2, arbitrary-file render path Q3, download size Q4). Initialize git repo before Execute (atomic commits required).
-- **Blockers**: none
-- **Uncommitted files**: `.specs/*` (repo not yet a git repository)
-- **Branch**: n/a (no git repo yet)
+- **Next step**: Tasks phase — write formal tasks.md from spec.md + design.md (Complex tier: full breakdown with dependencies + phase plan mapped to milestones M0–M7; task count will exceed one ~8-task batch → the sub-agent offer applies before Execute). Execute begins with the M0 empirical checklist (design.md last section). Read design.md §Components + §M0 checklist and spec.md §Traceability when deriving tasks.
+- **Blockers**: none (design has pre-agreed fallbacks for every M0 unknown)
+- **Uncommitted files**: `.specs/STATE.md` (modified), `.specs/features/android-xml-preview/design.md` (new, approved) — commit when user asks (suggested message: "Create design")
+- **Branch**: main (repo initialized; spec committed as c4717fe)
