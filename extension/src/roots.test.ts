@@ -4,6 +4,7 @@ import {
   ResourceRootResolver,
   RootsDeps,
   detectEcosystem,
+  parseManifest,
   discoverResourceRoot,
   isEligibleResourceFile,
   isResFolderName,
@@ -21,8 +22,13 @@ interface FakeDeps extends RootsDeps {
  * walker never reads files); `readdir` returns the immediate child dir names of a path. Casing is
  * preserved exactly as given, so case-insensitive matching is tested independently of the host FS.
  */
-function fakeDeps(dirs: string[], opts: { configured?: string[]; workspaceRoot?: string } = {}): FakeDeps {
+function fakeDeps(
+  dirs: string[],
+  opts: { configured?: string[]; workspaceRoot?: string; files?: Record<string, string> } = {},
+): FakeDeps {
   const set = new Set(dirs.map((d) => path.resolve(d)));
+  const files: Record<string, string> = {};
+  for (const [p, c] of Object.entries(opts.files ?? {})) files[path.resolve(p)] = c;
   const state: FakeDeps = {
     configured: opts.configured ?? [],
     workspaceRoot: opts.workspaceRoot,
@@ -37,6 +43,12 @@ function fakeDeps(dirs: string[], opts: { configured?: string[]; workspaceRoot?:
       return children;
     },
     getConfiguredRoots: () => state.configured,
+    isFile: (p: string) => path.resolve(p) in files,
+    readFile: (p: string) => {
+      const rp = path.resolve(p);
+      if (!(rp in files)) throw new Error(`ENOENT: ${rp}`);
+      return files[rp];
+    },
   };
   return state;
 }
@@ -267,5 +279,78 @@ describe('ResourceRootResolver memoization & invalidation (P1-G AC5)', () => {
       path.resolve('/w/plain/res'),
       path.resolve('/extra/res'),
     ]);
+  });
+});
+
+// --- T23: manifest package name + android:theme hint (RES-01, CFG-04) ---
+
+const GRADLE_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.app">
+  <application android:theme="@style/AppTheme" />
+</manifest>`;
+
+const DOTNET_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.dotnet">
+  <application android:theme="@android:style/Theme.Material.Light" />
+</manifest>`;
+
+describe('parseManifest', () => {
+  it('extracts package and android:theme', () => {
+    expect(parseManifest(GRADLE_MANIFEST)).toEqual({
+      packageName: 'com.example.app',
+      theme: '@style/AppTheme',
+    });
+  });
+
+  it('returns undefined for absent attributes (graceful no-hint)', () => {
+    expect(parseManifest('<manifest package="x.y"></manifest>')).toEqual({
+      packageName: 'x.y',
+      theme: undefined,
+    });
+    expect(parseManifest('<manifest></manifest>')).toEqual({
+      packageName: undefined,
+      theme: undefined,
+    });
+  });
+
+  it('recovers attributes from a malformed (unclosed) manifest without throwing', () => {
+    const malformed = '<manifest package="z.z" ><application android:theme="@style/Broken" ';
+    expect(parseManifest(malformed)).toEqual({ packageName: 'z.z', theme: '@style/Broken' });
+  });
+});
+
+describe('ResourceRootResolver — manifest completion (RES-01, CFG-04)', () => {
+  it('reads the Gradle source-set manifest for package + theme', () => {
+    const deps = fakeDeps(GRADLE_MODULE_DIRS, {
+      files: { '/w/proj/app/src/main/AndroidManifest.xml': GRADLE_MANIFEST },
+    });
+    const info = new ResourceRootResolver(deps).resolve('/w/proj/app/src/main/res/layout/main.xml');
+    expect(info.packageName).toBe('com.example.app');
+    expect(info.manifestTheme).toBe('@style/AppTheme');
+  });
+
+  it('reads the .NET Properties/AndroidManifest.xml (RES-01)', () => {
+    const deps = fakeDeps(['/w/dn', '/w/dn/Properties', '/w/dn/Resources', '/w/dn/Resources/Layout'], {
+      files: { '/w/dn/Properties/AndroidManifest.xml': DOTNET_MANIFEST },
+    });
+    const info = new ResourceRootResolver(deps).resolve('/w/dn/Resources/Layout/Main.axml');
+    expect(info.packageName).toBe('com.example.dotnet');
+    expect(info.manifestTheme).toBe('@android:style/Theme.Material.Light');
+  });
+
+  it('falls back to com.inflate.preview and no theme when no manifest exists', () => {
+    const deps = fakeDeps(GRADLE_MODULE_DIRS); // no files
+    const info = new ResourceRootResolver(deps).resolve('/w/proj/app/src/main/res/layout/main.xml');
+    expect(info.packageName).toBe('com.inflate.preview');
+    expect(info.manifestTheme).toBeUndefined();
+  });
+
+  it('degrades to fallback package with no theme when the manifest is malformed (no attrs)', () => {
+    const deps = fakeDeps(['/w/dn', '/w/dn/Properties', '/w/dn/Resources', '/w/dn/Resources/Layout'], {
+      files: { '/w/dn/Properties/AndroidManifest.xml': '<<< not really xml >>>' },
+    });
+    const info = new ResourceRootResolver(deps).resolve('/w/dn/Resources/Layout/Main.axml');
+    expect(info.packageName).toBe('com.inflate.preview');
+    expect(info.manifestTheme).toBeUndefined();
   });
 });

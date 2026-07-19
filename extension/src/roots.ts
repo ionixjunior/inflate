@@ -51,6 +51,10 @@ export interface RootsDeps {
   getConfiguredRoots?(): string[];
   /** Workspace folder root, used to resolve workspace-relative configured roots. */
   workspaceRoot?: string;
+  /** True if `p` exists and is a regular file (used for manifest lookup, T23). */
+  isFile?(p: string): boolean;
+  /** Read a text file (UTF-8). Throws if unreadable. Used for manifest parsing (T23). */
+  readFile?(p: string): string;
 }
 
 export function defaultDeps(): RootsDeps {
@@ -64,6 +68,14 @@ export function defaultDeps(): RootsDeps {
     },
     readdir: (p: string) => fs.readdirSync(p),
     getConfiguredRoots: () => [],
+    isFile: (p: string) => {
+      try {
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    },
+    readFile: (p: string) => fs.readFileSync(p, 'utf8'),
   };
 }
 
@@ -184,6 +196,80 @@ export function detectEcosystem(root: string | null): Ecosystem {
   return 'plain';
 }
 
+// --- T23: nearest AndroidManifest.xml -> package name + android:theme hint (RES-01, CFG-04) ---
+
+/**
+ * Extract the `package` name and `android:theme` hint from AndroidManifest.xml content by trivial
+ * regex (design §D3: "if trivially parseable"). Deliberately tolerant — a malformed manifest that
+ * a strict XML parser would reject still yields whatever attributes are present, and yields nothing
+ * (undefined) when an attribute is absent. Never throws.
+ */
+export function parseManifest(content: string): { packageName?: string; theme?: string } {
+  const pkg = /\bpackage\s*=\s*"([^"]+)"/.exec(content)?.[1];
+  const theme = /\bandroid:theme\s*=\s*"([^"]+)"/.exec(content)?.[1];
+  return {
+    packageName: pkg && pkg.trim().length > 0 ? pkg.trim() : undefined,
+    theme: theme && theme.trim().length > 0 ? theme.trim() : undefined,
+  };
+}
+
+/**
+ * Candidate AndroidManifest.xml locations for the discovered root, in priority order (design §D3):
+ *  - Gradle: `src/<containingSourceSet>/AndroidManifest.xml`, then `src/main/...`, then module root.
+ *  - .NET:   `Properties/AndroidManifest.xml`, then the project root.
+ *  - plain:  the root's parent dir, `AndroidManifest.xml` or `Properties/AndroidManifest.xml`.
+ */
+function manifestCandidates(root: string, ecosystem: Ecosystem): string[] {
+  if (ecosystem === 'gradle') {
+    const shape = gradleShape(root);
+    if (shape) {
+      const { moduleDir, sourceSet, srcDir } = shape;
+      return [
+        path.join(srcDir, sourceSet, 'AndroidManifest.xml'),
+        path.join(srcDir, 'main', 'AndroidManifest.xml'),
+        path.join(moduleDir, 'AndroidManifest.xml'),
+      ];
+    }
+  }
+  const projectRoot = path.dirname(root);
+  if (ecosystem === 'dotnet') {
+    return [
+      path.join(projectRoot, 'Properties', 'AndroidManifest.xml'),
+      path.join(projectRoot, 'AndroidManifest.xml'),
+    ];
+  }
+  return [
+    path.join(projectRoot, 'AndroidManifest.xml'),
+    path.join(projectRoot, 'Properties', 'AndroidManifest.xml'),
+  ];
+}
+
+/** Read and parse the first existing manifest candidate; graceful fallback on any failure. */
+function resolveManifest(
+  root: string | null,
+  ecosystem: Ecosystem,
+  deps: RootsDeps,
+): { packageName: string; manifestTheme?: string } {
+  if (root === null || !deps.isFile || !deps.readFile) {
+    return { packageName: FALLBACK_PACKAGE };
+  }
+  for (const candidate of manifestCandidates(root, ecosystem)) {
+    if (!deps.isFile(candidate)) continue;
+    let content: string;
+    try {
+      content = deps.readFile(candidate);
+    } catch {
+      continue;
+    }
+    const parsed = parseManifest(content);
+    return {
+      packageName: parsed.packageName ?? FALLBACK_PACKAGE,
+      manifestTheme: parsed.theme,
+    };
+  }
+  return { packageName: FALLBACK_PACKAGE };
+}
+
 /** Resolve a configured root: absolute kept as-is, relative resolved against the workspace root. */
 function resolveConfiguredRoot(entry: string, deps: RootsDeps): string {
   if (path.isAbsolute(entry)) return path.resolve(entry);
@@ -234,6 +320,7 @@ export class ResourceRootResolver {
       if (!roots.includes(r)) roots.push(r);
     }
 
-    return { roots, packageName: FALLBACK_PACKAGE, ecosystem };
+    const { packageName, manifestTheme } = resolveManifest(root, ecosystem, this.deps);
+    return { roots, packageName, manifestTheme, ecosystem };
   }
 }
