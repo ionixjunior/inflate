@@ -1,9 +1,16 @@
+import java.io.BufferedInputStream
+import rpc.RpcServer
+
 /**
- * Inflate render host entry point.
- *
- * In M0 this is an empty placeholder that proves the Gradle/Kotlin/Paparazzi toolchain
- * compiles on JDK 17. The RPC server (Phase 2, T13) replaces this body.
+ * Inflate render host entry point (T13). Wires the LSP-framed [RpcServer] over stdio.
+ * stdout is reserved exclusively for protocol frames (design §D5) — nothing else may print to it;
+ * `System.in` is wrapped in a [BufferedInputStream] purely for read efficiency (framing itself
+ * tolerates arbitrarily fragmented reads either way, per [rpc.FrameReader]).
  */
 fun main() {
-  // Intentionally empty until the RpcServer is wired in Phase 2 (T13).
+  val server = RpcServer(
+    input = BufferedInputStream(System.`in`),
+    output = System.out,
+  )
+  server.serve()
 }
