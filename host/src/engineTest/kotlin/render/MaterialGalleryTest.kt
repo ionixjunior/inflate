@@ -54,6 +54,12 @@ class MaterialGalleryTest {
     // Render once to apply Theme.Material3.DayNight + install the theme-aware factory.
     val image = session.render(layoutId, theme = "Theme.Material3.DayNight")
 
+    // Opt-in export of the real our-engine render used as the T42 reference (docs/material-quirks.md).
+    System.getenv("INFLATE_DUMP_GALLERY_PNG")?.let { dest ->
+      File(dest).parentFile?.mkdirs()
+      javax.imageio.ImageIO.write(image, "png", File(dest))
+    }
+
     // Re-inflate under the active theme and lay the tree out (snapshot) so bounds are populated.
     val root = adapter.inflate(layoutId)
     adapter.render(root)
