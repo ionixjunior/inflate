@@ -78,6 +78,8 @@ export interface RenderResponse {
   imageHeight?: number;
   staticPreviewBadge?: boolean;
   matchedStateItem?: { index: number; stateAttrs: string[] };
+  /** True when the drawable is state-sensitive (selector/ripple/animated-selector) — DRW-07/P1-D AC3. */
+  stateSensitive?: boolean;
   canvasCapped?: boolean;
   warnings: Warning[];
   error?: { message: string; file?: string; line?: number; column?: number };
@@ -308,6 +310,7 @@ export function parseRenderResponse(value: unknown): RenderResponse {
   }
 
   if (value.staticPreviewBadge !== undefined) response.staticPreviewBadge = reqBoolean(value, dto, 'staticPreviewBadge');
+  if (value.stateSensitive !== undefined) response.stateSensitive = reqBoolean(value, dto, 'stateSensitive');
   if (value.canvasCapped !== undefined) response.canvasCapped = reqBoolean(value, dto, 'canvasCapped');
   if (value.matchedStateItem !== undefined) {
     const m = reqObject(value, dto, 'matchedStateItem');

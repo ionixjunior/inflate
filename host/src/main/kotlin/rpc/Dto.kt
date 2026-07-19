@@ -113,6 +113,8 @@ data class RenderResponse(
   val imageHeight: Int? = null,
   val staticPreviewBadge: Boolean? = null,
   val matchedStateItem: MatchedStateItem? = null,
+  /** True for state-sensitive drawables (selector/ripple/animated-selector) — DRW-07, P1-D AC3. */
+  val stateSensitive: Boolean? = null,
   val canvasCapped: Boolean? = null,
   val warnings: List<Warning>,
   val error: RenderError? = null,
