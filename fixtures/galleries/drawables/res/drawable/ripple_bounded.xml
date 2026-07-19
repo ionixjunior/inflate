@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <ripple> bounded (has a content mask/child); settled overlay shown in pressed state. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/gallery_ripple">
+  <item android:id="@android:id/mask">
+    <shape android:shape="rectangle"><solid android:color="#FFFFFFFF" /></shape>
+  </item>
+  <item android:drawable="@color/gallery_primary" />
+</ripple>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Base vector targeted by animated_vector.xml (a rotating group). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+  <group android:name="spin" android:pivotX="24" android:pivotY="24">
+    <path
+        android:name="bar"
+        android:pathData="M22,6 h4 v36 h-4 z"
+        android:fillColor="#FF3F51B5" />
+  </group>
+</vector>

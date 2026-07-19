@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <color>: a color drawable — rendered as a swatch (T44, DRW-06). -->
+<color xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/gallery_accent" />

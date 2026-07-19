@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <animated-vector>: static initial frame + "static preview" badge (T46, P1-C AC3). -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/av_base">
+  <target
+      android:name="spin"
+      android:animation="@anim/av_rotate" />
+</animated-vector>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <rotate>: rotates a child drawable (level-based; rendered at level 5000). -->
+<rotate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/shape_rectangle"
+    android:fromDegrees="0"
+    android:toDegrees="90"
+    android:pivotX="50%"
+    android:pivotY="50%" />

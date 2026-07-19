@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colors referenced by the drawable gallery fixtures (P1-C AC5: refs resolve via the same chain). -->
+<resources>
+  <color name="gallery_primary">#FF3F51B5</color>
+  <color name="gallery_accent">#FFE91E63</color>
+  <color name="gallery_surface">#FFFFC107</color>
+  <color name="gallery_ripple">#80FF5722</color>
+</resources>

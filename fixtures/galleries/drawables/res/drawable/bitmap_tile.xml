@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <bitmap>: tile mode (repeat) over a png source; also covers gravity/filter knobs. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/tile_src"
+    android:tileMode="repeat"
+    android:filter="false" />

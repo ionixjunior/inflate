@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <shape> ring. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="ring"
+    android:innerRadius="18dp"
+    android:thickness="10dp"
+    android:useLevel="false">
+  <solid android:color="@color/gallery_accent" />
+  <size android:width="72dp" android:height="72dp" />
+</shape>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 mipmap ref: a <bitmap> whose source is a @mipmap resource (resolve + render). -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@mipmap/launcher_src"
+    android:gravity="center" />

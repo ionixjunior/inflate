@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <selector> (StateListDrawable): 4 state items with distinct solid fills so each picked
+     state renders a visibly different image and the matched-item index is checkable (P1-D). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:state_pressed="true">
+    <shape android:shape="rectangle"><solid android:color="#FFFF0000" /></shape>
+  </item>
+  <item android:state_checked="true">
+    <shape android:shape="rectangle"><solid android:color="#FF00FF00" /></shape>
+  </item>
+  <item android:state_enabled="false">
+    <shape android:shape="rectangle"><solid android:color="#FF888888" /></shape>
+  </item>
+  <item>
+    <shape android:shape="rectangle"><solid android:color="#FF0000FF" /></shape>
+  </item>
+</selector>

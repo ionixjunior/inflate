@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <animated-selector>: state-sensitive; start state + static badge (T45/T46). -->
+<animated-selector xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:id="@+id/checked" android:state_checked="true">
+    <shape android:shape="rectangle"><solid android:color="#FF00FF00" /></shape>
+  </item>
+  <item android:id="@+id/unchecked">
+    <shape android:shape="rectangle"><solid android:color="#FF0000FF" /></shape>
+  </item>
+  <transition
+      android:fromId="@id/unchecked"
+      android:toId="@id/checked">
+    <animation-list>
+      <item android:duration="100">
+        <shape android:shape="rectangle"><solid android:color="#FF888888" /></shape>
+      </item>
+    </animation-list>
+  </transition>
+</animated-selector>

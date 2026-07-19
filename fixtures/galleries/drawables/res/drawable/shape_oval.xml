@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <shape> oval with a radial gradient. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+  <gradient
+      android:type="radial"
+      android:gradientRadius="48dp"
+      android:startColor="@color/gallery_surface"
+      android:endColor="@color/gallery_accent" />
+  <size android:width="72dp" android:height="72dp" />
+</shape>

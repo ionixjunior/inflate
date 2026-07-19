@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 drawable alias: an <inset> with no insets forwards to another drawable (resolve + render). -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/shape_oval" />

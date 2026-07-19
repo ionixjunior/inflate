@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <shape> line (a horizontal rule drawn via the stroke). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="line">
+  <stroke android:width="4dp" android:color="@color/gallery_primary" />
+  <size android:width="96dp" android:height="8dp" />
+</shape>

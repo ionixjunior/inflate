@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <clip>: level-based clip. At level 5000 (50%) the child is half-revealed (T46, P1-C AC3). -->
+<clip xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/clip_child"
+    android:clipOrientation="horizontal"
+    android:gravity="left" />

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 color resource (ColorStateList): docKind=color swatch render (T44, DRW-06). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:state_pressed="true" android:color="#FFFF0000" />
+  <item android:color="@color/gallery_primary" />
+</selector>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <vector>: sweep gradient fill, a clip-path, trimPath on a stroked path, and evenOdd
+     fillType — the full vector feature set D1 called out as SVG-converter gaps. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+  <clip-path
+      android:name="clip"
+      android:pathData="M0,0 h40 v48 h-40 z" />
+
+  <path
+      android:name="filled"
+      android:pathData="M4,4 L44,4 L44,44 L4,44 Z M14,14 L34,14 L34,34 L14,34 Z"
+      android:fillType="evenOdd">
+    <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+      <gradient
+          android:type="sweep"
+          android:centerX="24"
+          android:centerY="24"
+          android:startColor="#FFFF0000"
+          android:centerColor="#FF00FF00"
+          android:endColor="#FF0000FF" />
+    </aapt:attr>
+  </path>
+
+  <path
+      android:name="trimmed"
+      android:pathData="M6,24 L42,24"
+      android:strokeColor="#FF000000"
+      android:strokeWidth="3"
+      android:trimPathStart="0.0"
+      android:trimPathEnd="0.5" />
+</vector>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- §FR-3 <transition> (TransitionDrawable): start state + static badge (T46, P1-C AC3). -->
+<transition xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:drawable="@drawable/shape_oval" />
+  <item android:drawable="@drawable/shape_ring" />
+</transition>

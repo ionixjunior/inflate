@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Animator driving animated_vector.xml's "spin" group (playback deferred; frame 0 rendered). -->
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:propertyName="rotation"
+    android:valueFrom="0"
+    android:valueTo="360"
+    android:valueType="floatType"
+    android:duration="1000" />
