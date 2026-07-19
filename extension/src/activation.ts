@@ -13,6 +13,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { classify, isEligible } from './classifier';
 import { HostManager, HostState } from './host';
 import { PreviewConfig, RenderRequest } from './protocol';
 import { previewHtml } from './webview';
@@ -29,12 +30,22 @@ export interface InflateApi {
 
 const OUTPUT_CHANNEL_NAME = 'Inflate';
 
-/** Path-heuristic stub for document eligibility (design component #2; full classifier is T33). */
-function isPathHeuristicallyEligible(fsPath: string): boolean {
-  const normalized = fsPath.replace(/\\/g, '/').toLowerCase();
-  const hasResourceDir = /\/(res|resources)\/(layout|drawable|mipmap)[a-z0-9._-]*\//.test(normalized);
-  const hasEligibleExtension = /\.(xml|axml)$/.test(normalized);
-  return hasResourceDir && hasEligibleExtension;
+/**
+ * Document eligibility for the `inflate:eligibleDocument` context key (T33, design component #2). A
+ * cheap path-only classify is enough to gate the editor-title button / context menu: a file whose
+ * path already places it under a previewable resource-type dir is eligible; for anything else we
+ * sniff the document's first bytes (open documents are already in memory) so a `<vector>` outside a
+ * standard tree still lights up.
+ */
+function isEligibleDocument(editor: vscode.TextEditor | undefined): boolean {
+  if (!editor) return false;
+  const fsPath = editor.document.uri.fsPath;
+  const byPath = classify(fsPath);
+  if (isEligible(byPath)) return true;
+  // Fall back to a root-element sniff of the in-memory buffer (first ~40 lines).
+  const lastLine = Math.min(editor.document.lineCount - 1, 40);
+  const firstKb = editor.document.getText(new vscode.Range(0, 0, lastLine, 0));
+  return isEligible(classify(fsPath, firstKb));
 }
 
 function defaultPreviewConfig(): PreviewConfig {
@@ -83,8 +94,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', false);
 
   const updateEligibility = (editor: vscode.TextEditor | undefined) => {
-    const eligible = editor ? isPathHeuristicallyEligible(editor.document.uri.fsPath) : false;
-    void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', eligible);
+    void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', isEligibleDocument(editor));
   };
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateEligibility));
   updateEligibility(vscode.window.activeTextEditor);

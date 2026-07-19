@@ -1,0 +1,51 @@
+{
+  "resourceTypeDirs": [
+    "anim",
+    "animator",
+    "color",
+    "drawable",
+    "font",
+    "interpolator",
+    "layout",
+    "menu",
+    "mipmap",
+    "navigation",
+    "raw",
+    "transition",
+    "values",
+    "xml"
+  ],
+  "layoutTypeDirs": [
+    "layout"
+  ],
+  "drawableTypeDirs": [
+    "drawable",
+    "mipmap"
+  ],
+  "colorTypeDirs": [
+    "color"
+  ],
+  "drawableRootElements": [
+    "adaptive-icon",
+    "animated-selector",
+    "animated-vector",
+    "animation-list",
+    "bitmap",
+    "clip",
+    "inset",
+    "layer-list",
+    "level-list",
+    "ripple",
+    "rotate",
+    "scale",
+    "selector",
+    "shape",
+    "transition",
+    "vector"
+  ],
+  "eligibleExtensions": [
+    ".9.png",
+    ".axml",
+    ".xml"
+  ]
+}
