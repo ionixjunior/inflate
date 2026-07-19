@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flavor source set (src/free/res). ResourceRootResolver enumerates this as a sibling source-set
+     root ordered AFTER the containing set and main (RES-05). It overrides @string/hello to prove
+     flavor precedence and adds a flavor-only string. -->
+<resources>
+    <string name="hello">Hello Free Flavor</string>
+    <string name="flavor_only">Free build</string>
+</resources>

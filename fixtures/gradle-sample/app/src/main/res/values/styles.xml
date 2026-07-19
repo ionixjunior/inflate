@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Project theme detected via PARENT CHAIN (name does not start with "Theme."): its parent is
+         a framework theme, so ThemeCatalog's bounded parent walk classifies it as a theme. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <!-- Project theme detected via NAME PREFIX ("Theme."). Inherits AppTheme (project parent). -->
+    <style name="Theme.Custom" parent="AppTheme" />
+
+    <!-- Non-theme widget style: excluded from the theme catalog (name/parent are not themes). -->
+    <style name="Body" parent="android:TextAppearance.Material.Body1">
+        <item name="android:textColor">#FF222222</item>
+    </style>
+
+    <!-- Non-theme widget style with an implicit dotted parent ("Widget"): excluded. -->
+    <style name="Widget.Fancy">
+        <item name="android:padding">4dp</item>
+    </style>
+</resources>

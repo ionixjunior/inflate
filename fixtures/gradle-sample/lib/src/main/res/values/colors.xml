@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Library module resources. When the lib root is appended AFTER the app root, the app's
+     @color/background (blue) wins over this red per RES-02 priority ordering (T24). -->
+<resources>
+    <color name="background">#FFFF0000</color>
+    <color name="libOnly">#FF123456</color>
+</resources>

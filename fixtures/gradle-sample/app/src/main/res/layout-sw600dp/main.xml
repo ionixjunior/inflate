@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet (smallest-width >= 600dp) variant of layout/main.xml. Identical structure but the root
+     background is @color/tablet (yellow) so a render whose config selects the -sw600dp bucket is
+     visibly distinguishable from the phone layout (T25 qualifier-selection engineTest). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tablet"
+    android:padding="@dimen/pad">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        style="@style/Body"
+        android:text="@string/hello" />
+
+    <View
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/box" />
+</FrameLayout>

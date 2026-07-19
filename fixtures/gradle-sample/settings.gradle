@@ -1,0 +1,6 @@
+// Fixture only — Inflate never invokes Gradle (AD-001). This file marks the multi-module shape
+// (:app + :lib) so the ResourceRootResolver's Gradle detection and sibling source-set / module
+// enumeration (RES-05, Q7) have a realistic tree to walk. It is NOT built.
+rootProject.name = 'gradle-sample'
+include ':app'
+include ':lib'

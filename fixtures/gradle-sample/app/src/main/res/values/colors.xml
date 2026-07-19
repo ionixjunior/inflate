@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phone/day background (opaque blue). Overridden by values-night (green) and shadowed by the
+         library's lower-priority @color/background (red) — the T24/T25 discriminator colors. -->
+    <color name="background">#FF0000FF</color>
+    <color name="tablet">#FFFFEE00</color>
+    <color name="brand">#FFEE0000</color>
+</resources>
