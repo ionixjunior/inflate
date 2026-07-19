@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  P1-A AC4: structural tags together — <include> (inflated), <ViewStub> (left collapsed),
+  and <fragment tools:layout> (inflated as its design-time layout). Also a plain <fragment>
+  without tools:layout to prove the labeled-placeholder path.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <include layout="@layout/included_child" />
+
+    <ViewStub
+        android:id="@+id/stub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout="@layout/included_child" />
+
+    <fragment
+        android:name="com.example.MapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        tools:layout="@layout/fragment_target" />
+
+    <fragment
+        android:name="com.example.HeadlessFragment"
+        android:layout_width="match_parent"
+        android:layout_height="60dp" />
+</LinearLayout>

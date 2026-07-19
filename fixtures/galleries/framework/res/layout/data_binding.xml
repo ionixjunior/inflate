@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- P1-A AC6: a data-binding layout. The Preprocessor unwraps <layout>/<data> and replaces the
+     @{...} expressions with type-appropriate defaults, emitting a bindingReplaced notice. -->
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+    <data>
+        <variable name="user" type="com.example.User" />
+    </data>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@{user.name}" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="@{user.rowHeight}"
+            android:visibility="@{user.visible}" />
+    </LinearLayout>
+</layout>

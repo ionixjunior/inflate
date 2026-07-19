@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- P1-A AC3: an unclosed tag. The <TextView> on line 6 is never closed, so the well-formedness
+     parse fails at the </LinearLayout> on line 8 (mismatched end tag). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView
+        android:layout_width="wrap_content"
+</LinearLayout>

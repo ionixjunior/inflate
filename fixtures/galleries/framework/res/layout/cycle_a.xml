@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Include-cycle pair (spec edge case): cycle_a includes cycle_b which includes cycle_a. Previewing
+     either aborts the cycle at the include point with a placeholder + a warning naming the path. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="cycle_a" />
+
+    <include layout="@layout/cycle_b" />
+</LinearLayout>
