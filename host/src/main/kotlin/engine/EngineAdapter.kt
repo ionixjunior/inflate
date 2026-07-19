@@ -231,6 +231,17 @@ class EngineAdapter(
   fun frameworkStyleParents(): Map<String, String?> =
     styleParents(frameworkStyleRepository(), ResourceNamespace.ANDROID)
 
+  /**
+   * Whether a project resource `[typeName]/[name]` actually EXISTS in the current app repository.
+   * Unlike [resourceId] (whose dynamic-id scheme, Q3, returns a fresh id for any name and so cannot
+   * detect absence), this queries the repository directly — the basis for degradation (T27).
+   */
+  fun appResourceExists(typeName: String, name: String): Boolean {
+    val type = RES_TYPE_BY_NAME[typeName] ?: return false
+    val repo = currentAppRepo ?: return false
+    return repo.getResources(ResourceNamespace.RES_AUTO, type, name).isNotEmpty()
+  }
+
   private fun frameworkStyleRepository(): AbstractResourceRepository {
     frameworkStyleRepo?.let { return it }
     // Mirror Renderer.prepare's framework repo (default languages only). Built lazily since only
@@ -260,6 +271,15 @@ class EngineAdapter(
   }
 
   companion object {
+    private val RES_TYPE_BY_NAME: Map<String, ResourceType> = mapOf(
+      "color" to ResourceType.COLOR,
+      "dimen" to ResourceType.DIMEN,
+      "string" to ResourceType.STRING,
+      "drawable" to ResourceType.DRAWABLE,
+      "style" to ResourceType.STYLE,
+      "layout" to ResourceType.LAYOUT,
+    )
+
     /** Build a preview Environment rooted at [roots] with the given package (design §D3). */
     fun previewEnvironment(
       appTestDir: File,

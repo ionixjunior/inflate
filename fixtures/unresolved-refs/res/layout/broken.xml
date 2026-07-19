@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fixture for T27 (P1-G AC4). Every reference here is intentionally UNRESOLVABLE so degradation
+     can be exercised: @color/missing, @dimen/missing, @string/missing, @drawable/missing, plus a
+     style whose parent chain is broken (see values/styles.xml). After degradation the file renders
+     with a magenta background and every missing ref replaced per-kind. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/missing"
+    android:padding="@dimen/missing">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        style="@style/Broken"
+        android:text="@string/missing" />
+
+    <View
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/missing" />
+</FrameLayout>

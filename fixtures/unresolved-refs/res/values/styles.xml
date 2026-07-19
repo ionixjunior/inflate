@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A resolvable base style. -->
+    <style name="Base">
+        <item name="android:padding">2dp</item>
+    </style>
+    <!-- Broken's requested parent @style/Base.Ghost does not exist; its nearest resolvable
+         ancestor is @style/Base, which degradation substitutes (spec edge case). -->
+    <style name="Broken" parent="@style/Base.Ghost" />
+</resources>

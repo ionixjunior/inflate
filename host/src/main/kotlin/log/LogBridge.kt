@@ -36,6 +36,36 @@ class LogBridge : ILayoutLog {
     synchronized(collected) { collected.add(entry) }
   }
 
+  /**
+   * Record an unresolved resource reference that was degraded per-kind (RES-04). [tag] is
+   * `"resource"` for a `@kind/name` reference and `"styleParent"` for a degraded style parent, so
+   * callers can partition the two while both surface as [Kind.unresolvedRef] warnings.
+   */
+  fun recordUnresolvedRef(refKind: String, name: String) {
+    add(
+      Entry(
+        kind = Kind.unresolvedRef,
+        severity = Severity.WARNING,
+        tag = "resource",
+        message = "Unresolved @$refKind/$name — degraded",
+        throwable = null,
+      ),
+    )
+  }
+
+  /** Record a style whose parent could not be resolved and was degraded to [resolvedTo] (or dropped). */
+  fun recordStyleParentDegraded(requestedParent: String, resolvedTo: String?) {
+    add(
+      Entry(
+        kind = Kind.unresolvedRef,
+        severity = Severity.WARNING,
+        tag = "styleParent",
+        message = "Unresolved style parent $requestedParent — degraded to ${resolvedTo ?: "no parent"}",
+        throwable = null,
+      ),
+    )
+  }
+
   /** Record a view class layoutlib cannot load (rendered as a MockView placeholder — AD-007). */
   fun recordSubstitutedClass(className: String, throwable: Throwable? = null) {
     add(
