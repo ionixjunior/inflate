@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- §FR-3 <layer-list>: full compositing incl. per-item insets, width/height and gravity. -->
+<!-- §FR-3 <layer-list>: full compositing — a sized base layer (gravity), an inset oval, and a small
+     centred sized square, so the composite shows distinct stacked regions. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-  <item>
+  <item android:width="96dp" android:height="96dp" android:gravity="center">
     <shape android:shape="rectangle"><solid android:color="@color/gallery_primary" /></shape>
   </item>
   <item
@@ -11,10 +12,7 @@
       android:bottom="12dp">
     <shape android:shape="oval"><solid android:color="@color/gallery_surface" /></shape>
   </item>
-  <item
-      android:width="24dp"
-      android:height="24dp"
-      android:gravity="center">
+  <item android:width="24dp" android:height="24dp" android:gravity="center">
     <shape android:shape="rectangle"><solid android:color="@color/gallery_accent" /></shape>
   </item>
 </layer-list>

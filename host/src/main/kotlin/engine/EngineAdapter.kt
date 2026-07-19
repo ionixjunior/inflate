@@ -222,6 +222,30 @@ class EngineAdapter(
     return lastRebuildMillis
   }
 
+  /**
+   * Apply a device config + theme + [renderingMode] to the live render session (drawable rendering,
+   * T44). `RenderingMode.SHRINK` gives a wrap-content canvas so an intrinsic-sized drawable snapshots
+   * at its own size; `NORMAL` fills a fixed host-view canvas. Recreates the render session without
+   * rebuilding the app repository (Bridge stays up).
+   */
+  fun configureRender(
+    deviceConfig: DeviceConfig,
+    theme: String?,
+    renderingMode: com.android.ide.common.rendering.api.SessionParams.RenderingMode,
+  ) {
+    checkNotNull(sdk) { "initBridgeOnce must be called first" }
+    sdk!!.unsafeUpdateConfig(deviceConfig = deviceConfig, theme = theme, renderingMode = renderingMode)
+  }
+
+  /** Load a themed drawable by id from the current session (drawable rendering, T44). */
+  fun loadDrawable(id: Int): android.graphics.drawable.Drawable? = sdk!!.context.getDrawable(id)
+
+  /** Load a themed color-state-list by id for color-swatch rendering (T44, DRW-06). */
+  fun loadColorStateList(id: Int): android.content.res.ColorStateList? = sdk!!.context.getColorStateList(id)
+
+  /** Display density (px per dp) of the current session, for dp→px canvas sizing (T44). */
+  val displayDensity: Float get() = sdk!!.context.resources.displayMetrics.density
+
   /** Inflate a layout resource by numeric id in the current session. */
   fun inflate(layoutId: Int): View =
     checkNotNull(inflateOrNull(layoutId)) { "layout id $layoutId inflated to null" }

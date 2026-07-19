@@ -2,6 +2,7 @@ package rpc
 
 import engine.EngineAdapter
 import out.PngWriter
+import render.DrawableRenderer
 import render.LayoutRenderer
 import themes.ThemeCatalog
 import java.io.File
@@ -24,9 +25,10 @@ interface RenderBackend {
 }
 
 /**
- * Routes each `render` by [RenderRequest.docKind]: layouts go to [LayoutRenderer]; other kinds
- * (drawable/nine-patch/color) return a structured error until Phase 8 (T44+). `listThemes` drives
- * the [ThemeCatalog] over the requested session; `invalidate` forwards to the [EngineAdapter].
+ * Routes each `render` by [RenderRequest.docKind]: layouts go to [LayoutRenderer]; drawable and color
+ * documents go to [DrawableRenderer] (T44+); nine-patch (`.9.png`) returns a structured error until
+ * T47. `listThemes` drives the [ThemeCatalog] over the requested session; `invalidate` forwards to
+ * the [EngineAdapter].
  */
 class RenderRouting(
   private val adapter: EngineAdapter,
@@ -34,16 +36,19 @@ class RenderRouting(
   overlayBaseDir: File,
 ) : RenderBackend {
 
-  private val layoutRenderer = LayoutRenderer(adapter, PngWriter(outputDir), overlayBaseDir)
+  private val pngWriter = PngWriter(outputDir)
+  private val layoutRenderer = LayoutRenderer(adapter, pngWriter, overlayBaseDir)
+  private val drawableRenderer = DrawableRenderer(adapter, pngWriter, overlayBaseDir)
   private val themeCatalog = ThemeCatalog(adapter)
 
   override fun render(request: RenderRequest): RenderResponse = when (request.docKind) {
     DocKind.layout -> layoutRenderer.render(request)
-    else -> RenderResponse(
+    DocKind.drawableXml, DocKind.color -> drawableRenderer.render(request)
+    DocKind.ninePatch -> RenderResponse(
       id = request.id,
       status = RenderStatus.error,
       warnings = emptyList(),
-      error = RenderError(message = "rendering docKind=${request.docKind} is not implemented yet (Phase 8)"),
+      error = RenderError(message = "rendering docKind=${request.docKind} is not implemented yet (T47)"),
       dependencies = emptyList(),
       timings = RenderTimings(0, 0, 0, 0),
       sessionRebuilt = false,
