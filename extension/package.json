@@ -43,6 +43,7 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "adm-zip": "^0.6.0"
+    "adm-zip": "^0.6.0",
+    "vscode-jsonrpc": "^9.0.1"
   }
 }
