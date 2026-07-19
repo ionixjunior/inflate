@@ -17,8 +17,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 - ✅ **Phase 1 (M0), T1–T9** — complete 2026-07-19. Commits 857a4b8…0fb303c. M0 gate PASSED (architecture validated); item 4 fallback → AD-013. Timings: cold 1956 ms / warm 30 ms / rebuild 9 ms; engine download 159.9 MB.
 - ✅ **Phase 2 (T10–T13) + Phase 3 (T14–T19)** — complete 2026-07-19 (Batch 2, sonnet). Commits 2551dfc…05f2bdc. Ext 53 vitest + 2 integration; host 51 JUnit. Debt tracked in STATE.md (real host spawn wiring deferred to T39/T60; manifest coords duplicated → T38).
 - ✅ **Phase 4 (T20–T27)** — complete 2026-07-19 (Batch 3, session). Commits 8793ee8…4122268. Ext 79 vitest; host 66 JUnit + 8 engineTest. RES-02 priority = reversed roots; use `appResourceExists` not `getIdentifier`. Verifier flag: T24 SessionTest weak lines (pixel assertions are the real proof).
-- ▶ **Batch 4 = Phase 5 (T28–T32)** — dispatched (sonnet).
-- ⬜ Phases 6–10 pending. Batch plan: B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier.
+- ✅ **Phase 5 (T28–T32)** — complete 2026-07-19 (Batch 4, sonnet). Commits 557e22d…114ee35. Host unit 66→96. UnknownViewSubstitutor absorbed into Scan.kt. T35 carry-forward: wire EngineAdapter.overlayDir = Preprocessor overlayBaseDir; map lineMap for errors; PreprocessResult.warnings → RenderResponse.warnings.
+- ▶ **Batch 5 = Phase 6 (T33–T37)** — dispatched (session model).
+- ⬜ Phases 7–10 pending. Batch plan: B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier.
 
 **Commit policy (user requirement)**: one atomic commit per task, committed immediately when the task's gate passes. Commit titles start with an imperative verb ("Create", "Add", "Implement", "Update", "Wire", "Document", "Pin", …), ≤ 72 chars, body explains what/why when non-obvious. Never batch tasks into one commit.
 
