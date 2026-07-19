@@ -79,6 +79,22 @@ class LogBridge : ILayoutLog {
     )
   }
 
+  /**
+   * Record that a data-binding layout's `@{...}` expressions were replaced with static,
+   * type-appropriate defaults during preprocessing (LAY-04, P1-A AC6). Emitted once per file.
+   */
+  fun recordBindingReplaced() {
+    add(
+      Entry(
+        kind = Kind.bindingReplaced,
+        severity = Severity.WARNING,
+        tag = "databinding",
+        message = "Binding expressions replaced with static defaults",
+        throwable = null,
+      ),
+    )
+  }
+
   // --- ILayoutLog sink (all overrides swallow exceptions; a log call must never fail a render) ---
 
   override fun warning(tag: String?, message: String?, viewCookie: Any?, data: Any?) {
