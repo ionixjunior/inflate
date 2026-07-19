@@ -1,0 +1,511 @@
+# Inflate — Android XML Preview for VS Code: Specification
+
+**Feature**: android-xml-preview · **Status**: Draft for confirmation · **Date**: 2026-07-19
+**Scope tier**: Complex (new domain, multi-component, cross-ecosystem)
+
+---
+
+## Problem Statement
+
+Android layout and drawable XML can only be previewed faithfully inside Android Studio, because faithful rendering requires the framework's own inflation/measure/theme logic (layoutlib). Developers working in VS Code — and especially .NET Android (Xamarin/MAUI) developers, whose Visual Studio Android Designer was removed in VS 2022 17.13 (Feb 2025) with the official workaround being "copy your XML into a scratch Android Studio project" — have no way to see what their XML produces without leaving their editor or installing a multi-gigabyte IDE they don't otherwise use.
+
+No existing VS Code extension renders through layoutlib; the market offers only abandoned HTML/CSS approximations and vector-only SVG previewers (verified 2026-07-19). Inflate fills that gap: pixel-faithful previews of Android layouts and drawables directly in VS Code, powered by the same rendering engine as Android Studio, with no Android Studio and no Android SDK installed.
+
+## Goals
+
+- [ ] A developer opens any standard Android layout or drawable XML file in VS Code and sees a faithful preview (Android-Studio-parity rendering) beside the editor, on a machine with only VS Code and a JDK installed.
+- [ ] The preview reflects saved changes automatically (hot reload) and lets the developer switch light/dark theme, device size, density, and drawable state from a toolbar.
+- [ ] The same experience works unmodified in native Gradle projects and .NET Android projects (both `res/` and `Resources/` trees, `.xml` and `.axml` files).
+- [ ] The first public release covers the complete v1 surface below — all listed view groups, widgets, and drawable types (per AD-002, no public MVP).
+
+## Out of Scope
+
+| Feature | Reason |
+| ------- | ------ |
+| Jetpack Compose / .NET MAUI XAML previews | Different rendering models entirely; Inflate is scoped to Android View XML |
+| Visual editing / drag-and-drop designer | Inflate is a previewer, not a designer; editing stays in the text editor |
+| Menu, preference, navigation, and values-only XML previews | Not layouts or drawables; possible future features |
+| Windows and Linux support in v1 | AD-004 — macOS-only first release; fast-follow (natives verified available) |
+| Animation playback (animated-vector, animation-list, transitions) | Deferred by user decision — static initial frame in v1 (P3 story) |
+| Click-to-source selection sync, hierarchy inspector | Deferred by user decision (P2/P3 stories) |
+| Loading project bytecode for custom views | AD-007 — placeholder rendering in v1 (P3 story) |
+| Rendering with the project's own dependency versions | Bundled, pinned androidx/Material artifacts stand in (see D4); divergence documented |
+| Data-binding expression evaluation (`@{...}`) | Expressions are replaced with defaults/placeholders; evaluating them requires project code |
+| Emulator/device interaction, ADB features | Out of product scope entirely |
+
+---
+
+## Users & Environments
+
+| Aspect | v1 commitment |
+| ------ | ------------- |
+| Primary users | Native Android devs (Gradle/Kotlin/Java) **and** .NET Android devs (Xamarin/MAUI) — equal priority (AD-001) |
+| Project shapes | Gradle single/multi-module (`src/<sourceSet>/res/`), .NET Android (`Resources/`), plus any folder containing a conventional Android resource tree |
+| File types | Layout XML, drawable XML, `.9.png` nine-patches; extensions `.xml` and `.axml` |
+| OS | macOS arm64 + x64 (AD-004) |
+| Machine dependencies | VS Code ≥ current stable −1 year; a preinstalled JDK (auto-detected, AD-003); network access for one-time engine download (AD-006). **No Android Studio. No Android SDK.** |
+
+---
+
+## Assumptions & Open Questions
+
+Every ambiguity is resolved or recorded here — nothing is left silently unclear.
+
+### Confirmed user decisions (2026-07-19)
+
+| Decision | Choice | Confirmed? |
+| -------- | ------ | ---------- |
+| Audience priority | Both ecosystems equal at launch | y |
+| First release scope | Complete (no public MVP); internal milestones only | y |
+| JVM dependency | Require preinstalled JDK, auto-detect, guided error if absent | y |
+| Component coverage | Full tier: framework + androidx essentials + Material Components | y |
+| Custom/unknown views | Labeled placeholder box; no project bytecode in v1 | y |
+| Stateful/animated drawables | Static rendering + toolbar state picker; playback deferred | y |
+| Preview interactivity | Static image + zoom/pan + config toolbar; inspect/sync deferred | y |
+| Platforms | macOS (arm64 + x64) only in v1 | y |
+
+### Assumptions (agent defaults — reviewed and confirmed by user 2026-07-19)
+
+| Assumption | Chosen default | Rationale | Confirmed? |
+| ---------- | -------------- | --------- | ---------- |
+| `tools:` attributes | Honor core design-time set: `tools:text`, `tools:src`, `tools:visibility`, `tools:background`, `tools:layout` (on `<fragment>`/`<include>`), via preprocessing before inflation | Matches Android Studio behavior; layoutlib itself doesn't process `tools:` — the IDE layer does | y |
+| Data-binding layouts | `<layout>` wrapper unwrapped; `@{...}` expressions replaced by attribute-appropriate defaults + a preview notice | Files must still render; evaluation is impossible without project code | y |
+| AdapterViews (ListView, RecyclerView, …) | Render empty at correct bounds/background in v1; `tools:listitem` support is P2 | Design-time adapter faking is IDE-layer work; empty render is honest and cheap | y |
+| Level-based drawables (`<clip>`, `<scale>`, `<rotate>`, `<level-list>`) | Render at level 5000 (50%) with a preview note; level slider deferred | Level 0 renders nothing for clip — misleading | y |
+| Render trigger | On save (mandatory) + manual refresh (uses dirty buffer); live on-type rendering is a P2 setting, default off | User asked for "hot-reload on save"; on-type adds churn | y |
+| Preview platform version | Pinned by the extension (layoutlib pin, see D6); project `compileSdk`/`targetSdk` not consulted in v1 | Divergence documented; avoids build-system coupling (AD-001) | y |
+| Theme default | Auto-pick: project manifest `android:theme` if trivially parseable → else `Theme.Material3.DayNight` (bundled) → toolbar picker always available | Sensible zero-config default in both ecosystems | y |
+| Single-file mode | An XML file outside any recognizable resource tree still renders, with unresolved references degraded per RES-05 and a "no resource root found" notice | Useful for gists/snippets; degradation must be graceful anyway | y |
+| Config persistence | Per-file preview config persisted in workspace state | Matches editor conventions | y |
+| Adaptive icons | `<adaptive-icon>` renders composed under a circular mask in v1; alternate masks/safe-zone overlay deferred | It is drawable XML developers will open; circle is the common default | y |
+| Extension license / distribution | Apache-2.0, published to VS Code Marketplace + Open VSX | Repo lives under open-source/; ecosystem norm | y |
+| Working name | "Inflate" | Directory name; final marketplace name is a launch decision | y |
+
+### Open questions → investigation items (each has a default; none blocks the spec)
+
+| # | Question | Default until resolved | Resolution plan |
+| - | -------- | ---------------------- | --------------- |
+| Q1 | **Resolved 2026-07-19 (user → AD-008)**: pin Paparazzi 1.3.5 + JDK 17 minimum (2.x alphas require JDK 21, which would exclude the large Microsoft OpenJDK 17 install base) | Pin: Paparazzi 1.3.5, JDK ≥ 17 | Residual technical check folded into M0: confirm the exact layoutlib artifact version 1.3.5 pairs with, its Android API level, and whether layoutlib can be bumped independently of Paparazzi |
+| Q2 | Can drawable state (pressed/checked/…) be injected reliably for the state picker — via `setState` on the inflated drawable / synthetic wrapper view inside a layoutlib session? | Assume yes (standard framework API implemented by layoutlib); scope fallback = state picker limited to selectors we re-inflate per state | M0 spike renders one selector in ≥3 states |
+| Q3 | Does `PaparazziSdk` accept rendering a layout from an arbitrary file path / in-memory XML (needed for `tools:` preprocessing and unwrap), or must the previewed file be materialized into a shadow resource-dir overlay? | Shadow overlay res dir (copy-on-render with preprocessing applied) — works regardless | M0 spike |
+| Q4 | Exact one-time download size and Google Maven URL stability for `com.android.tools.layoutlib:{layoutlib,layoutlib-runtime(os-classifier),layoutlib-resources}` + androidx/Material AAR set | Estimate 150–250 MB; document measured size | M0 spike measures; pin URLs + SHA-256 |
+| Q5 | Material component rendering quirks under layoutlib (shadows, elevation overlays, shapeable backgrounds) — which render imperfectly even in Android Studio? | Accept Studio-parity as the fidelity bar; catalog known quirks in docs | Corpus test during M4; compare against Studio screenshots |
+| Q6 | `.axml` + `Resources/` casing edge cases in historical Xamarin projects (e.g., `Resources/layout/Main.axml`, capitalized subdirs?) | Support `.axml`/`.xml` and case-insensitive resource-type dir matching | Test corpus includes a legacy Xamarin-shaped fixture |
+| Q7 | Multi-module Gradle: how far does convention-based discovery go before a `inflate.resourceRoots` setting is needed? | v1 resolves the containing module's source-set res dirs + user-configured extra roots; cross-module `@resource` refs resolve only if those roots are configured | Corpus includes a two-module fixture; revisit post-v1 |
+
+**Open questions: none unlogged** — all carry a default and an owner phase, satisfying the closure gate.
+
+---
+
+## Key Decision D1 — Drawable rendering engine: unified vs two-path
+
+**The question**: render drawables through the same layoutlib host as layouts (unified), or convert self-contained drawables (vector, shape, …) to SVG/Canvas in the webview with no JVM (two-path)?
+
+| Criterion | Unified (all layoutlib) | Two-path (SVG for drawables) |
+| --------- | ----------------------- | ---------------------------- |
+| Fidelity | Framework-exact for every type, including selector/ripple/nine-patch; one truth for a drawable standalone vs inside a layout | Vector→SVG has verified gaps: sweep gradients (no SVG equivalent; needs Canvas `createConicGradient`), `trimPath*` (dropped by existing converters), `autoMirrored`, theme-attr refs need our own resolver. **No web renderers exist at all for `<shape>`, `<layer-list>`, `<selector>` — they'd be built and maintained from scratch** (verified 2026-07-19) |
+| Latency | Warm ~100–400 ms; cold start (JVM + layoutlib init) seconds — mitigated by pre-warming on activation | Instant (<50 ms), no JVM needed for drawables |
+| Runtime deps | JDK required for any preview | Drawables preview without a JDK |
+| Code to build/maintain | One engine + thin host | Second rendering stack: VD→SVG converter + shape/layer-list/selector/nine-patch renderers + a shared resource resolver reimplemented in TS + drift policing between engines |
+| Consistency risk | None | A vector can render differently standalone (SVG path) vs inside a layout (layoutlib path) |
+
+**Decision — Unified engine in v1 (AD-005).** Rationale: the first release must be complete and faithful (AD-002), so the JVM host ships in v1 regardless — the two-path option saves no v1 dependency; it only adds a second, gap-ridden rendering stack precisely where completeness is promised. The webview renderer interface keeps a **per-document-type routing seam**: adding an SVG fast path later (for instant vector previews / JDK-free degraded mode) is a P2/P3 optimization (story DRW-FAST), not an architectural rework. Cold-start latency is mitigated by pre-warming the host when an Android resource tree is detected (NFR-01).
+
+---
+
+## User Stories
+
+Priorities per AD-002: **P1 = required for the first public release** (the release is complete, so P1 is broad). P2/P3 = subsequent releases.
+
+### P1-A: Preview a framework-widget layout ⭐
+
+**User Story**: As an Android developer in VS Code, I want to open a layout XML and see it rendered as it would appear on a device, so that I can iterate on UI without Android Studio.
+
+**Why P1**: The core value proposition; everything else composes onto this loop.
+
+**Acceptance Criteria**:
+1. WHEN the user runs `Inflate: Open Preview` (command, editor-title button, or context menu) on a layout XML using only framework view groups/widgets (surface table §FR-1) THEN the system SHALL display a rendered image of that layout in a webview panel beside the editor within the latency bounds of NFR-01.
+2. WHEN the layout nests view groups arbitrarily (e.g., LinearLayout → FrameLayout → RelativeLayout, ≥6 levels) THEN the system SHALL render measure/layout results identical to layoutlib's output (framework semantics, not approximations).
+3. WHEN the layout file contains an XML syntax error THEN the system SHALL show an error panel with the parser message and 1-based line/column, and SHALL keep showing the last successful render (dimmed, marked stale) if one exists.
+4. WHEN the previewed file uses `<include>`/`<merge>`/`<ViewStub>`/`<fragment>` THEN the system SHALL: inflate `<include>` targets; render a `<merge>` root inside a default parent (match_parent FrameLayout); render `<ViewStub>` as its collapsed (zero-size or outlined) state; render `<fragment>` as a labeled placeholder unless `tools:layout` names a layout, which SHALL be inflated instead.
+5. WHEN a layout references a custom or unknown view class THEN the system SHALL render a labeled placeholder box (class name, sized by its layout params) and list the substituted classes in the preview's warnings strip (AD-007).
+6. WHEN the previewed XML is a data-binding layout (`<layout>` root) THEN the system SHALL unwrap it and replace `@{...}` expressions with type-appropriate defaults, showing a "binding expressions replaced" notice.
+
+**Independent Test**: Open the fixture `framework_gallery.xml` (every §FR-1 widget nested 6 deep, one bad-syntax variant, one custom-view variant); verify render, error, and placeholder behavior without any androidx artifact present.
+
+---
+
+### P1-B: androidx + Material layouts render with Material themes ⭐
+
+**User Story**: As a developer whose real-world layouts use ConstraintLayout and Material widgets, I want those to render correctly with Material theming, so that the preview is useful on production code, not just toy layouts.
+
+**Why P1**: Verified: real projects in both ecosystems lean on ConstraintLayout/Material; without this tier the preview fails on most production layouts.
+
+**Acceptance Criteria**:
+1. WHEN a layout uses the androidx/Material surface (§FR-2) THEN the system SHALL render it using the bundled, pinned androidx/Material artifacts (classes on the host classpath, resources in the resolver) with no per-project configuration.
+2. WHEN the selected theme is a bundled Material theme (Theme.Material3.\*, Theme.MaterialComponents.\*, AppCompat) or a project theme inheriting one THEN the system SHALL resolve `?attr/` theme references (e.g., `?attr/colorPrimary`) through the full style/theme inheritance chain.
+3. WHEN a ConstraintLayout uses constraints, chains, guidelines, barriers, groups, or flow THEN the system SHALL position children per the bundled ConstraintLayout engine.
+4. WHEN a layout references a Material attribute that the bundled Material version does not define THEN the system SHALL render with the attribute ignored and emit a warning naming the attribute and the bundled Material version.
+
+**Independent Test**: Fixture `material_gallery.xml` (MaterialButton, TextInputLayout, Chip, TabLayout, FAB, MaterialCardView inside ConstraintLayout with chains + barriers) renders under Theme.Material3.DayNight in a project with no dependency declarations at all.
+
+---
+
+### P1-C: Preview every drawable type ⭐
+
+**User Story**: As a developer, I want to open any drawable XML (or nine-patch) and see it rendered, so that I can design icons, backgrounds, and states without building the app.
+
+**Why P1**: "Renders all the things" (AD-002) — drawables named explicitly in the product scope.
+
+**Acceptance Criteria**:
+1. WHEN the user previews a drawable of any type in §FR-3 THEN the system SHALL render it via the layoutlib host (AD-005) on a configurable checkerboard/solid backdrop, at the density selected in the toolbar.
+2. WHEN the drawable is intrinsic-sized (vector, bitmap, nine-patch) THEN the system SHALL render at intrinsic size by default with a size override control; WHEN it has no intrinsic size (shape, color, ripple) THEN the system SHALL render at a default 128×128 dp canvas, overridable.
+3. WHEN the drawable is animated (`<animated-vector>`, `<animation-list>`, `<animated-selector>`, `<transition>`) THEN the system SHALL render its initial/static state and show a "static preview" badge (playback is P3).
+4. WHEN the drawable is a `.9.png` source nine-patch THEN the system SHALL render it stretched to at least two preview sizes honoring stretch regions and padding markers.
+5. WHEN a drawable references resources (`@color/`, `@dimen/`, `?attr/`, another `@drawable/`) THEN the system SHALL resolve them with the same resolver and theme selection as layouts (single fidelity truth).
+6. WHEN the drawable is an `<adaptive-icon>` THEN the system SHALL render background+foreground composed under a circular mask.
+
+**Independent Test**: Fixture folder `drawables_gallery/` containing one of each §FR-3 type renders without errors; nine-patch fixture shows correct corner behavior at 2 sizes.
+
+---
+
+### P1-D: Drawable state picker ⭐
+
+**User Story**: As a developer working with selectors and ripples, I want to switch the previewed state (default/pressed/checked/disabled/focused/selected), so that I can verify every branch of a state-list without deploying.
+
+**Why P1**: User decision — "static + state picker" defines v1 completeness for stateful drawables.
+
+**Acceptance Criteria**:
+1. WHEN the previewed drawable is state-sensitive (`<selector>`, `<ripple>`, `<animated-selector>`) THEN the toolbar SHALL offer a state picker with: default, pressed, checked, disabled (enabled=false), focused, selected, activated.
+2. WHEN the user picks a state THEN the system SHALL re-render the drawable with exactly that state set applied and SHALL indicate which `<item>` of a selector matched (e.g., "matched item #2, state_pressed").
+3. WHEN the drawable is not state-sensitive THEN the state picker SHALL be hidden.
+4. WHEN a `<ripple>` is previewed in pressed state THEN the system SHALL render the ripple overlay in its settled (fully-shown) form.
+
+**Independent Test**: Selector fixture with 4 state items renders visibly differently across 4 picker states; matched-item indicator names the correct item.
+
+---
+
+### P1-E: Config toolbar — light/dark, device, density, orientation ⭐
+
+**User Story**: As a developer, I want to flip the preview between light/dark and between device sizes/densities, so that I can see configuration differences (explicit user requirement: light/dark comparison) without an emulator.
+
+**Why P1**: Named in the product brief; day/night is called out explicitly.
+
+**Acceptance Criteria**:
+1. WHEN the user toggles day/night THEN the system SHALL re-render selecting `-night` qualified resources and DayNight theme variants, and the two renders SHALL differ iff the layout/theme has night-varying inputs.
+2. WHEN the user picks a device preset (list SHALL include at minimum: small phone ~360×640dp, modern phone ~411×891dp, large phone ~480×1040dp, 7" tablet, 10" tablet) or toggles orientation THEN the system SHALL re-render with the corresponding screen size/orientation qualifiers applied.
+3. WHEN the user picks a density (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi) THEN the system SHALL re-render selecting density-qualified resources and scaling px-defined values accordingly.
+4. WHEN the user picks a theme from the theme picker THEN the list SHALL include project themes (from the resolved resource tree) and bundled platform/Material themes, and the render SHALL apply the chosen theme.
+5. WHEN any config changes THEN the system SHALL persist it per file (workspace state) and restore it when the preview reopens.
+
+**Independent Test**: A fixture with `values/` vs `values-night/` colors and `layout/` vs `layout-sw600dp/` variants demonstrably switches resources across toggles; config survives closing/reopening the preview.
+
+---
+
+### P1-F: Hot reload on save ⭐
+
+**User Story**: As a developer, I want the preview to update when I save the XML or its dependencies, so that iteration is a save-glance loop.
+
+**Why P1**: Named in the product brief.
+
+**Acceptance Criteria**:
+1. WHEN the previewed file is saved THEN the system SHALL re-render within NFR-01 warm-render bounds, without stealing editor focus.
+2. WHEN a file the render depends on is saved (values, styles/themes, a referenced drawable/layout/font — tracked from the previous render's resolved dependencies) THEN the system SHALL re-render the open preview.
+3. WHEN multiple saves occur in quick succession THEN the system SHALL coalesce renders (latest content wins) and SHALL never display a render of stale content after a newer save (request IDs; stale responses discarded).
+4. WHEN the user runs `Inflate: Refresh Preview` THEN the system SHALL render the current buffer content even if unsaved.
+
+**Independent Test**: Scripted edit-save loop on layout + its colors.xml: preview updates both times; rapid 10-save burst produces a final image matching the last content.
+
+---
+
+### P1-G: Both project ecosystems resolve resources correctly ⭐
+
+**User Story**: As a Gradle or .NET Android developer, I want `@string/`, `@dimen/`, `@color/`, `@drawable/`, `@style/`, `?attr/` references in my project tree to resolve in the preview, so that renders show my actual values, not fallbacks.
+
+**Why P1**: AD-001 — both ecosystems first-class; resource resolution is where they differ.
+
+**Acceptance Criteria**:
+1. WHEN the previewed file lives under a conventional Android resource tree (`**/res/<type>[-qualifier]/` or `**/Resources/<type>[-qualifier]/`, matched case-insensitively on the type dir) THEN the system SHALL locate the resource root automatically by walking up from the file, with `.xml` and `.axml` both accepted.
+2. WHEN references of kinds `@string/ @dimen/ @color/ @drawable/ @mipmap/ @style/ @font/ @bool/ @integer/ @array/ @layout/ @id/ ?attr/ ?android:attr/ @android:*` appear THEN the system SHALL resolve them against (in priority order): the file's resource root and sibling source-set roots → `inflate.resourceRoots` configured roots → bundled androidx/Material resources → framework resources.
+3. WHEN the selected configuration implies qualifiers (night, density, screen size, orientation) THEN resolution SHALL honor Android's qualifier-matching rules for the selected config.
+4. WHEN a reference cannot be resolved THEN the system SHALL degrade per-kind (string → the reference name; color → magenta `#FF00FF`; dimen → 0dp; drawable → outlined placeholder) and list every unresolved reference in the warnings strip — the render SHALL still complete.
+5. WHEN the workspace is a Gradle multi-module project THEN references SHALL resolve within the containing module's source sets by convention, plus any `inflate.resourceRoots` entries (Q7 default).
+
+**Independent Test**: Two fixture repos — `fixtures/gradle-sample` (two modules, flavors, night variants) and `fixtures/dotnet-sample` (Resources/, .axml, legacy casing) — render the same semantic layout with identical output; unresolved-reference fixture lists exactly the missing refs.
+
+---
+
+### P1-H: First-run setup without Android Studio ⭐
+
+**User Story**: As a new user on a machine with only VS Code and a JDK, I want the extension to set itself up (find Java, fetch the engine) with clear progress and errors, so that I never install Android Studio or an SDK.
+
+**Why P1**: The product's core promise; AD-003/AD-006.
+
+**Acceptance Criteria**:
+1. WHEN a preview is first requested and no engine cache exists THEN the system SHALL download the pinned engine artifacts (layoutlib runtime for the host OS/arch, layoutlib resources, androidx/Material set) from Google Maven with visible progress, verify each against pinned SHA-256 checksums, and cache them in extension global storage; subsequent runs SHALL work offline.
+2. WHEN a compatible JDK exists in `inflate.javaHome`, `JAVA_HOME`, `PATH`, or platform-standard locations (macOS: `/usr/libexec/java_home` registry, Homebrew, SDKMAN, Android Studio JBR, Microsoft OpenJDK dirs) THEN the system SHALL select it automatically, preferring `inflate.javaHome` > `JAVA_HOME` > highest compatible version.
+3. WHEN no compatible JDK is found THEN the system SHALL show a guided setup message stating the required minimum version (JDK 17 — AD-008) with a download link and a "re-check" action — and SHALL NOT attempt to download a JVM (AD-003).
+4. WHEN a checksum fails or a download is interrupted THEN the system SHALL discard the partial artifact, report which artifact failed, and offer retry; a failed download SHALL never leave the cache in a state the host will load.
+5. WHEN the user runs `Inflate: Doctor` THEN the system SHALL report: detected JDK (path, version), cache state (artifacts, versions, sizes), host status, resource roots detected for the active file, and last render timing.
+
+**Independent Test**: On a clean macOS user account (no Android tooling): install VSIX → open fixture layout → guided flow completes → render appears; then disable network → renders still work.
+
+---
+
+### P1-I: Failure transparency & resilience ⭐
+
+**User Story**: As a user, I want render failures to tell me exactly what went wrong and never wedge the editor, so that I trust the tool on messy real-world files.
+
+**Why P1**: Completeness includes the unhappy paths; renderer subprocesses crash in practice.
+
+**Acceptance Criteria**:
+1. WHEN the JVM host crashes or a render exceeds the 15 s timeout THEN the system SHALL kill/restart the host (exponential backoff, max 3 automatic restarts per 5 minutes), surface a readable error with the host's last stderr lines, and recover on the next render request after backoff.
+2. WHEN a render fails inside layoutlib (inflation exception, resource error) THEN the system SHALL show the exception message mapped, where possible, to the offending file/line, while keeping the last good render visible (stale-marked).
+3. WHEN the host process state changes THEN it SHALL follow only the transitions stopped → starting → ready → rendering → (ready | crashed), crashed → starting; no render SHALL be dispatched unless state is ready.
+4. WHEN VS Code exits or the workspace closes THEN the system SHALL terminate the host process (no orphans).
+5. WHEN anything is written to logs THEN the "Inflate" output channel SHALL capture extension + host logs with timestamps and render IDs; render timings SHALL be visible in Doctor.
+
+**Independent Test**: Kill the host PID mid-session → next save recovers automatically; fixture with an inflation-crashing construct shows mapped error while previous image stays visible.
+
+---
+
+### P2 stories (post-v1, next releases)
+
+| ID | Story | Notes |
+| -- | ----- | ----- |
+| P2-J | Windows + Linux support | Natives verified on Google Maven; add CI matrix, path/JDK-detection per-OS; watch Paparazzi Windows-specific issues (e.g. snapshot-path bug #2016 class) |
+| P2-K | Side-by-side day/night compare | Render both configs, split view — directly extends the explicit light/dark goal |
+| P2-L | Click-to-source selection sync | Host emits per-view bounds; click highlights view + reveals XML tag |
+| P2-M | `tools:listitem` + design-time adapter items for AdapterViews/RecyclerView | Extends P1-A/§FR-1 honesty gap |
+| P2-N | SVG fast path for `<vector>` (instant + JDK-free degraded mode) | Fills the AD-005 routing seam; cross-checked against layoutlib goldens |
+| P2-O | Locale, RTL/LTR, and font-scale preview configs | Adds qualifiers + `autoMirrored` verification |
+| P2-P | Render-in-parent context (`tools:showIn`) and include-parent navigation | |
+| P2-Q | Live on-type rendering (debounced, default off) | Setting `inflate.renderOnType` |
+
+### P3 stories (later)
+
+| ID | Story | Notes |
+| -- | ----- | ----- |
+| P3-R | Animation playback (animated-vector, animation-list) with play/pause | Frame-sequence export from host |
+| P3-S | Hierarchy inspector (tree + resolved attributes + bounds overlay) | |
+| P3-T | Custom-view rendering from project build output (opt-in, sandboxed) | Fills AD-007's reserved classpath slot |
+| P3-U | Export preview as PNG at chosen config/density | |
+
+---
+
+## Functional Requirements — Supported Surface
+
+### FR-1: Framework layouts & widgets (P1-A)
+
+| Category | v1 surface |
+| -------- | ---------- |
+| View groups | LinearLayout, FrameLayout, RelativeLayout, TableLayout/TableRow, GridLayout, ScrollView, HorizontalScrollView, absolute/custom-attr passthrough via layoutlib |
+| Widgets | View, TextView, Button, ImageView, ImageButton, EditText, CheckBox, RadioButton/RadioGroup, Switch, ToggleButton, SeekBar, ProgressBar (all styles), RatingBar, Spinner, TextClock, Chronometer, Space |
+| AdapterViews | ListView, GridView, ExpandableListView — rendered empty at correct bounds (assumption; `tools:listitem` = P2-M) |
+| Structural | `<include>`, `<merge>`, `<ViewStub>`, `<fragment>` (per P1-A AC4), `<requestFocus>` ignored |
+| Attribute fidelity | All attributes the framework consumes — by construction (real inflation/measure/draw via layoutlib), including margins, padding, gravity, weights, visibility, elevation, background, tint, text appearance, autoSize text |
+
+### FR-2: androidx + Material surface (P1-B) — bundled, pinned versions
+
+| Library | Components required to render |
+| ------- | ----------------------------- |
+| constraintlayout | ConstraintLayout, Guideline, Barrier, Group, Flow, Placeholder; chains, ratios, percent dims |
+| recyclerview / viewpager2 | Empty-render at bounds (items = P2-M) |
+| cardview, coordinatorlayout, appcompat, core, fragment | CardView, CoordinatorLayout + AppBarLayout static layout behavior, AppCompat widget variants |
+| material | MaterialButton, MaterialTextView, TextInputLayout/TextInputEditText, MaterialCardView, Chip/ChipGroup, TabLayout, BottomNavigationView, NavigationView, MaterialToolbar, AppBarLayout, FloatingActionButton (+Extended), Slider/RangeSlider, MaterialSwitch/SwitchMaterial, BottomAppBar, MaterialDivider, ShapeableImageView |
+| Themes | Theme.Material3.\* (Day/Night variants), Theme.MaterialComponents.\*, Theme.AppCompat.\*, platform Theme.Material/DeviceDefault/Holo |
+
+### FR-3: Drawable types (P1-C/P1-D)
+
+| Type | v1 behavior |
+| ---- | ----------- |
+| `<vector>` | Full render incl. gradients (linear/radial/sweep), clip paths, trimPath, fillType |
+| `<animated-vector>` | Static initial frame + badge |
+| `<shape>` (GradientDrawable) | All shapes (rectangle, oval, line, ring), corners, gradients, stroke (incl. dashed), size, padding |
+| `<selector>` (StateListDrawable) | Default state + state picker (P1-D) |
+| `<layer-list>` | Full compositing incl. item gravity, insets, width/height |
+| `<ripple>` | Bounded/unbounded; settled overlay in pressed state |
+| `<inset>`, `<clip>`, `<scale>`, `<rotate>`, `<level-list>` | Rendered; level-based types at level 5000 (assumption) |
+| `<transition>`, `<animated-selector>` | Start state + badge |
+| `<bitmap>` | Tile modes, gravity, filtering; png/webp/jpg sources |
+| Nine-patch `.9.png` | Source-format markers honored; stretched multi-size preview |
+| `<color>` / color resources | Swatch render |
+| `<adaptive-icon>` | Composed under circular mask (assumption) |
+| `<insetDrawable>`/`<drawable>` aliases, mipmap refs | Resolve + render |
+
+### FR-4: Preview configuration (P1-E)
+
+Day/night, device preset (5 minimum), orientation, density (5 buckets), theme picker (project + bundled), drawable state (P1-D), drawable backdrop + size override, zoom/pan (25–400%, fit-to-window default; re-render at higher density past 200% so zoom stays crisp).
+
+### FR-5: Editor integration (P1-A/F)
+
+Commands: Open Preview (side panel), Refresh Preview, Doctor, Clear Engine Cache, Restart Render Host. Editor-title button + context-menu entry for eligible files (layout/drawable XML by path or root element sniffing, incl. `.axml`). Warnings strip in preview panel (unresolved refs, substituted classes, notices) — collapsible.
+
+---
+
+## Non-Functional Requirements
+
+| ID | Requirement |
+| -- | ----------- |
+| NFR-01 Latency | Warm layout render (≤300 views) p90 ≤ 700 ms, drawable p90 ≤ 400 ms, save→updated-preview p90 ≤ 1 s. Cold host start ≤ 5 s target / 10 s max with progress UI; host pre-warms on activation when an Android resource tree is detected. First-ever run adds one-time artifact download (progress shown; size per Q4). |
+| NFR-02 Resources | Host JVM heap cap default 1 GB (`inflate.hostMaxHeap`); host idles down (configurable, default: keep alive while VS Code open); extension activation adds ≤ 200 ms to VS Code startup (lazy everything). |
+| NFR-03 Offline | After first-run caching, all functionality works offline. Cache location = extension globalStorage; `Inflate: Clear Engine Cache` empties it; cache is versioned per engine pin (stale pins removable). |
+| NFR-04 Privacy/Security | No telemetry in v1. The only network traffic is artifact download from Google Maven (`dl.google.com`), pinned versions + SHA-256. Project files never leave the machine. Host runs with no project bytecode loaded (AD-007). |
+| NFR-05 Robustness | Host crash never crashes/wedges VS Code (P1-I); concurrent previews supported (≥3 open previews; renders serialized per host, latest-wins per document); no orphan processes. |
+| NFR-06 Dependencies | macOS 13+ (arm64/x64); JDK 17 minimum (AD-008); VS Code stable. No Android Studio, no Android SDK, no Gradle/MSBuild invocation ever. |
+| NFR-07 Quality gate | Golden-image corpus (≥30 real-world fixtures: ≥12 Gradle-shaped, ≥12 .NET-shaped, ≥6 drawable galleries) rendered in CI on every change; diffs beyond an anti-aliasing tolerance fail the build. |
+
+### Implicit-dimension sweep (Complex tier — every dimension resolved or N/A)
+
+| Dimension | Resolution |
+| --------- | ---------- |
+| Input validation & bounds | Malformed XML → P1-A AC3; unresolved refs → P1-G AC4; render canvas capped at 4096×4096 px (larger → error notice); include-cycle detection → Edge Cases |
+| Failure / partial-failure | Host crash/timeout/restart → P1-I; partial artifact download → P1-H AC4; render-with-warnings is the standard partial mode |
+| Idempotency / retry / duplicates | Renders idempotent; coalescing latest-wins + stale-response discard → P1-F AC3; download retry → P1-H AC4 |
+| Auth boundaries & rate limits | N/A because local-only tool; no auth surface. Supply-chain integrity covered by pinned versions + SHA-256 (NFR-04) |
+| Concurrency / ordering | Per-document latest-wins, per-host serialized queue (NFR-05); host state machine gates dispatch (P1-I AC3) |
+| Data lifecycle / expiry | Engine cache versioned + clearable (NFR-03); per-file config in workspace state (P1-E AC5); no other persisted data |
+| Observability | Output channel + render IDs + timings + Doctor (P1-H AC5, P1-I AC5) |
+| External-dependency failure | Google Maven unreachable → clear offline error + retry; cached installs unaffected (NFR-03) |
+| State-transition integrity | Host lifecycle state machine with legal-transition set (P1-I AC3) |
+
+---
+
+## Architecture Decisions (open — final selection in Design phase)
+
+Facts below verified 2026-07-19 against Paparazzi source/CHANGELOG, Maven metadata, and Google Maven indexes.
+
+### D2 — JVM host engine sourcing & packaging
+
+**Context**: The host must load layoutlib headlessly without Gradle. Verified: `app.cash.paparazzi:paparazzi` works as a plain JVM library — `Environment` is a public constructor (appTestDir, packageName, compileSdkVersion, resourcePackageNames, localResourceDirs, moduleResourceDirs, libraryResourceDirs, asset dirs) and `PaparazziSdk` is the test-framework-agnostic core (environment/deviceConfig/theme/renderingMode → `onNewFrame(BufferedImage)`). Since 1.3.5 no Android SDK is needed — two system properties point at layoutlib runtime + framework resources, both fetched from Google Maven (`com.android.tools.layoutlib:layoutlib`, `:layoutlib-runtime` classifiers `mac|mac-arm|linux|win`, `:layoutlib-resources`; Apache-2.0 POMs).
+
+| Option | Trade-offs |
+| ------ | ---------- |
+| **(leaning) Paparazzi-as-library**: host = thin Kotlin app over `PaparazziSdk`, constructing `Environment` ourselves | Reuses Cash App's battle-tested layoutlib environment bootstrapping (fonts, ICU, keyboards, natives); we track their pins. Risk: `PaparazziSdk` isn't a stability-guaranteed API — pin exactly, wrap behind our own interface, be fork-ready |
+| Direct layoutlib bridge (à la Studio / johnsonlee/layoutlib) | No Paparazzi dependency; but we own all bootstrap complexity layoutlib requires — highest-effort, highest-control |
+| Robolectric/Roborazzi engine | Real native graphics (RNG/Skia), but different renderer than Studio → breaks the Studio-parity promise; heavier environment |
+
+**Packaging**: host fat-JAR (Paparazzi + our protocol layer, no layoutlib) ships in the VSIX; layoutlib runtime/resources + androidx/Material AARs download per AD-006. Protocol: JSON-RPC over stdio; images returned as PNG (transport mechanism—shared temp file vs base64—decided in Design).
+
+### D3 — Resource-tree resolution across project types
+
+**Context**: The engine consumes resource *directories* (`localResourceDirs`, `libraryResourceDirs`) — no aapt2, no build. Our resolver must map any project shape onto that.
+
+Approach (P1-G): convention-based root discovery (walk up to `res/`/`Resources/`), sibling source-set enumeration, `inflate.resourceRoots` override, priority chain ending in bundled library + framework res. Explicitly rejected for v1: Gradle tooling API / MSBuild evaluation (violates AD-001's no-build-system rule; slow; heavy). Consequence documented: dependency resources beyond the bundled set don't resolve (warning per P1-B AC4).
+
+### D4 — androidx/Material strategy
+
+Bundled pinned set (FR-2 list): download AARs from Google Maven; extract `classes.jar` → host classpath, `res/` → `libraryResourceDirs`, list package names in `resourcePackageNames`. This mirrors how Paparazzi tests see libraries (test classpath), so the mechanism is proven. Open in Design: exact version set (Material 1.12+?), upgrade cadence policy (per extension release), and whether AppCompat theme-only projects need extra shims.
+
+### D5 — Render protocol & host lifecycle
+
+One host per VS Code window (not per workspace folder); state machine per P1-I AC3; request coalescing latest-wins per document; pre-warm on activation; `tools:`/data-binding preprocessing via shadow-overlay copy of the previewed file (Q3 default) so the on-disk project is never modified.
+
+### D6 — Engine version pinning
+
+Single pinned matrix per extension release: {Paparazzi, layoutlib, framework-resources, androidx set, min JDK}. Initial pin decided (AD-008): Paparazzi 1.3.5 + JDK 17 minimum; M0 confirms the exact layoutlib version 1.3.5 pairs with and whether the layoutlib artifacts (directories we control via system properties) can be bumped independently of Paparazzi. The preview's Android platform version is the pin's, independent of the project (assumption logged). Doctor reports the full pin.
+
+---
+
+## Technical Risks & Mitigations
+
+| # | Risk | Likelihood / Impact | Mitigation |
+| - | ---- | ------------------- | ---------- |
+| R1 | layoutlib has no stable public API; internals shift between versions | High / High | Pin exact versions per release (D6); wrap all engine access behind one host-internal interface; golden-image corpus (NFR-07) catches behavior drift on every upgrade; never float versions |
+| R2 | Paparazzi's `PaparazziSdk`/`Environment` are internal-ish APIs that may churn (2.x is alpha; alpha04+ requires JDK 21) | Medium / High | Same pinning + wrapper; keep the Paparazzi surface we touch minimal (documented list); maintain a fork-ready vendored build path; M0 validates the 1.3.5 pin end-to-end; the 2.x/JDK-21 migration is a planned post-v1 upgrade, not a v1 exposure |
+| R3 | Resource-resolution divergence across ecosystems (.axml, `Resources/` casing, flavors, multi-module) breaks renders on real projects | High / Medium | P1-G acceptance corpus includes Gradle multi-module, flavored, .NET modern + legacy-Xamarin fixtures (NFR-07); graceful degradation (P1-G AC4) keeps partial renders useful; `inflate.resourceRoots` escape hatch |
+| R4 | Bundled androidx/Material version ≠ project's version → missing attrs/components render wrong | Medium / Medium | Warning with bundled-version name (P1-B AC4); documented limitation; upgrade cadence policy (D4); future opt-in to project artifacts is P3-T's territory |
+| R5 | Custom views everywhere in real projects → previews full of placeholders, perceived low value | Medium / Medium | Placeholder shows class name at correct size (AD-007) so structure remains readable; P3-T (opt-in bytecode) is the roadmap answer; docs set expectations |
+| R6 | Material-under-layoutlib rendering quirks (shadows, elevation overlays) | Medium / Low | Fidelity bar = Android Studio parity, not device parity (same engine); catalog quirks during M4 corpus work (Q5) |
+| R7 | Google Maven artifact availability/layout changes | Low / High | Pinned URLs + checksums; cache means existing users unaffected; CI canary that fetches the pin daily; fallback mirror decision deferred until a failure is observed |
+| R8 | Cold-start latency sours first impressions | Medium / Medium | Pre-warm on activation (NFR-01); progress UI with staged messages; keep host resident |
+| R9 | State-injection for the state picker turns out not to work inside a layoutlib session (Q2) | Low / Medium | Spike in M0; fallback: re-inflate selector per state (slower but correct) |
+| R10 | The pinned 1.3.5 engine line ages (released Nov 2024): its layoutlib renders an older Android platform than current Studio | Medium / Low | Accepted trade-off of AD-008 (JDK-17 reach beats newest-platform fidelity); M0 checks whether layoutlib can be bumped independently; revisit at the first post-v1 upgrade window (JDK 21 migration) |
+
+---
+
+## Internal Milestones (sequencing only — nothing ships publicly before M7, per AD-002)
+
+| M | Content | Proves |
+| - | ------- | ------ |
+| M0 | Spike on the pinned engine (Paparazzi 1.3.5 / JDK 17 — AD-008): layoutlib pairing + independent-bump check (Q1 residue), state injection (Q2), arbitrary-file render path (Q3), measured download size (Q4). Hello-render: hardcoded LinearLayout → PNG → webview | Architecture viability; resolves remaining open questions |
+| M1 | Walking skeleton: extension ↔ host protocol, lifecycle state machine, JDK detection, artifact fetch + checksums, doctor | P1-H, P1-I foundations |
+| M2 | Resource resolver: root discovery (both ecosystems), reference kinds, qualifiers, themes, degradation + warnings | P1-G |
+| M3 | Framework layout surface + hot reload + error mapping | P1-A, P1-F |
+| M4 | androidx/Material bundle + themes + corpus | P1-B (+Q5 catalog) |
+| M5 | Drawable surface (all FR-3 types) + state picker + backdrop/size controls | P1-C, P1-D |
+| M6 | Config toolbar complete (day/night, devices, density, orientation, persistence) + zoom/pan re-render | P1-E |
+| M7 | Hardening: latency targets, golden corpus in CI, docs, marketplace packaging → v1.0 | NFR-01..07 |
+
+---
+
+## Edge Cases
+
+- WHEN the previewed XML's root is not a known layout/drawable element THEN the system SHALL state the detected root and that preview is unsupported for it (no crash).
+- WHEN `<include>` chains form a cycle THEN the system SHALL abort inflation of the cycle, render the includer with a placeholder at the cycle point, and warn with the cycle path.
+- WHEN a layout exceeds the 4096×4096 px canvas cap at the selected config THEN the system SHALL render clipped with a "canvas capped" notice.
+- WHEN the file is deleted or renamed while previewed THEN the panel SHALL show a "file gone" state and release its render session.
+- WHEN a `.9.png` has malformed stretch markers THEN the nine-patch preview SHALL fall back to plain-image render with a marker-error warning.
+- WHEN fonts are referenced via `@font/` THEN font files present in the resource tree SHALL be used; unresolvable fonts fall back to the platform default with a warning.
+- WHEN the previewed file has unsaved changes and hot reload triggers from a dependency save THEN the render SHALL use the previewed file's last-saved content (buffer content only via explicit Refresh — P1-F AC4).
+- WHEN two previews of the same file are opened THEN the system SHALL reuse one panel (reveal, not duplicate).
+- WHEN the workspace contains no Android resource tree at all THEN single-file mode applies (assumption) with its notice.
+- WHEN a style chain contains a missing parent THEN theme application SHALL degrade to the nearest resolvable ancestor and warn.
+
+---
+
+## Requirement Traceability
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| LAY-01 framework surface render | P1-A | Design | Pending |
+| LAY-02 structural tags (include/merge/ViewStub/fragment) | P1-A | Design | Pending |
+| LAY-03 custom-view placeholder + warning | P1-A | Design | Pending |
+| LAY-04 data-binding unwrap + tools: preprocessing | P1-A | Design | Pending |
+| LAY-05 androidx/Material surface render | P1-B | Design | Pending |
+| LAY-06 theme/?attr resolution incl. inheritance | P1-B | Design | Pending |
+| LAY-07 AdapterView empty-render | P1-A | Design | Pending |
+| DRW-01 vector render (full feature set) | P1-C | Design | Pending |
+| DRW-02 shape/layer-list/inset/clip/scale/rotate/level-list | P1-C | Design | Pending |
+| DRW-03 selector/ripple render | P1-C/D | Design | Pending |
+| DRW-04 animated types static frame + badge | P1-C | Design | Pending |
+| DRW-05 nine-patch source render | P1-C | Design | Pending |
+| DRW-06 adaptive-icon, color swatch, bitmap | P1-C | Design | Pending |
+| DRW-07 state picker + matched-item indicator | P1-D | Design | Pending |
+| DRW-08 backdrop/size override controls | P1-C | Design | Pending |
+| RES-01 root discovery both ecosystems (.xml/.axml) | P1-G | Design | Pending |
+| RES-02 reference-kind resolution chain | P1-G | Design | Pending |
+| RES-03 qualifier matching per config | P1-G/E | Design | Pending |
+| RES-04 graceful degradation + warnings strip | P1-G | Design | Pending |
+| RES-05 resourceRoots setting + multi-module convention | P1-G | Design | Pending |
+| CFG-01 day/night toggle | P1-E | Design | Pending |
+| CFG-02 device presets + orientation | P1-E | Design | Pending |
+| CFG-03 density selection | P1-E | Design | Pending |
+| CFG-04 theme picker (project + bundled) | P1-E | Design | Pending |
+| CFG-05 per-file config persistence | P1-E | Design | Pending |
+| UX-01 open/refresh commands + title button + eligibility sniffing | P1-A | Design | Pending |
+| UX-02 hot reload on save + dependency tracking + coalescing | P1-F | Design | Pending |
+| UX-03 zoom/pan + crisp re-render | P1-E | Design | Pending |
+| UX-04 error panel with line mapping + stale-render retention | P1-A/I | Design | Pending |
+| UX-05 warnings strip | P1-A/G | Design | Pending |
+| HOST-01 lifecycle state machine + auto-restart + no orphans | P1-I | Design | Pending |
+| HOST-02 render queue: serialize, coalesce, stale-discard | P1-F/I | Design | Pending |
+| HOST-03 render timeout + crash isolation | P1-I | Design | Pending |
+| SETUP-01 JDK detection chain + guided error | P1-H | Design | Pending |
+| SETUP-02 artifact fetch + SHA-256 + cache lifecycle | P1-H | Design | Pending |
+| SETUP-03 doctor command | P1-H | Design | Pending |
+| NFR-01..07 | cross-cutting | Design | Pending |
+
+**Coverage:** 37 requirement IDs + 7 NFRs; all mapped to P1 stories; 0 unmapped. P2/P3 stories intentionally carry no IDs yet (assigned when promoted).
+
+---
+
+## Success Criteria
+
+- [ ] On a clean macOS machine (VS Code + JDK only — no Android Studio, no SDK), install → first successful layout render completes with only guided steps, and afterwards works offline.
+- [ ] The golden corpus (≥30 fixtures spanning FR-1/2/3 across Gradle-shaped and .NET-shaped trees) renders in CI with zero errors and pixel-stability within anti-aliasing tolerance.
+- [ ] A Material3 production-grade layout (ConstraintLayout + ≥6 Material widget types) renders with visual parity to Android Studio's preview of the same file (manual baseline comparison, documented).
+- [ ] Day/night toggle on a night-qualified fixture demonstrably switches resources and theme variants in < 1 s warm.
+- [ ] Every drawable type in FR-3 opens and renders from the gallery fixture; selector states switch correctly via the picker.
+- [ ] Warm-loop latency targets of NFR-01 met at p90 on a base Apple-Silicon machine.
+- [ ] Zero VS Code hangs/crashes attributable to host failures across the corpus + kill-the-host chaos test.
