@@ -46,7 +46,7 @@ interface is identical either way, so downstream phases are unaffected.
 | 2 | Bridge init once + AppResourceRepository rebuild (hot-reload gate) | PASS (primary) — T4; rebuild ~9 ms on the M0 machine |
 | 3 | Hello-render LinearLayout → PNG (end-to-end gate) | PASS (primary) — T5 (host PNG 200x200, alpha) + T6 (VS Code webview shows the PNG, lazy activation) |
 | 4 | MockView placeholder for unknown views (AD-007 gate) | **FALLBACK-APPLIED** (plan B: preprocessor tag substitution) — see note below |
-| 5 | Drawable state injection ≥3 states (Q2 gate) | pending T8 |
+| 5 | Drawable state injection ≥3 states (Q2 gate) | PASS (primary) — T8; 4 states render distinctly, findStateDrawableIndex correct. Fallback (re-inflate per state) not needed |
 | 6 | Cold-start + warm-render timings vs NFR-01 | pending T9 |
 
 ## M0 item 4 — fallback trigger + decision (T7)

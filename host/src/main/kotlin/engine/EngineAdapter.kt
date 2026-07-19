@@ -91,6 +91,9 @@ class EngineAdapter(
   fun resourceId(name: String, type: String, packageName: String): Int =
     sdk!!.resources.getIdentifier(name, type, packageName)
 
+  /** The current render context (for building host-owned views / loading drawables). */
+  val context: android.content.Context get() = sdk!!.context
+
   /** Render [view] and return the produced frame. */
   fun render(view: View): BufferedImage {
     sdk!!.snapshot(view)
