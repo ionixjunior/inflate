@@ -18,8 +18,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 - ✅ **Phase 2 (T10–T13) + Phase 3 (T14–T19)** — complete 2026-07-19 (Batch 2, sonnet). Commits 2551dfc…05f2bdc. Ext 53 vitest + 2 integration; host 51 JUnit. Debt tracked in STATE.md (real host spawn wiring deferred to T39/T60; manifest coords duplicated → T38).
 - ✅ **Phase 4 (T20–T27)** — complete 2026-07-19 (Batch 3, session). Commits 8793ee8…4122268. Ext 79 vitest; host 66 JUnit + 8 engineTest. RES-02 priority = reversed roots; use `appResourceExists` not `getIdentifier`. Verifier flag: T24 SessionTest weak lines (pixel assertions are the real proof).
 - ✅ **Phase 5 (T28–T32)** — complete 2026-07-19 (Batch 4, sonnet). Commits 557e22d…114ee35. Host unit 66→96. UnknownViewSubstitutor absorbed into Scan.kt. T35 carry-forward: wire EngineAdapter.overlayDir = Preprocessor overlayBaseDir; map lineMap for errors; PreprocessResult.warnings → RenderResponse.warnings.
-- ▶ **Batch 5 = Phase 6 (T33–T37)** — dispatched (session model).
-- ⬜ Phases 7–10 pending. Batch plan: B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier.
+- ✅ **Phase 6 (T33–T37)** — complete 2026-07-19 (Batch 5, session). Commits f0f36b0…8520957. Ext 109 vitest + 6 integration; host 102 JUnit + 17 engineTest. Warm render 207 ms. **2 open functional gaps for Verifier fix tasks:** (1) Preprocessor not comment-aware (correctness bug); (2) Degradation (T27) not wired into live LayoutRenderer path (RES-04 gap). See STATE.md.
+- ▶ **Batch 6 = Phase 7 (T38–T42)** — dispatched (session model).
+- ⬜ Phases 8–10 pending. Batch plan: B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier.
 
 **Commit policy (user requirement)**: one atomic commit per task, committed immediately when the task's gate passes. Commit titles start with an imperative verb ("Create", "Add", "Implement", "Update", "Wire", "Document", "Pin", …), ≤ 72 chars, body explains what/why when non-obvious. Never batch tasks into one commit.
 
