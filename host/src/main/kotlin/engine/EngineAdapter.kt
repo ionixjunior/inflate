@@ -264,6 +264,17 @@ class EngineAdapter(
     return repo.getResources(ResourceNamespace.RES_AUTO, type, name).isNotEmpty()
   }
 
+  /**
+   * Whether the app-namespace (`res-auto`) attribute [name] is DEFINED by the project or any bundled
+   * library (the app repository aggregates project roots + library repositories). Used by the
+   * Material-attribute check (T41, P1-B AC4): an `app:` attribute that resolves here is honoured by
+   * the bundled Material/androidx version; one that does not is ignored at inflation and warned about.
+   */
+  fun attrExists(name: String): Boolean {
+    val repo = currentAppRepo ?: return false
+    return repo.getResources(ResourceNamespace.RES_AUTO, ResourceType.ATTR, name).isNotEmpty()
+  }
+
   private fun frameworkStyleRepository(): AbstractResourceRepository {
     frameworkStyleRepo?.let { return it }
     // Mirror Renderer.prepare's framework repo (default languages only). Built lazily since only

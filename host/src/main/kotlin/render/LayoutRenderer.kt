@@ -110,6 +110,18 @@ class LayoutRenderer(
     val session = adapter.session(roots, request.packageName)
     val prepareMs = elapsedMs(prepareStart)
 
+    // P1-B AC4: warn on any res-auto attribute the bundled Material/androidx version does not define
+    // (layoutlib silently drops it). The session (app + library repositories) is now active, so
+    // attribute resolution reflects the bundled set.
+    val materialWarnings = MaterialAttrCheck.unknownAttrs(content) { adapter.attrExists(it) }.map { attr ->
+      Warning(
+        kind = WarningKind.materialAttrMissing,
+        message = "Attribute '$attr' is not defined by the bundled Material $BUNDLED_MATERIAL_VERSION " +
+          "and was ignored during rendering.",
+        detail = attr,
+      )
+    }
+
     var deviceConfig = ConfigMapper.map(request.config)
     val capped = deviceConfig.screenWidth > MAX_CANVAS_PX || deviceConfig.screenHeight > MAX_CANVAS_PX
     if (capped) {
@@ -128,7 +140,7 @@ class LayoutRenderer(
       return errorResponse(
         request,
         RenderError(message = t.message ?: "layout inflation failed", file = request.docPath, line = mappedLine),
-        warnings = warnings,
+        warnings = warnings + materialWarnings,
         dependencies = dependencies,
         timings = RenderTimings(prepareMs, 0, elapsedMs(renderStart), elapsedMs(totalStart)),
         sessionRebuilt = session.rebuilt,
@@ -139,14 +151,18 @@ class LayoutRenderer(
     val finalImage = clip(image)
     val png = pngWriter.write(request.docPath, request.id.toLong(), finalImage)
 
-    val allWarnings = if (capped) {
-      warnings + Warning(
-        kind = WarningKind.notice,
-        message = "Canvas exceeds ${MAX_CANVAS_PX}px; clipped to ${MAX_CANVAS_PX}x$MAX_CANVAS_PX",
-        detail = "canvasCapped",
-      )
-    } else {
-      warnings
+    val allWarnings = buildList {
+      addAll(warnings)
+      addAll(materialWarnings)
+      if (capped) {
+        add(
+          Warning(
+            kind = WarningKind.notice,
+            message = "Canvas exceeds ${MAX_CANVAS_PX}px; clipped to ${MAX_CANVAS_PX}x$MAX_CANVAS_PX",
+            detail = "canvasCapped",
+          ),
+        )
+      }
     }
 
     return RenderResponse(
@@ -222,6 +238,9 @@ class LayoutRenderer(
   companion object {
     /** The 4096x4096 px render canvas cap (spec §Implicit-dimension sweep; larger → clipped). */
     const val MAX_CANVAS_PX: Int = 4096
+
+    /** Bundled Material version named in P1-B AC4 `materialAttrMissing` warnings (T41). */
+    const val BUNDLED_MATERIAL_VERSION: String = engine.EngineArtifacts.MATERIAL_VERSION
 
     private val BINARY_XML_LINE = Regex("""Binary XML file line #(\d+)""")
     private val FILE_BACKED_KINDS = setOf("layout", "drawable", "mipmap", "color", "font")

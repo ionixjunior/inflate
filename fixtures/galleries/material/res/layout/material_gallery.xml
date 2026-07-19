@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  P1-B / §FR-2 Material gallery. Exercises the bundled androidx/Material surface inside a
+  ConstraintLayout that uses guidelines, chains, barriers, groups and flow, under Theme.Material3.*,
+  with NO project dependency declarations. IDs on the structural views are asserted against known-good
+  bounds (AC3); the attr_probe uses ?attr/colorPrimary (AC2); every widget must inflate as its real
+  class, never a MockView (AC1).
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF">
+
+    <!-- AC2: ?attr/colorPrimary must resolve through the Material theme inheritance chain. -->
+    <View
+        android:id="@+id/attr_probe"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?attr/colorPrimary"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- AC3: horizontal guideline at 40% of height; guided_view's top sits exactly on it. -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_mid"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_percent="0.4" />
+
+    <View
+        android:id="@+id/guided_view"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:background="#FF3366CC"
+        app:layout_constraintTop_toTopOf="@id/guideline_mid"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- AC3: a horizontal spread chain of two MaterialButtons. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/chain_a"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="A"
+        app:layout_constraintTop_toBottomOf="@id/guided_view"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/chain_b"
+        app:layout_constraintHorizontal_chainStyle="spread" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/chain_b"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="B"
+        app:layout_constraintTop_toBottomOf="@id/guided_view"
+        app:layout_constraintStart_toEndOf="@id/chain_a"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- AC3: a barrier below both chained buttons; below_barrier sits under whichever is taller. -->
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/barrier_bottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="chain_a,chain_b" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/below_barrier"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Below barrier"
+        app:layout_constraintTop_toBottomOf="@id/barrier_bottom"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- AC3: a Flow virtual layout wrapping several chips. -->
+    <androidx.constraintlayout.helper.widget.Flow
+        android:id="@+id/flow_demo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:flow_wrapMode="chain"
+        app:constraint_referenced_ids="chip_one,chip_two"
+        app:layout_constraintTop_toBottomOf="@id/below_barrier"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_one"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="One" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_two"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Two" />
+
+    <!-- AC3: a Group toggling visibility of referenced views. -->
+    <androidx.constraintlayout.widget.Group
+        android:id="@+id/group_demo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="visible"
+        app:constraint_referenced_ids="below_barrier" />
+
+    <!-- AC1: the remaining §FR-2 Material widgets. Stacked below the flow; only their classes matter. -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/chip_group"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/flow_demo"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.chip.Chip
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Grouped" />
+    </com.google.android.material.chip.ChipGroup>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/text_input"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:hint="Label"
+        app:layout_constraintTop_toBottomOf="@id/chip_group"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card"
+        android:layout_width="120dp"
+        android:layout_height="60dp"
+        app:layout_constraintTop_toBottomOf="@id/text_input"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabs"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/card"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.tabs.TabItem
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tab" />
+    </com.google.android.material.tabs.TabLayout>
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:title="Title"
+        app:layout_constraintTop_toBottomOf="@id/tabs"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/slider"
+        android:layout_width="120dp"
+        android:layout_height="wrap_content"
+        android:value="30"
+        android:valueFrom="0"
+        android:valueTo="100"
+        app:layout_constraintTop_toBottomOf="@id/toolbar"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switch_widget"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/slider"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/extended_fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Extended"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottom_nav"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/fab"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -41,6 +41,9 @@ object EngineArtifacts {
   const val LAYOUTLIB_VERSION = "14.0.11"
   const val TOOLS_VERSION = "31.4.2"
 
+  /** Bundled Material pin (design §D4); named in the P1-B AC4 `materialAttrMissing` warning (T41). */
+  const val MATERIAL_VERSION = "1.12.0"
+
   /** Native classifier for the layoutlib-runtime jar. */
   fun runtimeClassifier(arch: HostArch): String = when (arch) {
     HostArch.MAC_ARM -> "mac-arm"
@@ -75,7 +78,7 @@ object EngineArtifacts {
 
   /** Top-level androidx/Material AAR pins (design §D4). Full transitive closure is resolved in T15. */
   val androidxAars: List<EngineArtifact> = listOf(
-    EngineArtifact("com.google.android.material", "material", "1.12.0", extension = "aar"),
+    EngineArtifact("com.google.android.material", "material", MATERIAL_VERSION, extension = "aar"),
     EngineArtifact("androidx.appcompat", "appcompat", "1.7.0", extension = "aar"),
     EngineArtifact("androidx.constraintlayout", "constraintlayout", "2.2.1", extension = "aar"),
     EngineArtifact("androidx.core", "core", "1.13.1", extension = "aar"),
