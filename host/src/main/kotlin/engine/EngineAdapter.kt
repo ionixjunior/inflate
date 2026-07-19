@@ -5,7 +5,12 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Environment
 import app.cash.paparazzi.PaparazziSdk
 import app.cash.paparazzi.internal.resources.AppResourceRepository
+import app.cash.paparazzi.internal.resources.FrameworkResourceRepository
+import com.android.ide.common.rendering.api.ResourceNamespace
 import com.android.ide.common.rendering.api.SessionParams.RenderingMode
+import com.android.ide.common.rendering.api.StyleResourceValue
+import com.android.ide.common.resources.AbstractResourceRepository
+import com.android.resources.ResourceType
 import java.awt.image.BufferedImage
 import java.io.File
 
@@ -42,6 +47,15 @@ class EngineAdapter(
   /** Whether the most recent [session] call rebuilt the app repository (vs reused the cached one). */
   var lastSessionRebuilt: Boolean = false
     private set
+
+  /**
+   * Incremented on every app-repository rebuild. Session-scoped caches (e.g. ThemeCatalog) key on
+   * this so they refresh exactly when the app resources change (invalidation), not otherwise.
+   */
+  var sessionGeneration: Long = 0L
+    private set
+
+  private var frameworkStyleRepo: AbstractResourceRepository? = null
 
   private data class SessionKey(val rootPaths: List<String>, val packageName: String)
 
@@ -130,6 +144,7 @@ class EngineAdapter(
       // reflects the new roots immediately, before the first render.
       sdk!!.unsafeUpdateConfig(deviceConfig = deviceConfig)
       lastRebuildMillis = (System.nanoTime() - start) / 1_000_000L
+      sessionGeneration++
     }
     lastSessionRebuilt = rebuild
     return ProjectSession(roots, packageName, rebuild)
@@ -203,6 +218,40 @@ class EngineAdapter(
   fun render(view: View): BufferedImage {
     sdk!!.snapshot(view)
     return checkNotNull(lastImage) { "snapshot produced no frame" }
+  }
+
+  /**
+   * STYLE resources (name -> parent style name, or null) from the current app repository — project
+   * styles plus any bundled library styles (RES_AUTO namespace). Feeds ThemeCatalog (T26).
+   */
+  fun appStyleParents(): Map<String, String?> =
+    styleParents(currentAppRepo ?: error("no active session — call session() first"), ResourceNamespace.RES_AUTO)
+
+  /** STYLE resources (name -> parent) from the framework repository (`android:` namespace). */
+  fun frameworkStyleParents(): Map<String, String?> =
+    styleParents(frameworkStyleRepository(), ResourceNamespace.ANDROID)
+
+  private fun frameworkStyleRepository(): AbstractResourceRepository {
+    frameworkStyleRepo?.let { return it }
+    // Mirror Renderer.prepare's framework repo (default languages only). Built lazily since only
+    // theme enumeration needs it; the render path uses PaparazziSdk's own framework repository.
+    val repo = FrameworkResourceRepository.create(
+      resourceDirectoryOrFile = File(resourcesRoot, "res").toPath(),
+      languagesToLoad = emptySet(),
+      useCompiled9Patches = false,
+    )
+    frameworkStyleRepo = repo
+    return repo
+  }
+
+  private fun styleParents(repo: AbstractResourceRepository, namespace: ResourceNamespace): Map<String, String?> {
+    val styles = repo.getResources(namespace, ResourceType.STYLE)
+    val out = LinkedHashMap<String, String?>()
+    for (name in styles.keySet()) {
+      val item = styles.get(name).firstOrNull() ?: continue
+      out[name] = (item.resourceValue as? StyleResourceValue)?.parentStyleName
+    }
+    return out
   }
 
   fun teardown() {
