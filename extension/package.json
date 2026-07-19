@@ -60,7 +60,7 @@
     }
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20",
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 && esbuild webview-ui/main.ts --bundle --outfile=dist/webview.js --format=iife --platform=browser --target=es2020",
     "compile-tests": "rm -rf out && tsc -p tsconfig.test.json",
     "pretest:integration": "npm run build && npm run compile-tests",
     "test": "vitest run",

@@ -1,22 +1,22 @@
 /**
- * Activation & Commands (T18, design component #1, UX-01/HOST-01, P1-I AC4/AC5). Wires the real
- * commands, the `inflate:eligibleDocument` context key (a path-heuristic stub until the full
- * `DocumentClassifier` lands in T33), the "Inflate" output channel, and the walking-skeleton
- * preview panel — replacing T6's throwaway `inflate.helloPreview` command with real host wiring.
+ * Activation & Commands (T18/T37, design component #1, UX-01/02/HOST-01, P1-A/F/I). Wires the real
+ * commands, the `inflate:eligibleDocument` context key (real DocumentClassifier, T33), the "Inflate"
+ * output channel, and the hot-reload preview loop: RenderScheduler (T36) → HostManager → render →
+ * PreviewPanelManager (T37). Saves and refreshes flow through the scheduler; results are applied to
+ * the per-document panel via the webview message contract.
  *
- * `render` is still stubbed to a structured error on the real host (T13) until Phase 6 (T35), so
- * this walking skeleton proves the FULL wire end-to-end (spawn, initialize, warmup, a real render
- * request/response round-trip, and the resulting image showing in the panel) using an injectable
- * host command — production resolves a real `java` invocation; `extensionTestsEnv` lets the
- * integration test point at `test/fake-host.js` instead (no JDK/JVM needed for the gate).
+ * The host command is injectable — production resolves a real `java` invocation; `extensionTestsEnv`
+ * points the integration tests at `test/fake-host.js` (no JDK/JVM needed for the gate).
  */
 
-import * as path from 'path';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { classify, isEligible } from './classifier';
 import { HostManager, HostState } from './host';
-import { PreviewConfig, RenderRequest } from './protocol';
-import { previewHtml } from './webview';
+import { PreviewPanelManager } from './panel';
+import { DocKind, PreviewConfig } from './protocol';
+import { ResourceRootResolver } from './roots';
+import { RenderScheduler } from './scheduler';
 
 /** Test-visible API returned from activate() so integration tests can assert behavior. */
 export interface InflateApi {
@@ -26,6 +26,8 @@ export interface InflateApi {
   lastPanel?: vscode.WebviewPanel;
   /** The HostManager instance backing every command (test hook: state, PID, dispose). */
   hostManager: HostManager;
+  /** The panel manager (test hook: panel count, last applied result per document). */
+  panelManager: PreviewPanelManager;
 }
 
 const OUTPUT_CHANNEL_NAME = 'Inflate';
@@ -75,9 +77,6 @@ function resolveHostCommand(): { command: string; args: string[] } {
   throw new Error('Inflate: no render engine configured yet (guided setup lands with packaging).');
 }
 
-let renderRequestCounter = 0;
-let panelsByDoc = new Map<string, vscode.WebviewPanel>();
-
 export function activate(context: vscode.ExtensionContext): InflateApi {
   const start = Date.now();
   const output = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
@@ -89,7 +88,45 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   hostManager.onStateChange((s: HostState) => output.appendLine(`[host] state -> ${s}`));
   hostManager.onStderrLine((line) => output.appendLine(`[host:stderr] ${line}`));
 
-  const api: InflateApi = { activationMs: 0, hostManager };
+  const rootsResolver = new ResourceRootResolver();
+  const outputDir = vscode.Uri.joinPath(context.globalStorageUri, 'renders');
+  try {
+    fs.mkdirSync(outputDir.fsPath, { recursive: true });
+  } catch {
+    /* created lazily by the host otherwise */
+  }
+
+  const scheduler = new RenderScheduler({
+    host: {
+      render: (req) => hostManager.render(req),
+      invalidate: (paths) => hostManager.invalidate({ paths }),
+    },
+    resolveRoots: (docPath) => {
+      const info = rootsResolver.resolve(docPath);
+      return { roots: info.roots, packageName: info.packageName };
+    },
+    classify: (docPath) => {
+      const c = classify(docPath);
+      return (c.kind === 'unsupported' ? 'layout' : c.kind) as DocKind;
+    },
+    getConfig: () => defaultPreviewConfig(),
+    readBuffer: (docPath) =>
+      vscode.workspace.textDocuments.find((d) => d.uri.fsPath === docPath)?.getText() ?? '',
+    onResult: (docPath, response) => {
+      output.appendLine(`[render] ${docPath} -> ${response.status} (id=${response.id})`);
+      panelManager.applyResult(docPath, response);
+    },
+    onHostError: (docPath, error) => {
+      output.appendLine(`[render] ${docPath} host error: ${error.message}`);
+      panelManager.applyHostError(docPath, error);
+    },
+  });
+
+  const panelManager = new PreviewPanelManager(context, output, outputDir, (docPath) =>
+    scheduler.refresh(docPath),
+  );
+
+  const api: InflateApi = { activationMs: 0, hostManager, panelManager };
 
   void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', false);
 
@@ -100,50 +137,24 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   updateEligibility(vscode.window.activeTextEditor);
 
   async function openPreviewFor(doc: vscode.TextDocument): Promise<void> {
-    const key = doc.uri.toString();
     output.appendLine(`[preview] openPreview requested for ${doc.uri.fsPath}`);
-
-    const existing = panelsByDoc.get(key);
-    if (existing) {
-      existing.reveal(vscode.ViewColumn.Beside);
-    }
-
+    api.lastPanel = panelManager.openFor(doc);
     await hostManager.ensureReady();
-
-    const id = ++renderRequestCounter;
-    const request: RenderRequest = {
-      id,
-      docPath: doc.uri.fsPath,
-      docKind: 'layout',
-      roots: [],
-      packageName: 'com.inflate.preview',
-      config: defaultPreviewConfig(),
-      timeoutMs: 15000,
-    };
-    output.appendLine(`[render#${id}] dispatching render for ${doc.uri.fsPath}`);
-    const response = await hostManager.render(request);
-    output.appendLine(`[render#${id}] status=${response.status}`);
-
-    const panel =
-      existing ??
-      vscode.window.createWebviewPanel('inflate.preview', `Inflate: ${path.basename(doc.uri.fsPath)}`, vscode.ViewColumn.Beside, {
-        enableScripts: false,
-        localResourceRoots: [context.extensionUri],
-      });
-    panelsByDoc.set(key, panel);
-    api.lastPanel = panel;
-
-    if (response.status === 'ok' && response.pngPath) {
-      const imgUri = panel.webview.asWebviewUri(vscode.Uri.file(response.pngPath));
-      panel.webview.html = previewHtml({ kind: 'image', imgSrc: imgUri.toString() }, panel.webview.cspSource);
-    } else {
-      panel.webview.html = previewHtml(
-        { kind: 'error', message: response.error?.message ?? 'render failed' },
-        panel.webview.cspSource,
-      );
-    }
-    panel.onDidDispose(() => panelsByDoc.delete(key));
+    scheduler.requestRender(doc.uri.fsPath, 'reopen');
+    // Await the first render so callers (and the walking-skeleton test) observe a settled host.
+    await scheduler.settled(doc.uri.fsPath);
   }
+
+  // Hot reload: a save re-renders the document itself and every open preview that depends on it.
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((d) => scheduler.notifyFileSaved(d.uri.fsPath)),
+  );
+  // File-gone: mark previews whose source was deleted.
+  context.subscriptions.push(
+    vscode.workspace.onDidDeleteFiles((e) => {
+      for (const uri of e.files) panelManager.markFileGone(uri.fsPath);
+    }),
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('inflate.openPreview', async (uri?: vscode.Uri) => {
@@ -158,7 +169,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     vscode.commands.registerCommand('inflate.refreshPreview', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
-      await openPreviewFor(editor.document);
+      scheduler.refresh(editor.document.uri.fsPath);
     }),
     vscode.commands.registerCommand('inflate.doctor', () => {
       output.appendLine(`[doctor] host state: ${hostManager.getState()}`);
@@ -194,6 +205,5 @@ function resolveHostCommandOrDeferred(output: vscode.OutputChannel): { command: 
 /** Terminates the host process (no orphans — NFR-05) and is called by `extension.ts`'s
  * zero-argument `deactivate()` export with the `hostManager` it got back from {@link activate}. */
 export function deactivateHost(hostManager: HostManager): Thenable<void> {
-  panelsByDoc = new Map();
   return hostManager.dispose();
 }

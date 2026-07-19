@@ -9,6 +9,10 @@
     "src/activation.ts",
     "src/webview.ts",
     "src/host.ts",
-    "src/protocol.ts"
+    "src/protocol.ts",
+    "src/classifier.ts",
+    "src/roots.ts",
+    "src/scheduler.ts",
+    "src/panel.ts"
   ]
 }

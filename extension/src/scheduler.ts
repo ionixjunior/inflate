@@ -58,6 +58,8 @@ interface DocState {
   dependencies: Set<string>;
   roots: string[];
   packageName: string;
+  /** Resolvers waiting for this document to become fully idle ({@link RenderScheduler.settled}). */
+  idleWaiters: Array<() => void>;
 }
 
 /** Normalize a path for stable comparison/keys across triggers and dependency lists. */
@@ -100,10 +102,25 @@ export class RenderScheduler {
         dependencies: new Set(),
         roots: [],
         packageName: '',
+        idleWaiters: [],
       };
       this.states.set(key, st);
     }
     return st;
+  }
+
+  /** Resolves once `docPath` has no in-flight or pending render (used to await the initial preview). */
+  settled(docPath: string): Promise<void> {
+    const st = this.states.get(norm(docPath));
+    if (!st || (!st.inFlight && st.pendingCause === null)) return Promise.resolve();
+    return new Promise<void>((resolve) => st.idleWaiters.push(resolve));
+  }
+
+  private resolveIdleIfSettled(st: DocState): void {
+    if (st.inFlight || st.pendingCause !== null) return;
+    const waiters = st.idleWaiters;
+    st.idleWaiters = [];
+    for (const w of waiters) w();
   }
 
   /**
@@ -192,6 +209,7 @@ export class RenderScheduler {
     }
     if (response.status === 'ok') st.dependencies = new Set(response.dependencies.map(norm));
     this.deps.onResult(docKey, response);
+    this.resolveIdleIfSettled(st);
   }
 
   private onFailure(docKey: string, id: number, error: Error): void {
@@ -203,5 +221,6 @@ export class RenderScheduler {
       return;
     }
     this.deps.onHostError?.(docKey, error);
+    this.resolveIdleIfSettled(st);
   }
 }

@@ -15,6 +15,7 @@
 //                             (triggers the client-side render-timeout watchdog).
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { createMessageConnection, StreamMessageReader, StreamMessageWriter } = require('vscode-jsonrpc/node');
 
@@ -57,6 +58,28 @@ connection.onRequest('render', (...args) => {
   }
   if (mode === 'hang-on-render') {
     return new Promise(() => {}); // never resolves — triggers the client watchdog
+  }
+  // Reflect the document content so the hot-reload integration test can drive ok/error transitions:
+  // inlineContent (refresh) wins, else the file on disk. A "INFLATE_ERROR" sentinel yields a
+  // structured error RenderResponse (P1-A AC3 shape); anything else renders the committed PNG.
+  let content = params.inlineContent;
+  if (content === undefined && params.docPath) {
+    try {
+      content = fs.readFileSync(params.docPath, 'utf8');
+    } catch {
+      content = '';
+    }
+  }
+  if (typeof content === 'string' && content.includes('INFLATE_ERROR')) {
+    return {
+      id: params.id,
+      status: 'error',
+      warnings: [],
+      error: { message: 'fake-host: simulated syntax error', file: params.docPath, line: 2, column: 1 },
+      dependencies: [],
+      timings: { prepareMs: 0, inflateMs: 0, renderMs: 0, totalMs: 0 },
+      sessionRebuilt: false,
+    };
   }
   return {
     id: params.id,
