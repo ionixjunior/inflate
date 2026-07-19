@@ -90,11 +90,14 @@ object Preprocessor {
       )
     }
 
-    val overlayFile = writeOverlay(content, docKind, docPath, overlayBaseDir)
+    val lineMap = LineMap.identity(content)
+    val afterTools = ToolsAttributes.apply(content).content
+
+    val overlayFile = writeOverlay(afterTools, docKind, docPath, overlayBaseDir)
 
     return PreprocessResult(
       overlayFile = overlayFile,
-      lineMap = LineMap.identity(content),
+      lineMap = lineMap,
       warnings = log.warnings(),
       referencedResources = emptyList(),
       customClasses = emptyList(),
