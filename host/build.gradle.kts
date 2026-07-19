@@ -30,6 +30,10 @@ dependencies {
   compileOnly(libs.tools.common)
   compileOnly(libs.tools.sdk.common)
   compileOnly(libs.tools.ninepatch)
+  // T12: moshi (already on the Paparazzi classpath, design finding #9) + moshi-kotlin's
+  // reflection-based adapter factory for the protocol DTOs (rpc/Dto.kt) — no kapt/KSP needed.
+  implementation(libs.moshi)
+  implementation(libs.moshi.kotlin)
 
   testImplementation(platform(libs.junit.bom))
   testImplementation(libs.junit.jupiter)

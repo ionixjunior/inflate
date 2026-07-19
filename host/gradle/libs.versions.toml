@@ -15,6 +15,7 @@ tools-common = { module = "com.android.tools:common", version.ref = "tools" }
 tools-sdk-common = { module = "com.android.tools:sdk-common", version.ref = "tools" }
 tools-ninepatch = { module = "com.android.tools:ninepatch", version.ref = "tools" }
 moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
+moshi-kotlin = { module = "com.squareup.moshi:moshi-kotlin", version.ref = "moshi" }
 kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
