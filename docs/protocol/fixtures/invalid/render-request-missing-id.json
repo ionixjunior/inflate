@@ -1,0 +1,16 @@
+{
+  "docPath": "/Users/dev/project/app/src/main/res/layout/main.xml",
+  "docKind": "layout",
+  "roots": ["/Users/dev/project/app/src/main/res"],
+  "packageName": "com.example.app",
+  "config": {
+    "themeName": "Theme.Material3.DayNight",
+    "isProjectTheme": false,
+    "night": false,
+    "device": { "id": "phone", "label": "Phone", "widthDp": 411, "heightDp": 891, "defaultDensity": "xhdpi", "sizeBucket": "normal" },
+    "orientation": "portrait",
+    "density": "xhdpi",
+    "pixelScale": 1
+  },
+  "timeoutMs": 15000
+}

@@ -1,0 +1,23 @@
+{
+  "id": 44,
+  "status": "ok",
+  "pngPath": "/Users/dev/.config/Code/User/globalStorage/inflate/session/win-1/renders/44.png",
+  "imageWidth": 4096,
+  "imageHeight": 4096,
+  "staticPreviewBadge": true,
+  "matchedStateItem": { "index": 2, "stateAttrs": ["state_pressed"] },
+  "canvasCapped": true,
+  "warnings": [
+    { "kind": "unresolvedRef", "message": "Unresolved reference @string/missing_label", "detail": "@string/missing_label" },
+    { "kind": "substitutedClass", "message": "View class not found, rendered as placeholder: com.example.CustomView", "detail": "com.example.CustomView" },
+    { "kind": "bindingReplaced", "message": "Binding expressions replaced with defaults", "detail": "@{viewModel.title}" },
+    { "kind": "levelDefault", "message": "Level-based drawable rendered at level 5000 (50%)", "detail": "level-list" },
+    { "kind": "notice", "message": "Canvas clipped to the 4096x4096 px cap" },
+    { "kind": "materialAttrMissing", "message": "Material attribute not defined by bundled Material 1.12.0", "detail": "?attr/colorSurfaceContainer" }
+  ],
+  "dependencies": [
+    "/Users/dev/project/app/src/main/res/layout/main.xml"
+  ],
+  "timings": { "prepareMs": 20, "inflateMs": 30, "renderMs": 45, "totalMs": 95 },
+  "sessionRebuilt": true
+}

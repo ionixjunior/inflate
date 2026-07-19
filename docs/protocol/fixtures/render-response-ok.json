@@ -1,0 +1,16 @@
+{
+  "id": 42,
+  "status": "ok",
+  "pngPath": "/Users/dev/.config/Code/User/globalStorage/inflate/session/win-1/renders/42.png",
+  "imageWidth": 411,
+  "imageHeight": 891,
+  "staticPreviewBadge": false,
+  "canvasCapped": false,
+  "warnings": [],
+  "dependencies": [
+    "/Users/dev/project/app/src/main/res/layout/main.xml",
+    "/Users/dev/project/app/src/main/res/values/colors.xml"
+  ],
+  "timings": { "prepareMs": 12, "inflateMs": 8, "renderMs": 15, "totalMs": 35 },
+  "sessionRebuilt": false
+}

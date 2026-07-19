@@ -1,0 +1,33 @@
+{
+  "id": 42,
+  "docPath": "/Users/dev/project/app/src/main/res/layout/main.xml",
+  "docKind": "layout",
+  "inlineContent": "<LinearLayout xmlns:android=\"http://schemas.android.com/apk/res/android\" />",
+  "roots": [
+    "/Users/dev/project/app/src/main/res",
+    "/Users/dev/project/app/src/debug/res"
+  ],
+  "packageName": "com.example.app",
+  "config": {
+    "themeName": "Theme.Material3.DayNight",
+    "isProjectTheme": false,
+    "night": false,
+    "device": {
+      "id": "phone",
+      "label": "Phone",
+      "widthDp": 411,
+      "heightDp": 891,
+      "defaultDensity": "xhdpi",
+      "sizeBucket": "normal"
+    },
+    "orientation": "portrait",
+    "density": "xhdpi",
+    "pixelScale": 1,
+    "drawable": {
+      "states": ["pressed"],
+      "sizeDp": { "w": 128, "h": 128 }
+    }
+  },
+  "timeoutMs": 15000,
+  "_extra": "unknown-field-tolerance-probe"
+}

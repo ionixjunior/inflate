@@ -1,0 +1,6 @@
+[
+  { "name": "AppTheme", "isProjectTheme": true, "source": "project" },
+  { "name": "Theme.Material3.DayNight", "isProjectTheme": false, "source": "material" },
+  { "name": "Theme.AppCompat.DayNight", "isProjectTheme": false, "source": "appcompat" },
+  { "name": "android:Theme.Material", "isProjectTheme": false, "source": "platform" }
+]

@@ -1,0 +1,14 @@
+{
+  "id": 43,
+  "status": "error",
+  "warnings": [],
+  "error": {
+    "message": "method not yet implemented: render",
+    "file": "/Users/dev/project/app/src/main/res/layout/main.xml",
+    "line": 1,
+    "column": 1
+  },
+  "dependencies": [],
+  "timings": { "prepareMs": 0, "inflateMs": 0, "renderMs": 0, "totalMs": 0 },
+  "sessionRebuilt": false
+}

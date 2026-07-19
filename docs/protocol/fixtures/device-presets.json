@@ -1,0 +1,7 @@
+[
+  { "id": "smallPhone", "label": "Small Phone", "widthDp": 360, "heightDp": 640, "defaultDensity": "hdpi", "sizeBucket": "normal" },
+  { "id": "phone", "label": "Phone", "widthDp": 411, "heightDp": 891, "defaultDensity": "xhdpi", "sizeBucket": "normal" },
+  { "id": "largePhone", "label": "Large Phone", "widthDp": 480, "heightDp": 1040, "defaultDensity": "xxhdpi", "sizeBucket": "large" },
+  { "id": "tablet7", "label": "7in Tablet", "widthDp": 600, "heightDp": 960, "defaultDensity": "xhdpi", "sizeBucket": "large" },
+  { "id": "tablet10", "label": "10in Tablet", "widthDp": 800, "heightDp": 1280, "defaultDensity": "xhdpi", "sizeBucket": "xlarge" }
+]

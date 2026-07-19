@@ -1,0 +1,17 @@
+{
+  "layoutlibRuntimeRoot": "/Users/dev/.config/Code/User/globalStorage/inflate/engine/abc123/layoutlib/runtime",
+  "layoutlibResourcesRoot": "/Users/dev/.config/Code/User/globalStorage/inflate/engine/abc123/layoutlib/resources",
+  "classpathNote": "assembled-by-launcher",
+  "libraryResDirs": [
+    "/Users/dev/.config/Code/User/globalStorage/inflate/engine/abc123/aar-res/material/res",
+    "/Users/dev/.config/Code/User/globalStorage/inflate/engine/abc123/aar-res/appcompat/res"
+  ],
+  "libraryPackages": [
+    "com.google.android.material",
+    "androidx.appcompat"
+  ],
+  "outputDir": "/Users/dev/.config/Code/User/globalStorage/inflate/session/win-1/renders",
+  "overlayDir": "/Users/dev/.config/Code/User/globalStorage/inflate/session/win-1/overlay/res",
+  "compileSdkVersion": 34,
+  "logLevel": "info"
+}
