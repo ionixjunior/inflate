@@ -32,6 +32,16 @@ export interface AppliedState {
   responseId?: number;
   hasStaleImage: boolean;
   errorMessage?: string;
+  /** Drawable metadata from the last successful render (T49 — toolbar/observability). */
+  stateSensitive?: boolean;
+  staticPreviewBadge?: boolean;
+  matchedStateItem?: { index: number; stateAttrs: string[] };
+}
+
+/** A drawable config patch from the webview toolbar (state picker / size override). */
+export interface DrawableConfigPatch {
+  states: string[];
+  sizeDp?: { w: number; h: number };
 }
 
 function warningsToVm(warnings: Warning[]): Array<{ kind: string; message: string }> {
@@ -47,6 +57,8 @@ export class PreviewPanelManager {
     /** Session PNG output dir (globalStorage) — a webview resource root and the sweep target. */
     private readonly outputDir: vscode.Uri,
     private readonly onRefresh: (docPath: string) => void = () => {},
+    /** A drawable toolbar change (state pick / size override) → re-render with the new config (T49). */
+    private readonly onConfigChanged: (docPath: string, drawable: DrawableConfigPatch) => void = () => {},
   ) {
     this.sweepPngs();
   }
@@ -74,7 +86,35 @@ export class PreviewPanelManager {
       responseId: r.id,
       hasStaleImage: r.status === 'error' && entry.hasGoodImage,
       errorMessage: r.error?.message,
+      stateSensitive: r.stateSensitive,
+      staticPreviewBadge: r.staticPreviewBadge,
+      matchedStateItem: r.matchedStateItem,
     };
+  }
+
+  /**
+   * Route a webview → extension message for a document. Public so the extension-side integration
+   * loop (T18/T37 fake-host pattern) can drive the toolbar's config-change path without a live DOM.
+   */
+  deliverWebviewMessage(docPath: string, msg: { type?: string; drawable?: DrawableConfigPatch }): void {
+    const entry = this.entries.get(this.key(docPath));
+    if (!entry) return;
+    this.handleWebviewMessage(entry, docPath, msg);
+  }
+
+  private handleWebviewMessage(
+    entry: PanelEntry,
+    docPath: string,
+    msg: { type?: string; drawable?: DrawableConfigPatch },
+  ): void {
+    if (msg?.type === 'ready') {
+      entry.ready = true;
+      if (entry.lastMessage) void entry.panel.webview.postMessage(entry.lastMessage);
+    } else if (msg?.type === 'refresh') {
+      this.onRefresh(docPath);
+    } else if (msg?.type === 'configChanged' && msg.drawable) {
+      this.onConfigChanged(docPath, msg.drawable);
+    }
   }
 
   /** Open (or reveal) the panel for `doc`, beside the editor, without duplicating it. */
@@ -99,13 +139,8 @@ export class PreviewPanelManager {
     const entry: PanelEntry = { panel, ready: false, hasGoodImage: false };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
-    panel.webview.onDidReceiveMessage((msg: { type?: string }) => {
-      if (msg?.type === 'ready') {
-        entry.ready = true;
-        if (entry.lastMessage) panel.webview.postMessage(entry.lastMessage);
-      } else if (msg?.type === 'refresh') {
-        this.onRefresh(doc.uri.fsPath);
-      }
+    panel.webview.onDidReceiveMessage((msg: { type?: string; drawable?: DrawableConfigPatch }) => {
+      this.handleWebviewMessage(entry, doc.uri.fsPath, msg);
     });
     panel.onDidDispose(() => {
       this.entries.delete(key);
@@ -131,6 +166,11 @@ export class PreviewPanelManager {
         height: response.imageHeight ?? 0,
         warnings: warningsToVm(response.warnings),
         canvasCapped: response.canvasCapped ?? false,
+        drawable: {
+          stateSensitive: response.stateSensitive ?? false,
+          staticPreviewBadge: response.staticPreviewBadge ?? false,
+          matched: response.matchedStateItem,
+        },
       });
     } else {
       this.post(entry, {
@@ -204,6 +244,12 @@ export class PreviewPanelManager {
         content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
   <style>
     body { margin: 0; font-family: sans-serif; color: var(--vscode-foreground); }
+    #toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px;
+               border-bottom: 1px solid var(--vscode-panel-border, #444); font-size: 12px; }
+    #toolbar label { display: inline-flex; align-items: center; gap: 4px; }
+    #badge { background: var(--vscode-badge-background, #666); color: var(--vscode-badge-foreground, #fff);
+             padding: 2px 8px; border-radius: 8px; }
+    #matched { color: var(--vscode-descriptionForeground, #999); }
     #stage { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
     #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
     #staleChip { position: fixed; top: 8px; right: 8px; background: var(--vscode-badge-background, #666);
@@ -218,6 +264,15 @@ export class PreviewPanelManager {
 </head>
 <body>
   <div id="staleChip" style="display:none">stale</div>
+  <div id="toolbar">
+    <span id="statePickerWrap" style="display:none">
+      <label>State <select id="statePicker"></select></label>
+    </span>
+    <label>Size <input id="sizeInput" type="text" size="8" placeholder="WxH" /></label>
+    <button id="backdropToggle" type="button">Backdrop</button>
+    <span id="badge" style="display:none">static preview</span>
+    <span id="matched" style="display:none"></span>
+  </div>
   <div id="stage"><img id="preview" alt="Inflate preview" style="display:none" /></div>
   <div id="errorPanel" style="display:none"></div>
   <div id="fileGone" style="display:none">The previewed file no longer exists.</div>

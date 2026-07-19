@@ -81,12 +81,25 @@ connection.onRequest('render', (...args) => {
       sessionRebuilt: false,
     };
   }
+  // Drawable state reflection (T49): a <selector>/<ripple>/<animated-selector> is state-sensitive;
+  // the picked state chooses the matched selector item so the toolbar loop can be driven end to end.
+  const text = typeof content === 'string' ? content : '';
+  const stateSensitive = /<\s*(selector|ripple|animated-selector)\b/.test(text);
+  const states = (params.config && params.config.drawable && params.config.drawable.states) || [];
+  let matchedStateItem;
+  if (stateSensitive) {
+    matchedStateItem = states.includes('pressed')
+      ? { index: 0, stateAttrs: ['state_pressed'] }
+      : { index: 3, stateAttrs: [] };
+  }
   return {
     id: params.id,
     status: 'ok',
     pngPath: FAKE_RENDERED_PNG,
     imageWidth: 1,
     imageHeight: 1,
+    stateSensitive,
+    matchedStateItem,
     warnings: [],
     dependencies: [],
     timings: { prepareMs: 0, inflateMs: 0, renderMs: 0, totalMs: 0 },

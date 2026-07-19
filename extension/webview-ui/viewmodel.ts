@@ -10,8 +10,23 @@ export interface WarningVM {
   message: string;
 }
 
+/** Drawable metadata a render response carries for the toolbar (T49). */
+export interface DrawableMetaVM {
+  stateSensitive: boolean;
+  staticPreviewBadge: boolean;
+  matched?: { index: number; stateAttrs: string[] };
+}
+
 export type WebviewMessage =
-  | { type: 'setImage'; uri: string; width: number; height: number; warnings: WarningVM[]; canvasCapped?: boolean }
+  | {
+      type: 'setImage';
+      uri: string;
+      width: number;
+      height: number;
+      warnings: WarningVM[];
+      canvasCapped?: boolean;
+      drawable?: DrawableMetaVM;
+    }
   | { type: 'setError'; message: string; file?: string; line?: number; column?: number; warnings: WarningVM[] }
   | { type: 'setStatus'; status: string }
   | { type: 'fileGone' };
@@ -27,6 +42,8 @@ export interface PanelViewModel {
   fileGone: boolean;
   warnings: WarningVM[];
   warningsCollapsed: boolean;
+  /** Drawable metadata from the latest successful render (toolbar picker/badge/matched display). */
+  drawable?: DrawableMetaVM;
 }
 
 export const initialViewModel: PanelViewModel = {
@@ -51,6 +68,7 @@ export function reduce(state: PanelViewModel, msg: WebviewMessage): PanelViewMod
         fileGone: false,
         status: undefined,
         warnings: msg.warnings,
+        drawable: msg.drawable,
       };
     case 'setError':
       // Keep the last good image (dimmed + stale) if one exists; show the error either way (UX-04).

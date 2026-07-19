@@ -10,11 +10,12 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { classify, isEligible } from './classifier';
 import { HostManager, HostState } from './host';
 import { PreviewPanelManager } from './panel';
-import { DocKind, PreviewConfig } from './protocol';
+import { DocKind, DrawableState, PreviewConfig } from './protocol';
 import { ResourceRootResolver } from './roots';
 import { RenderScheduler } from './scheduler';
 
@@ -96,6 +97,9 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     /* created lazily by the host otherwise */
   }
 
+  // Per-file drawable toolbar config (state picker / size override), until ConfigStore lands (T50).
+  const drawableConfigs = new Map<string, { states: DrawableState[]; sizeDp?: { w: number; h: number } }>();
+
   const scheduler = new RenderScheduler({
     host: {
       render: (req) => hostManager.render(req),
@@ -109,7 +113,12 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       const c = classify(docPath);
       return (c.kind === 'unsupported' ? 'layout' : c.kind) as DocKind;
     },
-    getConfig: () => defaultPreviewConfig(),
+    getConfig: (docPath: string) => {
+      const config = defaultPreviewConfig();
+      const drawable = drawableConfigs.get(path.resolve(docPath));
+      if (drawable) config.drawable = drawable;
+      return config;
+    },
     readBuffer: (docPath) =>
       vscode.workspace.textDocuments.find((d) => d.uri.fsPath === docPath)?.getText() ?? '',
     onResult: (docPath, response) => {
@@ -122,8 +131,18 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     },
   });
 
-  const panelManager = new PreviewPanelManager(context, output, outputDir, (docPath) =>
-    scheduler.refresh(docPath),
+  const panelManager = new PreviewPanelManager(
+    context,
+    output,
+    outputDir,
+    (docPath) => scheduler.refresh(docPath),
+    (docPath, drawable) => {
+      drawableConfigs.set(path.resolve(docPath), {
+        states: drawable.states as DrawableState[],
+        sizeDp: drawable.sizeDp,
+      });
+      scheduler.notifyConfigChanged(docPath);
+    },
   );
 
   const api: InflateApi = { activationMs: 0, hostManager, panelManager };
