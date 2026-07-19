@@ -4,6 +4,7 @@ import engine.EngineAdapter
 import out.PngWriter
 import render.DrawableRenderer
 import render.LayoutRenderer
+import render.NinePatchRenderer
 import themes.ThemeCatalog
 import java.io.File
 
@@ -26,9 +27,8 @@ interface RenderBackend {
 
 /**
  * Routes each `render` by [RenderRequest.docKind]: layouts go to [LayoutRenderer]; drawable and color
- * documents go to [DrawableRenderer] (T44+); nine-patch (`.9.png`) returns a structured error until
- * T47. `listThemes` drives the [ThemeCatalog] over the requested session; `invalidate` forwards to
- * the [EngineAdapter].
+ * documents go to [DrawableRenderer]; nine-patch (`.9.png`) goes to [NinePatchRenderer]. `listThemes`
+ * drives the [ThemeCatalog] over the requested session; `invalidate` forwards to the [EngineAdapter].
  */
 class RenderRouting(
   private val adapter: EngineAdapter,
@@ -39,20 +39,13 @@ class RenderRouting(
   private val pngWriter = PngWriter(outputDir)
   private val layoutRenderer = LayoutRenderer(adapter, pngWriter, overlayBaseDir)
   private val drawableRenderer = DrawableRenderer(adapter, pngWriter, overlayBaseDir)
+  private val ninePatchRenderer = NinePatchRenderer(pngWriter)
   private val themeCatalog = ThemeCatalog(adapter)
 
   override fun render(request: RenderRequest): RenderResponse = when (request.docKind) {
     DocKind.layout -> layoutRenderer.render(request)
     DocKind.drawableXml, DocKind.color -> drawableRenderer.render(request)
-    DocKind.ninePatch -> RenderResponse(
-      id = request.id,
-      status = RenderStatus.error,
-      warnings = emptyList(),
-      error = RenderError(message = "rendering docKind=${request.docKind} is not implemented yet (T47)"),
-      dependencies = emptyList(),
-      timings = RenderTimings(0, 0, 0, 0),
-      sessionRebuilt = false,
-    )
+    DocKind.ninePatch -> ninePatchRenderer.render(request)
   }
 
   override fun listThemes(roots: List<String>, packageName: String): List<ThemeInfo> {
