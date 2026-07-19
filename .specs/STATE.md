@@ -132,10 +132,20 @@
   2. **Manifest coordinate duplication (T15).** Top-level layoutlib/tools + androidx/Material coordinates live in BOTH `host/src/main/kotlin/manifest/EngineArtifacts.kt` and `host/build.gradle.kts` — **T38** (Phase 7 pin bump) must update both in sync.
   3. **Spec-precision note (T13).** `render` stub returns a domain `RenderResponse{status:error,...}` (correct); but `listThemes`/`invalidate`/`warmup` return trivial successes (`[]`/`{}`/`{}`) rather than stubbed errors — worker's reading of ambiguous protocol.md phrasing. Harmless (T26 fills listThemes, T24 fills invalidate, real warmup later); noted for Verifier.
   - Also: T6's `hello.test.ts` / `inflate.helloPreview` deleted as superseded by T18 (per T18 "replace" instruction). `tsconfig` module set to `node16` for vscode-jsonrpc exports (still emits CJS).
+- **Phase 4 (T20–T27) COMPLETE** (Batch 3, session, 2026-07-19): commits `8793ee8`…`4122268`. Ext 79 vitest; host 66 JUnit unit + 8 engineTest classes — green, tree clean. Invalidation rebuild ~10 ms (matches M0).
+- **Load-bearing contracts from Phase 4 (Phases 5–6 depend on these):**
+  - **Root priority (RES-02):** Studio repos give the LAST dir passed to `AppResourceRepository.create` highest priority → `session()` builds with `([overlay] + roots).reversed()`; containing-module root wins; overlay is priority-neutral. Verified vs 1.3.5 sources.
+  - **Resource existence:** use `EngineAdapter.appResourceExists(typeName, name)` — NOT `resourceId`/`getIdentifier`, which return a fresh non-zero id for ANY name under the dynamic-id scheme (Q3, empty `resourcePackageNames`) and cannot detect absence.
+  - **Session cache:** size-1, keyed `(ordered roots, packageName)`; rebuilds app repo on key-change/dirty, activates immediately, bumps `sessionGeneration`. `ProjectSession.render(layoutId, deviceConfig?, theme?)` uses fresh SessionParams per render (`unsafeUpdateConfig`); `overlayDir` settable, prepended.
+  - **Invalidate:** `invalidate(paths)` marks dirty only for paths under a current root, returns whether rebuild scheduled; previewed-file-only edits aren't passed. No-arg `invalidate()` (T4) retained.
+  - **ThemeCatalog:** `ThemeCatalog(adapter).list()` → `ThemeInfo[]`, cached by `sessionGeneration`. Library/AAR themes arrive in Phase 7 (source enum already supports material/appcompat).
+  - **Degradation:** `Degradation(log, overlayResDir).degradeReferences(content, resolves)` + `degradeStyleParent(...)`; warnings via LogBridge → **T35 maps LogBridge entries → RenderResponse.warnings**.
+- **RPC wiring still pending → T35 (Phase 6):** RpcServer holds no EngineAdapter yet, so `listThemes`/`invalidate`/`render` still return stubs (`ThemeCatalog.list()` is the ready producer). In-scope-correct (T26/T24 Where excluded RpcServer.kt); folds into debt note above.
+- **Verifier flag (T24 SessionTest):** the `resourceId(...) != 0` smoke lines are tautological under the dynamic-id scheme (non-discriminating); the REAL proof is the pixel assertions (app-blue-beats-lib-red = RES-02 direction; magenta-after-edit = hot reload) — these DO discriminate, so T24's gate is meaningful. Verifier should either accept the pixel coverage or strengthen the weak lines to `appResourceExists` (method now exists). Worker did not rewrite committed T24 to avoid mid-batch history rewrite.
 - **Carry-forward to B4 (Phase 5) / B5 (Phase 6)**: AD-013 — Preprocessor (T29–T32) should absorb/generalize `preprocess.UnknownViewSubstitutor`; T35 custom-view placeholder relies on it, not MockView.
 - **In-progress** (file:line): none
-- **Next step**: **Batch 3 = Phase 4 (T20–T27)** dispatched on the SESSION model (resource resolution + engine sessions/invalidation — heavy engineTest phase).
-- **Batch plan**: B1=P1✅ · B2=P2+P3✅ · B3=P4(session)▶ · B4=P5(sonnet) · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier (session).
+- **Next step**: **Batch 4 = Phase 5 (T28–T32)** dispatched on model `sonnet` (Preprocessor — host pure logic, JUnit unit only, no engineTest).
+- **Batch plan**: B1=P1✅ · B2=P2+P3✅ · B3=P4✅ · B4=P5(sonnet)▶ · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier (session).
 - **Blockers**: none
 - **Uncommitted files**: none after state-update commit
 - **Branch**: main
