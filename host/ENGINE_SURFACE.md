@@ -43,7 +43,7 @@ interface is identical either way, so downstream phases are unaffected.
 | # | Item | Status |
 | - | ---- | ------ |
 | 1 | friend-paths compiles against Paparazzi 1.3.5 internals (AD-009 gate) | PASS (primary) — verified in T2 |
-| 2 | Bridge init once + AppResourceRepository rebuild (hot-reload gate) | pending T4 |
+| 2 | Bridge init once + AppResourceRepository rebuild (hot-reload gate) | PASS (primary) — T4; rebuild ~9 ms on the M0 machine |
 | 3 | Hello-render LinearLayout → PNG (end-to-end gate) | pending T5/T6 |
 | 4 | MockView placeholder for unknown views (AD-007 gate) | pending T7 |
 | 5 | Drawable state injection ≥3 states (Q2 gate) | pending T8 |

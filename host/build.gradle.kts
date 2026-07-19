@@ -66,6 +66,8 @@ tasks.register<JavaExec>("fetchEngine") {
   args(layout.projectDirectory.dir(".engine-cache").asFile.absolutePath)
 }
 
+val engineCacheDir = layout.projectDirectory.dir(".engine-cache")
+
 val engineTestTask = tasks.register<Test>("engineTest") {
   description = "Runs engine integration tests against cached layoutlib artifacts."
   group = "verification"
@@ -75,4 +77,26 @@ val engineTestTask = tasks.register<Test>("engineTest") {
   shouldRunAfter(tasks.test)
   // engineTest is intentionally NOT wired into `check`/`build`: it needs the downloaded
   // engine cache (T3) and layoutlib native props, so it is invoked explicitly by gates.
+
+  // Point layoutlib at the unzipped runtime (natives/fonts/ICU) and framework resources (T3).
+  systemProperty("paparazzi.layoutlib.runtime.root", engineCacheDir.dir("layoutlib/runtime").asFile.absolutePath)
+  systemProperty("paparazzi.layoutlib.resources.root", engineCacheDir.dir("layoutlib/resources").asFile.absolutePath)
+
+  maxHeapSize = "2g"
+  // Fresh JVM per test class: the engine holds process-global Bridge state, so class-level
+  // isolation avoids cross-test session corruption during the M0 spikes.
+  setForkEvery(1)
+  // layoutlib + ByteBuddy reflect into JDK internals; JPMS opens required under JDK 17.
+  jvmArgs(
+    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+    "--add-opens=java.base/java.util=ALL-UNNAMED",
+    "--add-opens=java.base/java.io=ALL-UNNAMED",
+    "--add-opens=java.base/java.net=ALL-UNNAMED",
+    "--add-opens=java.base/java.nio=ALL-UNNAMED",
+    "--add-opens=java.base/java.security=ALL-UNNAMED",
+    "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+    "--add-opens=java.desktop/sun.awt.image=ALL-UNNAMED",
+    "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+  )
 }
