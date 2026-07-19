@@ -125,10 +125,17 @@
   `/Library/Java/.../microsoft-17.jdk`. `host/.engine-cache/` is gitignored — later engineTest gates require
   `./gradlew fetchEngine` first. engineTest task sets layoutlib runtime/resources props + JPMS `--add-opens` + `forkEvery(1)`.
   `resourcePackageNames` MUST stay empty (no R class; dynamic ids, Q3). Paparazzi 1.3.5 sources cached in scratchpad for reference.
-- **M0 gate (orchestrator)**: Architecture VALIDATED. 5/6 M0 items PASS primary; item 4 used the design's named fallback (no architecture change, bounded strategy swap). Fallback recorded as **AD-013** (refines AD-007). Batch 1 released; Batch 2 dispatched.
+- **M0 gate (orchestrator)**: Architecture VALIDATED. 5/6 M0 items PASS primary; item 4 used the design's named fallback (AD-013, refines AD-007).
+- **Phase 2 (T10–T13) + Phase 3 (T14–T19) COMPLETE** (Batch 2, sonnet, 2026-07-19): commits `2551dfc`…`05f2bdc`. Extension 53 vitest + 2 integration; host 51 JUnit + 4 engineTest — all green, tree clean.
+- **Known integration debt (must resolve before Phase 10 sign-off; Verifier must check):**
+  1. **Real host spawn wiring deferred (T18).** `extension/src/activation.ts::resolveHostCommand()` real path throws; only the `INFLATE_TEST_FAKE_HOST` escape hatch is wired end-to-end. `inflate.clearEngineCache` and the `inflate.doctor` command handler are placeholders (Doctor's `assembleDoctorReport`/`formatDoctorReport` exist + tested from T19 but not wired into the live command). Real JdkLocator+ArtifactManager+host.jar wiring lands with **T39** (classpath assembly, `extension/src/host.ts`) and **T60** (host fat-jar bundled in VSIX); the live `doctor`/`clearEngineCache` handlers should be wired when a real host exists (by T18's intent — target T39/T60). Chaos/perf (T57/T58) and clean-profile smoke (T60) exercise the REAL host path, so it must be real by then. Integration tests (test-electron) legitimately keep using the fake host for extension-side loop logic; real render fidelity is covered host-side (engineTest) + corpus (T54).
+  2. **Manifest coordinate duplication (T15).** Top-level layoutlib/tools + androidx/Material coordinates live in BOTH `host/src/main/kotlin/manifest/EngineArtifacts.kt` and `host/build.gradle.kts` — **T38** (Phase 7 pin bump) must update both in sync.
+  3. **Spec-precision note (T13).** `render` stub returns a domain `RenderResponse{status:error,...}` (correct); but `listThemes`/`invalidate`/`warmup` return trivial successes (`[]`/`{}`/`{}`) rather than stubbed errors — worker's reading of ambiguous protocol.md phrasing. Harmless (T26 fills listThemes, T24 fills invalidate, real warmup later); noted for Verifier.
+  - Also: T6's `hello.test.ts` / `inflate.helloPreview` deleted as superseded by T18 (per T18 "replace" instruction). `tsconfig` module set to `node16` for vscode-jsonrpc exports (still emits CJS).
+- **Carry-forward to B4 (Phase 5) / B5 (Phase 6)**: AD-013 — Preprocessor (T29–T32) should absorb/generalize `preprocess.UnknownViewSubstitutor`; T35 custom-view placeholder relies on it, not MockView.
 - **In-progress** (file:line): none
-- **Next step**: **Batch 2 = Phase 2 (T10–T13) + Phase 3 (T14–T19)** dispatched on model `sonnet` (protocol DTOs + host lifecycle). Carry forward to B4 (Phase 5) and B5 (Phase 6): AD-013 — Preprocessor should absorb/generalize `UnknownViewSubstitutor`; T35 custom-view placeholder relies on it, not MockView.
-- **Batch plan**: B1=P1✅ · B2=P2+P3(sonnet)▶ · B3=P4(session) · B4=P5(sonnet) · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier (session).
+- **Next step**: **Batch 3 = Phase 4 (T20–T27)** dispatched on the SESSION model (resource resolution + engine sessions/invalidation — heavy engineTest phase).
+- **Batch plan**: B1=P1✅ · B2=P2+P3✅ · B3=P4(session)▶ · B4=P5(sonnet) · B5=P6(session) · B6=P7(session) · B7=P8(session) · B8=P9(sonnet) · B9=P10(sonnet) → Verifier (session).
 - **Blockers**: none
 - **Uncommitted files**: none after state-update commit
 - **Branch**: main
