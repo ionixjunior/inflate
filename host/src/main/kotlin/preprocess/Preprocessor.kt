@@ -92,8 +92,9 @@ object Preprocessor {
 
     val afterTools = ToolsAttributes.apply(content).content
     val binding = DataBinding.unwrap(afterTools, LineMap.identity(afterTools), log)
+    val structural = Structural.process(binding.content, docPath, roots, log)
 
-    val overlayFile = writeOverlay(binding.content, docKind, docPath, overlayBaseDir)
+    val overlayFile = writeOverlay(structural.content, docKind, docPath, overlayBaseDir)
 
     return PreprocessResult(
       overlayFile = overlayFile,

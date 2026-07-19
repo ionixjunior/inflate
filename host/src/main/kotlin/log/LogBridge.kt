@@ -80,6 +80,14 @@ class LogBridge : ILayoutLog {
   }
 
   /**
+   * Record a generic structural-preprocessing notice (fragment-without-layout placeholder,
+   * an aborted include cycle, …) — anything that doesn't warrant its own [Kind] (T31, LAY-02).
+   */
+  fun recordNotice(tag: String, message: String) {
+    add(Entry(kind = Kind.notice, severity = Severity.WARNING, tag = tag, message = message, throwable = null))
+  }
+
+  /**
    * Record that a data-binding layout's `@{...}` expressions were replaced with static,
    * type-appropriate defaults during preprocessing (LAY-04, P1-A AC6). Emitted once per file.
    */
