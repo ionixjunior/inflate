@@ -32,7 +32,10 @@ object ToolsAttributes {
   data class Result(val content: String)
 
   fun apply(content: String): Result {
+    val spans = Comments.spans(content)
     val rewritten = START_TAG.replace(content) { tagMatch ->
+      // A start tag inside a comment is inert markup — never rewrite tools: attrs there (G1).
+      if (Comments.inComment(spans, tagMatch.range.first)) return@replace tagMatch.value
       val tagName = tagMatch.groupValues[1]
       val trailingWs = tagMatch.groupValues[3]
       val selfClose = tagMatch.groupValues[4]

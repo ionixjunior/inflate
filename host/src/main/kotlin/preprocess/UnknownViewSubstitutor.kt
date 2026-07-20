@@ -24,7 +24,10 @@ object UnknownViewSubstitutor {
     onSubstituted: (String) -> Unit,
   ): String {
     val substituted = LinkedHashSet<String>()
+    val openSpans = Comments.spans(xml)
     var result = OPEN_TAG.replace(xml) { m ->
+      // A fully-qualified tag inside a comment is inert markup, never substituted (G1).
+      if (Comments.inComment(openSpans, m.range.first)) return@replace m.value
       val name = m.groupValues[1]
       val attrs = m.groupValues[2]
       val selfClose = m.groupValues[3]
@@ -37,7 +40,11 @@ object UnknownViewSubstitutor {
       }
     }
     substituted.forEach { name ->
-      result = result.replace("</$name>", "</TextView>")
+      // Rewrite this class's close tags, but leave any occurrence inside a comment byte-identical (G1).
+      val closeSpans = Comments.spans(result)
+      result = Regex(Regex.escape("</$name>")).replace(result) { m ->
+        if (Comments.inComment(closeSpans, m.range.first)) m.value else "</TextView>"
+      }
       onSubstituted(name)
     }
     return result

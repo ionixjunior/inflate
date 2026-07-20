@@ -49,7 +49,9 @@ object DataBinding {
 
   fun unwrap(content: String, lineMap: Preprocessor.LineMap, log: LogBridge): Result {
     val lines = content.lines()
-    val layoutMatch = LAYOUT_OPEN_ANY.find(content)
+    // A commented `<layout>` is not a real data-binding root, so it must not trigger unwrapping (G1).
+    val commentSpans = Comments.spans(content)
+    val layoutMatch = LAYOUT_OPEN_ANY.findAll(content).firstOrNull { !Comments.inComment(commentSpans, it.range.first) }
     if (layoutMatch == null) {
       return Result(content, lineMap, unwrapped = false, bindingReplaced = false)
     }
@@ -66,8 +68,25 @@ object DataBinding {
     val dataRange = findDataBlock(lines, layoutOpenEndLineIdx, closeLineIdx)
     if (dataRange != null) removed += dataRange
 
+    // A comment-only line must not be mistaken for the promoted view root (G1): the xmlns declarations
+    // would then never reach the real root. Pick the first line with element content OUTSIDE comments.
+    val lineOffsets = IntArray(lines.size)
+    run {
+      var acc = 0
+      for (i in lines.indices) {
+        lineOffsets[i] = acc
+        acc += lines[i].length + 1
+      }
+    }
+    fun contentOutsideComments(i: Int): String {
+      val start = lineOffsets[i]
+      val end = start + lines[i].length
+      val sb = StringBuilder()
+      for (p in start until end) if (!Comments.inComment(commentSpans, p)) sb.append(content[p])
+      return sb.toString()
+    }
     val viewRootIdx = ((layoutOpenEndLineIdx + 1) until closeLineIdx)
-      .firstOrNull { it !in removed && lines[it].isNotBlank() }
+      .firstOrNull { it !in removed && contentOutsideComments(it).isNotBlank() }
 
     val outLines = mutableListOf<String>()
     val newLineMap = mutableListOf<Int>()
@@ -115,7 +134,9 @@ object DataBinding {
 
   private fun replaceExpressions(content: String): Pair<String, Boolean> {
     var any = false
+    val spans = Comments.spans(content)
     val out = BOUND_ATTR.replace(content) { m ->
+      if (Comments.inComment(spans, m.range.first)) return@replace m.value
       any = true
       val leadingWs = m.groupValues[1]
       val name = m.groupValues[2]

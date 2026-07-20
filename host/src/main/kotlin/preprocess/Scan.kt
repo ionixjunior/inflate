@@ -49,7 +49,9 @@ object Scan {
 
   private fun collectReferences(content: String): List<Preprocessor.Ref> {
     val seen = LinkedHashSet<Preprocessor.Ref>()
+    val spans = Comments.spans(content)
     REFERENCE.findAll(content).forEach { m ->
+      if (Comments.inComment(spans, m.range.first)) return@forEach // commented refs aren't dependencies (G1)
       val isFrameworkNamespace = m.groupValues[2] == "android"
       if (isFrameworkNamespace) return@forEach
       val kind = m.groupValues[3]
@@ -65,7 +67,10 @@ object Scan {
     isLoadable: (String) -> Boolean,
     customClasses: MutableSet<String>,
     log: LogBridge,
-  ): String = VIEW_CLASS_TAG.replace(content) { m ->
+  ): String {
+    val spans = Comments.spans(content)
+    return VIEW_CLASS_TAG.replace(content) { m ->
+    if (Comments.inComment(spans, m.range.first)) return@replace m.value
     val className = m.groupValues[2]
     if (isLoadable(className)) {
       m.value
@@ -77,6 +82,7 @@ object Scan {
         .joinToString("") { " ${it.groupValues[1]}=\"${it.groupValues[2]}\"" }
       """<TextView android:text="$className" android:gravity="center" """ +
         """android:background="#5566AACC"$otherAttrs />"""
+    }
     }
   }
 }

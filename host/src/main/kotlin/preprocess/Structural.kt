@@ -40,18 +40,24 @@ object Structural {
     return Result(working)
   }
 
-  /** Wraps a root `<merge>` in a `match_parent` `FrameLayout` (P1-A AC4). */
+  /** Wraps a root `<merge>` in a `match_parent` `FrameLayout` (P1-A AC4). Commented `<merge>` is ignored. */
   private fun wrapMerge(content: String): String {
-    val open = MERGE_OPEN.find(content) ?: return content
+    val spans = Comments.spans(content)
+    val open = MERGE_OPEN.findAll(content).firstOrNull { !Comments.inComment(spans, it.range.first) } ?: return content
     val xmlns = XMLNS_ATTR.findAll(open.groupValues[1]).joinToString("") { it.value }
     val newOpen = """<FrameLayout$xmlns android:layout_width="match_parent" android:layout_height="match_parent">"""
     val rewritten = content.substring(0, open.range.first) + newOpen + content.substring(open.range.last + 1)
-    return MERGE_CLOSE.replaceFirst(rewritten, "</FrameLayout>")
+    val spans2 = Comments.spans(rewritten)
+    val close = MERGE_CLOSE.findAll(rewritten).firstOrNull { !Comments.inComment(spans2, it.range.first) }
+      ?: return rewritten
+    return rewritten.substring(0, close.range.first) + "</FrameLayout>" + rewritten.substring(close.range.last + 1)
   }
 
   /** Swaps a `<fragment>` for an `<include>` of its `android:layout`, else a labeled placeholder. */
-  private fun substituteFragments(content: String, log: LogBridge): String =
-    FRAGMENT_SELF_CLOSE.replace(content) { m ->
+  private fun substituteFragments(content: String, log: LogBridge): String {
+    val spans = Comments.spans(content)
+    return FRAGMENT_SELF_CLOSE.replace(content) { m ->
+      if (Comments.inComment(spans, m.range.first)) return@replace m.value
       val attrs = ATTR.findAll(m.groupValues[1]).associate { it.groupValues[1] to it.groupValues[2] }
       val carried = CARRIED_FRAGMENT_ATTRS.mapNotNull { name -> attrs[name]?.let { name to it } }
         .joinToString("") { (name, value) -> " $name=\"$value\"" }
@@ -64,11 +70,14 @@ object Structural {
         """<TextView android:text="$label" android:gravity="center" android:background="#5566AACC"$carried />"""
       }
     }
+  }
 
   /** Walks the `<include>` graph from [docPath]'s own resource name, aborting any cycle found. */
   private fun resolveIncludeCycles(content: String, docPath: File, roots: List<File>, log: LogBridge): String {
     val topName = docPath.nameWithoutExtension
+    val spans = Comments.spans(content)
     return INCLUDE_LAYOUT.replace(content) { m ->
+      if (Comments.inComment(spans, m.range.first)) return@replace m.value
       val name = m.groupValues[1]
       val cyclePath = findCycle(name, roots, mutableListOf(topName))
       if (cyclePath != null) {
@@ -92,7 +101,10 @@ object Structural {
     val file = resolveLayoutFile(name, roots) ?: return null
     path.add(name)
     try {
-      for (childMatch in INCLUDE_LAYOUT.findAll(file.readText())) {
+      val childContent = file.readText()
+      val childSpans = Comments.spans(childContent)
+      for (childMatch in INCLUDE_LAYOUT.findAll(childContent)) {
+        if (Comments.inComment(childSpans, childMatch.range.first)) continue
         val cycle = findCycle(childMatch.groupValues[1], roots, path)
         if (cycle != null) return cycle
       }
