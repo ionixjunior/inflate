@@ -7,16 +7,48 @@
 
 ---
 
-## Overall: ⚠️ CONDITIONAL FAIL — ship-blocked on 3 confirmed spec-AC gaps
+## Overall: ✅ PASS (fix-loop iteration 1 re-verified) — 3 gaps CLOSED; 1 minor residual noted
 
-All automated gates are green and the discrimination sensor is 5/5, but three
-independently-confirmed functional gaps map to hard P1 `SHALL` requirements
-(RES-04/P1-G AC4, P1-G AC1/RES-01/AD-001, LAY-02/LAY-04 correctness). These are
-the handoff's known-open gaps G1/G2/G3 — **confirmed, not inherited** — and must
-become fix tasks. A fourth item (Chip/Q5 vs AD-002) is a user release-gate
-decision, not a test gap.
+**Re-verifier (fix-loop iteration 1, 2026-07-19, independent; author ≠ verifier).**
+The prior CONDITIONAL-FAIL's three ship-blocking gaps (G1/G2/G3) are now closed
+end-to-end and independently re-derived (evidence-or-zero — not trusting the fix
+worker's self-report). All regression gates are green and each new test was
+empirically confirmed discriminating by scratch mutation (reverted; tree left
+clean). One narrow residual remains (`degradeStyleParent` unwired — spec:453 edge
+case), classed **minor / non-ship-blocking** (see Re-Verification section).
 
-- **Spec-anchored check**: core P1 ACs traced to discriminating tests; **3 gaps** at the end-to-end layer.
+- **Fixes verified**: G2 `69db995` (degradation on live path) · G1 `d7a8900` (comment-aware preprocessor) · G3 `7d2ac99` (case-insensitive host resolution). All three commits are **host-only** (no extension surface touched → extension gates not required).
+- **Gate (re-verifier-run, `--rerun-tasks`, not inferred)**: host unit **111** ✅ · host engineTest **46** ✅ · corpus **42/42** @ 0.000% diff ✅. 0 failed, 0 skipped anywhere. (Extension unit 154 / integration 19 unchanged — no extension files in the fix diff.)
+- **New-test discrimination (scratch mutation, killed → reverted)**: CommentAwareTest 8/8 killed · DegradationLiveTest killed · LegacyCasingTest killed.
+- **Original sensor**: 5 mutations injected, 5 killed, 0 survived (below, unchanged).
+
+---
+
+## Fix-Loop Iteration 1 Re-Verification (2026-07-19)
+
+### G2 — Degradation on the live render path → ✅ CLOSED
+- **Wiring (static, independently confirmed)**: `RpcServer.kt:186` → `RenderRouting.render` (`RenderRouting.kt:46`, `DocKind.layout`) → `LayoutRenderer.render` → `Degradation(log, overlayResDir).degradeReferences(...)` at `LayoutRenderer.kt:120`, gated by `adapter.appResourceExists` (NOT the dynamic-id getIdentifier, Q3). Degradation is now referenced from `main/` (previously only its own test). The overlay is rewritten and, when a drawable placeholder is emitted, the app repo is invalidated + rebuilt so the render completes.
+- **Own discriminating probe**: `render.DegradationLiveTest` drives the `unresolved-refs` fixture (`broken.xml`, four missing kinds) through the REAL `RenderRouting.render` and asserts status `ok`, `pngPath` present, **exactly 4** `unresolvedRef` warnings with kinds `{color,dimen,string,drawable}`, per-kind overlay substitutions (`#FF00FF` / `0dp` / name text / `@drawable/inflate_degraded_placeholder`), AND the magenta background is visible in the rendered PNG center. PASS. Scratch mutation (disable the degrade-apply block) → test FAILS (magenta absent) → confirmed discriminating.
+- **Residual (minor, non-ship-blocking): `degradeStyleParent` is NOT wired on the live path** — it is still called only by `DegradationTest` (an instance of lesson L-001, dead-on-live-path). The spec:453 edge case ("WHEN a style chain contains a missing parent THEN theme application SHALL degrade to the nearest resolvable ancestor and warn") is therefore **uncovered end-to-end**: the "warn + nearest-ancestor" behavior does not run. Assessment: distinct from G2's hard SHALL (P1-G AC4 unresolved refs, which IS closed) — style parents live in on-disk `values/` (not the previewed layout the preprocessor rewrites), and layoutlib does not hard-crash on a missing style parent (render still completes, attrs just don't inherit), so it is not a render-failing ship-blocker. Left as a minor follow-up, not a new fix-loop iteration. Covered generally by existing lesson L-001; no new lesson recorded.
+
+### G1 — Comment-aware preprocessor → ✅ CLOSED
+- **Approach (independently confirmed)**: `preprocess/Comments.kt` computes `<!-- … -->` spans (non-greedy, DOT_MATCHES_ALL); every regex stage (`ToolsAttributes`, `DataBinding`, `Structural` merge/fragment/include, `Scan` refs + `UnknownViewSubstitutor` view-class form) skips any match whose start falls inside a comment. Nothing is masked/shifted → LineMap stays correct; comments reach the overlay byte-identical.
+- **Own discriminating probe**: `preprocess.CommentAwareTest` (8 tests) — for each stage a commented construct (`<merge>`, `<fragment>`, `<include>`, `tools:`, `@{…}`, custom tag, `<view class>`, `@drawable/ghost`) stays **byte-identical + inert (no warning/substitution/dependency)** while the SAME construct OUTSIDE a comment still transforms; a full-pipeline test asserts the combined-construct comment survives to the overlay byte-identical, the real root is preserved, and no substitution/binding/notice warnings fire. PASS. Scratch mutation (`Comments.inComment` → always false) → 8/8 FAIL → confirmed discriminating.
+
+### G3 — Case-insensitive host resource resolution → ✅ CLOSED
+- **Approach (independently confirmed)**: `EngineAdapter.normalizeResRoot` presents each res root (roots + overlay, order preserved for RES-02) to layoutlib via a shadow dir of canonical lowercase-type symlinks; pure-lowercase roots are returned untouched (fast path → RES-02 ordering and the working lowercase path unaffected; corpus 42/42 incl. 12 lowercase `.NET` fixtures still 0% diff). `canonicalFolderName` lowercases only the type segment, preserving qualifiers (`-rUS`, `-sw600dp`). `Structural.resolveLayoutFile` and `LayoutRenderer.resolveResourceFile` also match type dirs case-insensitively.
+- **Own discriminating probe**: `render.LegacyCasingTest` renders `dotnet-sample/Resources/Layout/Main.axml` (capital `L`, mixed-case tree also containing lowercase `drawable`/`values`/`layout-sw600dp`) and its lowercase-dir twin, asserting both status `ok`, the capital render non-blank (`>1` distinct pixel), and **pixel-identical** to the twin. PASS. Scratch mutation (`normalizeResRoot` → identity) → test FAILS → confirmed discriminating.
+
+### Regression
+- Host `./gradlew test engineTest --rerun-tasks`: **unit 111 / 0 fail / 0 skip; engineTest 46 / 0 fail / 0 skip** (counts read from JUnit XML, matching the expected 111 / 46). Full `build test engineTest` also green.
+- `npm run corpus`: **42/42 passed, 0.000% diff** each.
+- Q5/Chip (AD-015) and the theme-render spec-precision minor from the original report are unaffected by this iteration and remain as previously recorded (AD-015 investigate-first spike is queued next).
+
+---
+
+## Original Verifier Findings (retained for history — CONDITIONAL FAIL, pre-fix)
+
+- **Spec-anchored check**: core P1 ACs traced to discriminating tests; **3 gaps** at the end-to-end layer (now closed above).
 - **Gate**: extension unit 154 ✅ · extension integration 19 ✅ · host unit 103 ✅ · host engineTest 44 ✅ · corpus 42/42 ✅. 0 failed, 0 skipped anywhere.
 - **Sensor**: 5 mutations injected, **5 killed, 0 survived**.
 
@@ -126,17 +158,17 @@ Under the AD-008 pin (Paparazzi 1.3.5 / layoutlib 14.0.11 / Material 1.12, JDK 1
 | Requirement | New Status |
 | ----------- | ---------- |
 | LAY-01, LAY-05, LAY-06, LAY-07 | ✅ Verified |
-| LAY-02, LAY-04 | ⚠️ Verified for clean files; **G1** correctness gap |
+| LAY-02, LAY-04 | ✅ Verified (**G1 CLOSED** — comment-aware preprocessor, `CommentAwareTest`) |
 | LAY-03 | ✅ Verified (custom-view placeholder + warning) |
 | DRW-01..08 | ✅ Verified (host-side worked around ripple/adaptive-icon per design) |
-| RES-01 | ⚠️ **G3** (legacy capital casing) |
+| RES-01 | ✅ Verified (**G3 CLOSED** — case-insensitive host resolution, `LegacyCasingTest`) |
 | RES-02, RES-03, RES-05 | ✅ Verified |
-| RES-04 | ❌ **G2** (not wired into live path) |
+| RES-04 | ✅ Verified (**G2 CLOSED** — degradation on live path, `DegradationLiveTest`); ⚠️ minor residual: `degradeStyleParent` (spec:453 style-parent edge case) still unwired |
 | CFG-01/02/03/05 | ✅ Verified |
 | CFG-04 | ⚠️ theme-apply render at plumbing layer |
 | UX-01/02/03 | ✅ Verified |
 | UX-04 | ✅ Verified (line mapping + stale retention) |
-| UX-05 | ❌ **G2** (warnings-strip degradation not on live path) |
+| UX-05 | ✅ Verified (**G2 CLOSED** — unresolvedRef warnings emitted on live path) |
 | HOST-01/02/03 | ✅ Verified (state machine, FIFO queue, timeout/crash) |
 | SETUP-01/02/03 | ✅ Verified (unit + author smoke) |
 | NFR-01..07 | ✅ Verified |
