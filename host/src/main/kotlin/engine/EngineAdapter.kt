@@ -14,6 +14,7 @@ import com.android.ide.common.resources.AbstractResourceRepository
 import com.android.resources.ResourceType
 import java.awt.image.BufferedImage
 import java.io.File
+import java.nio.file.Files
 
 /**
  * The AD-009 friend-paths surface. Splits Paparazzi's `Renderer.prepare()` into:
@@ -76,6 +77,38 @@ class EngineAdapter(
   }
 
   private data class SessionKey(val rootPaths: List<String>, val packageName: String)
+
+  /** Shadow res roots (per original path) holding canonical-lowercase symlinks to mis-cased type dirs. */
+  private val shadowRoots = HashMap<String, File>()
+
+  /**
+   * Present [dir] to layoutlib with canonical (lowercase-type) resource-folder names so legacy
+   * Xamarin capital-cased dirs (`Resources/Layout`, `Resources/Values`, …) are indexed — layoutlib's
+   * folder-type parser is case-sensitive, while extension-side discovery is not (AD-001). Pure
+   * lowercase roots are returned untouched (fast path; the working path and RES-02 are unaffected).
+   * A root needing normalization gets a stable shadow directory of symlinks refreshed on each rebuild,
+   * so live files (hot reload) are still read through the links.
+   */
+  private fun normalizeResRoot(dir: File): File {
+    val entries = dir.listFiles() ?: return dir
+    if (entries.none { it.isDirectory && it.name != canonicalFolderName(it.name) }) return dir
+    val shadow = shadowRoots.getOrPut(dir.absolutePath) {
+      Files.createTempDirectory("inflate-resnorm").toFile()
+    }
+    shadow.listFiles()?.forEach { it.delete() }
+    for (entry in entries) {
+      val linkName = if (entry.isDirectory) canonicalFolderName(entry.name) else entry.name
+      val link = File(shadow, linkName)
+      if (!link.exists()) Files.createSymbolicLink(link.toPath(), entry.toPath())
+    }
+    return shadow
+  }
+
+  /** Lowercase only the resource-type segment (before the first `-`), leaving qualifiers (e.g. `-rUS`). */
+  private fun canonicalFolderName(name: String): String {
+    val dash = name.indexOf('-')
+    return if (dash < 0) name.lowercase() else name.substring(0, dash).lowercase() + name.substring(dash)
+  }
 
   /** Milliseconds taken by the most recent app-repository rebuild (-1 before any rebuild). */
   var lastRebuildMillis: Long = -1L
@@ -147,7 +180,10 @@ class EngineAdapter(
       val start = System.nanoTime()
       // localResourceDirs, highest-priority first: [overlay, root1, root2, ...]. Reverse so the
       // repository's last-wins ordering yields root1 > root2 > ... (overlay neutral: unique names).
-      val ordered = ((overlayDir?.let { listOf(it) } ?: emptyList()) + roots)
+      // Each dir is normalized so legacy Xamarin capital-cased type dirs (Resources/Layout, …) are
+      // presented to layoutlib in canonical lowercase (RES-01 / P1-G AC1 / AD-001 / Q6) — layoutlib's
+      // folder-type parsing is case-sensitive. Order (hence RES-02 priority) is preserved.
+      val ordered = ((overlayDir?.let { listOf(it) } ?: emptyList()) + roots).map(::normalizeResRoot)
       val newAppRepo = AppResourceRepository.create(
         localResourceDirectories = ordered.reversed(),
         moduleResourceDirectories = emptyList(),

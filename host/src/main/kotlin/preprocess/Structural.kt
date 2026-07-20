@@ -116,8 +116,10 @@ object Structural {
 
   private fun resolveLayoutFile(name: String, roots: List<File>): File? {
     for (root in roots) {
-      val layoutDirs = root.listFiles { f -> f.isDirectory && (f.name == "layout" || f.name.startsWith("layout-")) }
-        ?: emptyArray()
+      // Type-dir casing is matched case-insensitively for legacy Xamarin trees (RES-01, AD-001, Q6).
+      val layoutDirs = root.listFiles { f ->
+        f.isDirectory && f.name.lowercase().let { it == "layout" || it.startsWith("layout-") }
+      } ?: emptyArray()
       for (dir in layoutDirs) {
         File(dir, "$name.xml").let { if (it.exists()) return it }
         File(dir, "$name.axml").let { if (it.exists()) return it }

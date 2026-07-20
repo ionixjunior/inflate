@@ -243,8 +243,10 @@ class LayoutRenderer(
 
   private fun resolveResourceFile(kind: String, name: String, roots: List<File>): File? {
     for (root in roots) {
-      val typeDirs = root.listFiles { f -> f.isDirectory && (f.name == kind || f.name.startsWith("$kind-")) }
-        ?: continue
+      // Type-dir casing is matched case-insensitively for legacy Xamarin trees (RES-01, AD-001, Q6).
+      val typeDirs = root.listFiles { f ->
+        f.isDirectory && f.name.lowercase().let { it == kind || it.startsWith("$kind-") }
+      } ?: continue
       for (dir in typeDirs) {
         for (ext in RESOURCE_FILE_EXTS) {
           File(dir, "$name$ext").let { if (it.isFile) return it }
