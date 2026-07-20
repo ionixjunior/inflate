@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 4,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "ac_gap::when a component exists with its own passing unit test but is never called from the live request path treat the ac as uncovered add an end to end test that drives the real rpc render path not just the isolated unit",
+      "text": "When a component exists with its own passing unit test but is never called from the live request path, treat the AC as uncovered: add an end-to-end test that drives the real RPC/render path, not just the isolated unit.",
+      "signal": "ac_gap",
+      "scope": "host/render;wiring",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "host/src/main/kotlin/render/LayoutRenderer.kt (Degradation never called) (host/render;wiring)"
+      ],
+      "created": "2026-07-20T02:05:13Z",
+      "last_seen": "2026-07-20T02:05:13Z"
+    },
+    {
+      "id": "L-002",
+      "key": "ac_gap::regex based xml transforms must mask or skip comment spans first add a test that tag like text inside a comment stays inert or comments get corrupted",
+      "text": "Regex-based XML transforms must mask or skip <!-- comment --> spans first; add a test that tag-like text inside a comment stays inert, or comments get corrupted.",
+      "signal": "ac_gap",
+      "scope": "host/preprocess;xml",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "host/src/main/kotlin/preprocess/Structural.kt (regex passes rewrite comment content) (host/preprocess;xml)"
+      ],
+      "created": "2026-07-20T02:05:13Z",
+      "last_seen": "2026-07-20T02:05:13Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::case insensitive matching must hold on both sides of a boundary if discovery is case insensitive but resolution is case sensitive files are accepted then fail to render test the capital cased variant end to end",
+      "text": "Case-insensitive matching must hold on BOTH sides of a boundary: if discovery is case-insensitive but resolution is case-sensitive, files are accepted then fail to render — test the capital-cased variant end-to-end.",
+      "signal": "ac_gap",
+      "scope": "resource-resolution;ecosystem",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "P1-G AC1 (Resources/Layout capital casing) — host resolution case-sensitive (resource-resolution;ecosystem)"
+      ],
+      "created": "2026-07-20T02:05:13Z",
+      "last_seen": "2026-07-20T02:05:13Z"
+    }
+  ]
+}
