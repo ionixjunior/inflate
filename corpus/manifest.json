@@ -1,18 +1,48 @@
 {
-  "$comment": "T54/T55 golden-image corpus manifest (NFR-07). Paths are repo-root-relative. Each fixture renders once per entry in 'configs'; the golden lives at fixtures/<goldenDir>/golden/<fixtureId>__<configId>.png (fixtureId slashes -> dashes). packageName is always com.inflate.preview (see corpus/src/hostClient.ts doc — the fixed Bridge-registered namespace) regardless of the fixture's own manifest package.",
+  "$comment": "T54/T55 golden-image corpus manifest (NFR-07). Paths are repo-root-relative. Each fixture renders once per entry in 'configs'; the golden lives at fixtures/<goldenDir>/golden/<fixtureId>__<configId>.png (fixtureId slashes -> dashes). packageName is always com.inflate.preview (see corpus/src/hostClient.ts doc \u2014 the fixed Bridge-registered namespace) regardless of the fixture's own manifest package.",
   "fixtures": [
     {
       "id": "gradle/main",
       "ecosystem": "gradle",
       "kind": "layout",
       "docPath": "fixtures/gradle-sample/app/src/main/res/layout/main.xml",
-      "roots": ["fixtures/gradle-sample/app/src/main/res"],
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
       "goldenDir": "fixtures/gradle-sample",
       "configs": [
-        { "id": "default", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" },
-        { "id": "night", "theme": "Theme.Material3.DayNight", "night": true, "device": "phone", "density": "xhdpi", "orientation": "portrait" },
-        { "id": "tablet", "theme": "Theme.Material3.DayNight", "night": false, "device": "tablet7", "density": "xhdpi", "orientation": "portrait" },
-        { "id": "landscape", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "landscape" }
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "night",
+          "theme": "Theme.Material3.DayNight",
+          "night": true,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "tablet",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "tablet7",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "landscape",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "landscape"
+        }
       ]
     },
     {
@@ -20,10 +50,19 @@
       "ecosystem": "gradle",
       "kind": "layout",
       "docPath": "fixtures/galleries/framework/res/layout/framework_gallery.xml",
-      "roots": ["fixtures/galleries/framework/res"],
+      "roots": [
+        "fixtures/galleries/framework/res"
+      ],
       "goldenDir": "fixtures/galleries/framework",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -31,10 +70,19 @@
       "ecosystem": "gradle",
       "kind": "layout",
       "docPath": "fixtures/galleries/framework/res/layout/structural_host.xml",
-      "roots": ["fixtures/galleries/framework/res"],
+      "roots": [
+        "fixtures/galleries/framework/res"
+      ],
       "goldenDir": "fixtures/galleries/framework",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -42,11 +90,29 @@
       "ecosystem": "gradle",
       "kind": "layout",
       "docPath": "fixtures/galleries/material/res/layout/material_gallery.xml",
-      "roots": ["fixtures/galleries/material/res"],
+      "roots": [
+        "fixtures/galleries/material/res"
+      ],
       "goldenDir": "fixtures/galleries/material",
       "configs": [
-        { "id": "default", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait", "tolerance": 0.02 },
-        { "id": "night", "theme": "Theme.Material3.DayNight", "night": true, "device": "phone", "density": "xhdpi", "orientation": "portrait", "tolerance": 0.02 }
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait",
+          "tolerance": 0.02
+        },
+        {
+          "id": "night",
+          "theme": "Theme.Material3.DayNight",
+          "night": true,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait",
+          "tolerance": 0.02
+        }
       ]
     },
     {
@@ -54,10 +120,19 @@
       "ecosystem": "gradle",
       "kind": "drawable",
       "docPath": "fixtures/galleries/drawables/res/drawable/shape_rectangle.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -65,10 +140,19 @@
       "ecosystem": "gradle",
       "kind": "drawable",
       "docPath": "fixtures/galleries/drawables/res/drawable/selector.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -76,10 +160,19 @@
       "ecosystem": "gradle",
       "kind": "drawable",
       "docPath": "fixtures/galleries/drawables/res/drawable/layer_list.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -87,10 +180,19 @@
       "ecosystem": "gradle",
       "kind": "drawable",
       "docPath": "fixtures/galleries/drawables/res/drawable/vector_gradient.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -98,10 +200,19 @@
       "ecosystem": "gradle",
       "kind": "color",
       "docPath": "fixtures/galleries/drawables/res/color/state_color.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
       ]
     },
     {
@@ -109,10 +220,519 @@
       "ecosystem": "gradle",
       "kind": "drawable",
       "docPath": "fixtures/galleries/drawables/res/drawable/rotate.xml",
-      "roots": ["fixtures/galleries/drawables/res"],
+      "roots": [
+        "fixtures/galleries/drawables/res"
+      ],
       "goldenDir": "fixtures/galleries/drawables",
       "configs": [
-        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+        {
+          "id": "default",
+          "theme": "android:Theme.Material.NoActionBar",
+          "night": false,
+          "device": "drawable",
+          "density": "mdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/linear_vertical",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/linear_vertical.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/linear_horizontal",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/linear_horizontal.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/relative_basic",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/relative_basic.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/scrollview_basic",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/scrollview_basic.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/table_layout",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/table_layout.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/grid_layout",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/grid_layout.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/constraint_basic",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/constraint_basic.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "night",
+          "theme": "Theme.Material3.DayNight",
+          "night": true,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/cardview_basic",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/cardview_basic.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/material_buttons",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/material_buttons.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/checkbox_switch",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/checkbox_switch.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "gradle/framelayout_nested",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/framelayout_nested.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/main",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/main.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "night",
+          "theme": "Theme.Material3.DayNight",
+          "night": true,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "tablet",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "tablet7",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "landscape",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "landscape"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/linear_vertical",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/linear_vertical.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/linear_horizontal",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/linear_horizontal.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/relative_basic",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/relative_basic.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/scrollview_basic",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/scrollview_basic.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/table_layout",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/table_layout.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/grid_layout",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/grid_layout.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/constraint_basic",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/constraint_basic.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/cardview_basic",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/cardview_basic.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/material_buttons",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/material_buttons.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        },
+        {
+          "id": "large-density",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "large",
+          "density": "xxhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/checkbox_switch",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/checkbox_switch.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "dotnet/framelayout_nested",
+      "ecosystem": "dotnet",
+      "kind": "layout",
+      "docPath": "fixtures/dotnet-gallery/Resources/layout/framelayout_nested.axml",
+      "roots": [
+        "fixtures/dotnet-gallery/Resources"
+      ],
+      "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
       ]
     }
   ]

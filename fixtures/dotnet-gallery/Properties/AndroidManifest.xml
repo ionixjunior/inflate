@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- T55 corpus fixture: modern .NET (Xamarin.Android/MAUI SDK-style) manifest — lowercase
+     Resources/layout|values|drawable subdirs (Q6), distinct from the legacy-cased dotnet-sample. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.inflate.dotnetgallery">
+    <application android:label="DotnetGallery" android:theme="@style/AppTheme" />
+</manifest>

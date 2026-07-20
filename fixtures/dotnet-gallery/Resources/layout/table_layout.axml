@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TableLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:stretchColumns="1">
+    <TableRow>
+        <TextView android:text="Name" android:padding="4dp" />
+        <TextView android:text="Value" android:padding="4dp" />
+    </TableRow>
+    <TableRow>
+        <TextView android:text="Speed" android:padding="4dp" />
+        <TextView android:text="42" android:padding="4dp" />
+    </TableRow>
+</TableLayout>
