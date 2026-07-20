@@ -1,0 +1,119 @@
+{
+  "$comment": "T54/T55 golden-image corpus manifest (NFR-07). Paths are repo-root-relative. Each fixture renders once per entry in 'configs'; the golden lives at fixtures/<goldenDir>/golden/<fixtureId>__<configId>.png (fixtureId slashes -> dashes). packageName is always com.inflate.preview (see corpus/src/hostClient.ts doc — the fixed Bridge-registered namespace) regardless of the fixture's own manifest package.",
+  "fixtures": [
+    {
+      "id": "gradle/main",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/gradle-sample/app/src/main/res/layout/main.xml",
+      "roots": ["fixtures/gradle-sample/app/src/main/res"],
+      "goldenDir": "fixtures/gradle-sample",
+      "configs": [
+        { "id": "default", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" },
+        { "id": "night", "theme": "Theme.Material3.DayNight", "night": true, "device": "phone", "density": "xhdpi", "orientation": "portrait" },
+        { "id": "tablet", "theme": "Theme.Material3.DayNight", "night": false, "device": "tablet7", "density": "xhdpi", "orientation": "portrait" },
+        { "id": "landscape", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "landscape" }
+      ]
+    },
+    {
+      "id": "framework/gallery",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/galleries/framework/res/layout/framework_gallery.xml",
+      "roots": ["fixtures/galleries/framework/res"],
+      "goldenDir": "fixtures/galleries/framework",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "framework/structural-host",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/galleries/framework/res/layout/structural_host.xml",
+      "roots": ["fixtures/galleries/framework/res"],
+      "goldenDir": "fixtures/galleries/framework",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "material/gallery",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/galleries/material/res/layout/material_gallery.xml",
+      "roots": ["fixtures/galleries/material/res"],
+      "goldenDir": "fixtures/galleries/material",
+      "configs": [
+        { "id": "default", "theme": "Theme.Material3.DayNight", "night": false, "device": "phone", "density": "xhdpi", "orientation": "portrait", "tolerance": 0.02 },
+        { "id": "night", "theme": "Theme.Material3.DayNight", "night": true, "device": "phone", "density": "xhdpi", "orientation": "portrait", "tolerance": 0.02 }
+      ]
+    },
+    {
+      "id": "drawables/shape_rectangle",
+      "ecosystem": "gradle",
+      "kind": "drawable",
+      "docPath": "fixtures/galleries/drawables/res/drawable/shape_rectangle.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "drawables/selector",
+      "ecosystem": "gradle",
+      "kind": "drawable",
+      "docPath": "fixtures/galleries/drawables/res/drawable/selector.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "drawables/layer_list",
+      "ecosystem": "gradle",
+      "kind": "drawable",
+      "docPath": "fixtures/galleries/drawables/res/drawable/layer_list.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "drawables/vector_gradient",
+      "ecosystem": "gradle",
+      "kind": "drawable",
+      "docPath": "fixtures/galleries/drawables/res/drawable/vector_gradient.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "drawables/state_color",
+      "ecosystem": "gradle",
+      "kind": "color",
+      "docPath": "fixtures/galleries/drawables/res/color/state_color.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    },
+    {
+      "id": "drawables/rotate",
+      "ecosystem": "gradle",
+      "kind": "drawable",
+      "docPath": "fixtures/galleries/drawables/res/drawable/rotate.xml",
+      "roots": ["fixtures/galleries/drawables/res"],
+      "goldenDir": "fixtures/galleries/drawables",
+      "configs": [
+        { "id": "default", "theme": "android:Theme.Material.NoActionBar", "night": false, "device": "drawable", "density": "mdpi", "orientation": "portrait" }
+      ]
+    }
+  ]
+}

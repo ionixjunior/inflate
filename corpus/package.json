@@ -1,0 +1,24 @@
+{
+  "name": "inflate-corpus",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Golden-image corpus runner: spawns the real Inflate render host standalone over the LSP protocol, renders fixtures, and diffs against checked-in goldens (NFR-07).",
+  "type": "commonjs",
+  "scripts": {
+    "test": "vitest run",
+    "render": "tsx run.ts",
+    "render:update": "tsx run.ts --update-goldens",
+    "corpus": "npm test && npm run render",
+    "perf": "tsx perf.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

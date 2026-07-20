@@ -327,3 +327,86 @@ val engineTestTask = tasks.register<Test>("engineTest") {
     "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
   )
 }
+
+// The JPMS opens engineTest passes as jvmArgs — mirrored verbatim for any standalone real-host
+// spawn (T54 corpus runner, T57 perf, T58 chaos) so those spawns need not re-derive the list.
+val standaloneHostJvmOpens = listOf(
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED",
+  "--add-opens=java.base/java.io=ALL-UNNAMED",
+  "--add-opens=java.base/java.net=ALL-UNNAMED",
+  "--add-opens=java.base/java.nio=ALL-UNNAMED",
+  "--add-opens=java.base/java.security=ALL-UNNAMED",
+  "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+  "--add-opens=java.desktop/sun.awt.image=ALL-UNNAMED",
+  "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+)
+
+// --- T54/T57/T58: real-host classpath assembly for standalone (non-engineTest) JVM spawns ---
+//
+// engineTest already assembles a working real-host classpath (main output + runtime deps +
+// AAR classes.jar + generated R classes + framework-delegates.jar) plus the layoutlib runtime/
+// resources system props and JPMS --add-opens. The corpus runner, perf harness, and chaos suite all
+// need to spawn the SAME real host standalone, over the real LSP protocol, so this task dumps that
+// exact assembly to a JSON file rather than re-deriving it — "reuse, don't reinvent" (batch brief).
+val corpusClasspathFile = layout.buildDirectory.file("corpus/host-launch.json")
+
+val writeCorpusClasspath = tasks.register("writeCorpusClasspath") {
+  group = "engine"
+  description = "Writes the assembled standalone real-host classpath + launch config as JSON, for " +
+    "corpus/perf/chaos runners that spawn MainKt directly (T54/T57/T58)."
+  dependsOn(prepareEngineTestLibs, generateEngineTestRClasses, generateFrameworkDelegates)
+
+  val mainRuntimeCp = sourceSets.main.get().runtimeClasspath
+  val mainClassesDirs = sourceSets.main.get().output.classesDirs
+  val mainResourcesDir = sourceSets.main.get().output.resourcesDir
+  val libsDir = engineTestLibsDir
+  val rClassesJarProvider = engineTestRClassesJar
+  val delegatesJarProvider = frameworkDelegatesJar
+  val outFile = corpusClasspathFile
+  val runtimeRoot = engineCacheDir.dir("layoutlib/runtime").asFile
+  val resourcesRoot = engineCacheDir.dir("layoutlib/resources").asFile
+  val jvmOpens = standaloneHostJvmOpens
+
+  inputs.files(mainRuntimeCp)
+  outputs.file(outFile)
+
+  doLast {
+    fun jsonStr(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    fun jsonArr(items: List<String>) = items.joinToString(",", "[", "]") { jsonStr(it) }
+
+    val jars = mutableListOf<String>()
+    jars += mainClassesDirs.map { it.absolutePath }
+    mainResourcesDir?.let { jars += it.absolutePath }
+    jars += mainRuntimeCp.files.map { it.absolutePath }
+    jars += fileTree(libsDir) { include("jars/*.jar") }.files.map { it.absolutePath }
+    jars += rClassesJarProvider.get().asFile.absolutePath
+    jars += delegatesJarProvider.get().asFile.absolutePath
+
+    val libResRoot = libsDir.get().dir("res").asFile
+    val libraryResDirs = (libResRoot.listFiles { f -> f.isDirectory } ?: emptyArray())
+      .map { it.resolve("res") }
+      .filter { it.isDirectory }
+      .map { it.absolutePath }
+    val libraryPackages = linkedSetOf<String>()
+    libsDir.get().file("packages.txt").asFile.takeIf { it.isFile }
+      ?.readLines()?.filter { it.isNotBlank() }?.let { libraryPackages.addAll(it) }
+    engineTestRPackagesFile.get().asFile.takeIf { it.isFile }
+      ?.readLines()?.filter { it.isNotBlank() }?.let { libraryPackages.addAll(it) }
+
+    val json = buildString {
+      append("{\n")
+      append("  \"classpath\": ${jsonArr(jars)},\n")
+      append("  \"jvmArgs\": ${jsonArr(jvmOpens)},\n")
+      append("  \"layoutlibRuntimeRoot\": ${jsonStr(runtimeRoot.absolutePath)},\n")
+      append("  \"layoutlibResourcesRoot\": ${jsonStr(resourcesRoot.absolutePath)},\n")
+      append("  \"libraryResDirs\": ${jsonArr(libraryResDirs)},\n")
+      append("  \"libraryPackages\": ${jsonArr(libraryPackages.toList())}\n")
+      append("}\n")
+    }
+    val f = outFile.get().asFile
+    f.parentFile.mkdirs()
+    f.writeText(json)
+  }
+}

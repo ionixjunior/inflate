@@ -1,0 +1,8 @@
+{
+  "name": "inflate-repo",
+  "private": true,
+  "description": "Repo-root orchestration scripts only (AD-012) — the real projects are extension/, host/, and corpus/.",
+  "scripts": {
+    "corpus": "npm --prefix corpus install --no-audit --no-fund && npm --prefix corpus run corpus"
+  }
+}
