@@ -53,6 +53,12 @@ export interface HostManagerOptions {
   spawnFn?: SpawnFn;
   /** Injectable clock for crash-window bookkeeping; defaults to `Date.now`. */
   now?: () => number;
+  /** Sent verbatim as the `initialize` RPC params (T13/T35 `InitializeParams`). Defaults to `{}`
+   * for the scripted fake-host test path (T17/T18), which does not validate them; a real
+   * `backendFactory`-backed host (T35) requires the full shape (layoutlibRuntimeRoot,
+   * layoutlibResourcesRoot, libraryResDirs/Packages, outputDir, overlayDir, compileSdkVersion,
+   * logLevel) or `initialize` fails moshi parsing and the host never reaches `ready`. */
+  initializeParams?: Record<string, unknown>;
 }
 
 export interface Disposable {
@@ -80,6 +86,11 @@ export class HostManager {
   private intentionalKill = false;
   private stateListeners: Array<(s: HostState) => void> = [];
   private stderrLineListeners: Array<(line: string) => void> = [];
+  /** FIFO gate serializing concurrent {@link render} calls onto this single-session host (NFR-05). */
+  private renderQueueTail: Promise<void> = Promise.resolve();
+  /** The most recent crash's user-facing reason (P1-I AC1/AC2), enriched with an actionable hint
+   * when the stderr tail shows heap exhaustion — see {@link describeCrash}. */
+  private lastCrashReason?: string;
 
   private readonly renderTimeoutMs: number;
   private readonly backoffMs: number[];
@@ -116,6 +127,24 @@ export class HostManager {
    * `stderrRingBufferLines`. Used for crash reports (P1-I AC1/AC5). */
   stderrTail(): string[] {
     return [...this.stderrLines];
+  }
+
+  /** The most recent crash's user-facing reason (P1-I AC1/AC2 "a readable error"), or undefined if
+   * the host has never crashed. When the stderr tail shows JVM heap exhaustion, this names the
+   * `inflate.hostMaxHeap` setting rather than just the raw exit code (T58 chaos scenario). */
+  getLastCrashReason(): string | undefined {
+    return this.lastCrashReason;
+  }
+
+  /** Enriches a bare crash [reason] with an actionable heap-size hint when the stderr tail shows a
+   * JVM `OutOfMemoryError` — otherwise returns [reason] unchanged. */
+  private describeCrash(reason: string): string {
+    const isOom = this.stderrLines.some((l) => l.includes('OutOfMemoryError'));
+    if (!isOom) return reason;
+    return (
+      `${reason} — the render host ran out of memory (JVM OutOfMemoryError); increase the ` +
+      `"inflate.hostMaxHeap" setting (current default 1024 MB) and try again.`
+    );
   }
 
   /** True once a 4th crash has occurred within the rolling window — auto-restart has stopped and
@@ -179,7 +208,7 @@ export class HostManager {
     child.once('exit', (code, signal) => {
       const reason = `exited (code=${code}, signal=${signal})`;
       if (starting && rejectStartup) {
-        rejectStartup(new Error(`host ${reason} during startup`));
+        rejectStartup(new Error(`host ${this.describeCrash(reason)} during startup`));
         return;
       }
       if (this.intentionalKill) return; // dispose()/restart() own this transition
@@ -207,7 +236,7 @@ export class HostManager {
 
     await Promise.race([
       (async () => {
-        await connection.sendRequest('initialize', {});
+        await connection.sendRequest('initialize', this.opts.initializeParams ?? {});
         await connection.sendRequest('warmup', {});
       })(),
       startupFailure,
@@ -217,11 +246,37 @@ export class HostManager {
     this.setState('ready');
   }
 
-  /** Dispatches a render — only legal from `ready` (P1-I AC3). Kills the child on timeout. */
+  /**
+   * Dispatches a render — legal from `ready` or `rendering` (P1-I AC3 plus NFR-05: "concurrent
+   * previews supported... renders serialized per host"). A call arriving while another is already
+   * `rendering` is queued (FIFO) behind it via {@link renderQueueTail} rather than rejected — the
+   * per-document latest-wins coalescing that decides WHICH requests reach this point at all lives
+   * one layer up, in `RenderScheduler` (T36); this queue is what makes 3 concurrently open previews
+   * (3 different documents, each with its own scheduler state) land on the single-session host one
+   * render at a time instead of racing. Any other state (`stopped`/`starting`/`crashed`) still
+   * rejects immediately — there is nothing to queue behind. Kills the child on timeout.
+   */
   async render(req: RenderRequest): Promise<RenderResponse> {
-    if (this.state !== 'ready') {
+    if (this.state !== 'ready' && this.state !== 'rendering') {
       throw new IllegalStateError(`cannot render while host state is '${this.state}' (must be 'ready')`);
     }
+    const myTurn = this.renderQueueTail;
+    let releaseNext!: () => void;
+    this.renderQueueTail = new Promise<void>((resolve) => {
+      releaseNext = resolve;
+    });
+    await myTurn;
+    try {
+      if (this.state !== 'ready') {
+        throw new IllegalStateError(`cannot render while host state is '${this.state}' (must be 'ready')`);
+      }
+      return await this.dispatchRender(req);
+    } finally {
+      releaseNext();
+    }
+  }
+
+  private async dispatchRender(req: RenderRequest): Promise<RenderResponse> {
     this.setState('rendering');
     const connection = this.connection!;
     let timedOut = false;
@@ -312,6 +367,7 @@ export class HostManager {
 
   private handleCrash(reason: string): void {
     if (this.state === 'crashed') return; // already processed for this incident
+    this.lastCrashReason = this.describeCrash(reason);
     this.setState('crashed');
     this.connection?.dispose();
     this.connection = undefined;

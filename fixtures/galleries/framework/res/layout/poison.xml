@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- T58 poison fixture: deep alternating weighted nesting to reliably blow past a short
+     render timeout (classic Android anti-pattern: nested weight-based measure passes are
+     roughly exponential in depth). Used ONLY by the chaos suite with an artificially short
+     renderTimeoutMs (not the 15s default) so the test itself stays fast. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:orientation="horizontal">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:orientation="vertical">
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:orientation="horizontal">
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:orientation="vertical">
+                                        <LinearLayout
+                                            android:layout_width="match_parent"
+                                            android:layout_height="match_parent"
+                                            android:orientation="horizontal">
+                                            <LinearLayout
+                                                android:layout_width="match_parent"
+                                                android:layout_height="match_parent"
+                                                android:orientation="vertical">
+                                                <LinearLayout
+                                                    android:layout_width="match_parent"
+                                                    android:layout_height="match_parent"
+                                                    android:orientation="horizontal">
+                                                    <LinearLayout
+                                                        android:layout_width="match_parent"
+                                                        android:layout_height="match_parent"
+                                                        android:orientation="vertical">
+                                                        <LinearLayout
+                                                            android:layout_width="match_parent"
+                                                            android:layout_height="match_parent"
+                                                            android:orientation="horizontal">
+                                                            <LinearLayout
+                                                                android:layout_width="match_parent"
+                                                                android:layout_height="match_parent"
+                                                                android:orientation="vertical">
+                                                                <LinearLayout
+                                                                    android:layout_width="match_parent"
+                                                                    android:layout_height="match_parent"
+                                                                    android:orientation="horizontal">
+                                                                    <LinearLayout
+                                                                        android:layout_width="match_parent"
+                                                                        android:layout_height="match_parent"
+                                                                        android:orientation="vertical">
+                                                                        <LinearLayout
+                                                                            android:layout_width="match_parent"
+                                                                            android:layout_height="match_parent"
+                                                                            android:orientation="horizontal">
+                                                                            <LinearLayout
+                                                                                android:layout_width="match_parent"
+                                                                                android:layout_height="match_parent"
+                                                                                android:orientation="vertical">
+                                                                                <LinearLayout
+                                                                                    android:layout_width="match_parent"
+                                                                                    android:layout_height="match_parent"
+                                                                                    android:orientation="horizontal">
+                                                                                    <LinearLayout
+                                                                                        android:layout_width="match_parent"
+                                                                                        android:layout_height="match_parent"
+                                                                                        android:orientation="vertical">
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                        <TextView android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:text="x" />
+                                                                                    </LinearLayout>
+                                                                                </LinearLayout>
+                                                                            </LinearLayout>
+                                                                        </LinearLayout>
+                                                                    </LinearLayout>
+                                                                </LinearLayout>
+                                                            </LinearLayout>
+                                                        </LinearLayout>
+                                                    </LinearLayout>
+                                                </LinearLayout>
+                                            </LinearLayout>
+                                        </LinearLayout>
+                                    </LinearLayout>
+                                </LinearLayout>
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

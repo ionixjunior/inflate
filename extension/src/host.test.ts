@@ -72,7 +72,11 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(manager.getState()).toBe('ready');
 
     const renderPromise = manager.render(makeRequest(1));
-    // 'rendering' is entered synchronously before the awaited response arrives.
+    // 'rendering' is entered after the render queue's FIFO gate (T58: HostManager now serializes
+    // concurrent renders — NFR-05 — via a one-microtask-turn queue) resolves, before the awaited
+    // response arrives; a single microtask tick is enough to observe it since nothing is queued
+    // ahead of this call.
+    await Promise.resolve();
     expect(seen).toContain('rendering');
     const response = await renderPromise;
 
@@ -81,18 +85,43 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(seen).toEqual(['starting', 'ready', 'rendering', 'ready']);
   });
 
-  it('rejects render() when the state is not ready (illegal dispatch)', async () => {
+  it('rejects render() when the host has not been started (illegal dispatch)', async () => {
     const manager = makeManager('normal');
     expect(manager.getState()).toBe('stopped');
 
     await expect(manager.render(makeRequest(1))).rejects.toBeInstanceOf(IllegalStateError);
+  });
 
+  it('serializes a concurrent render behind the in-flight one instead of rejecting it (NFR-05)', async () => {
+    // SPEC_DEVIATION (T58 correction): an earlier version of this test asserted the SECOND of two
+    // concurrent render() calls was rejected with IllegalStateError ("gated only from 'ready'").
+    // That was a genuine spec-precision gap against NFR-05 ("concurrent previews supported... renders
+    // serialized per host, latest-wins per document") and P1-I AC3's own state machine, which lists
+    // `rendering` as a legal state to be in while more work arrives — RenderScheduler (T36) already
+    // coalesces per-document bursts, but nothing serialized ACROSS documents onto the single-session
+    // host. Fixed in host.ts (FIFO `renderQueueTail`) so a render arriving while another is in flight
+    // queues behind it and both settle, rather than the second erroring out.
+    const manager = makeManager('slow-render');
     await manager.ensureReady();
-    // A second concurrent render while the first is in flight must also be rejected (state is
-    // 'rendering', not 'ready') — render() is gated only from 'ready'.
+
+    const start = Date.now();
     const first = manager.render(makeRequest(1));
-    await expect(manager.render(makeRequest(2))).rejects.toBeInstanceOf(IllegalStateError);
-    await first;
+    // Give the first call's synchronous prelude (state check, queue enqueue) a tick to run before
+    // firing the second, so the assertion below observes 'rendering' rather than a race on 'ready'.
+    await Promise.resolve();
+    expect(manager.getState()).toBe('rendering');
+    const second = manager.render(makeRequest(2));
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const elapsedMs = Date.now() - start;
+
+    expect(firstResult.status).toBe('ok');
+    expect(firstResult.id).toBe(1);
+    expect(secondResult.status).toBe('ok');
+    expect(secondResult.id).toBe(2);
+    // Each fake-host render takes ~60ms; if the two were genuinely serialized (not dispatched in
+    // parallel) the wall-clock total must be at least roughly two render durations, not one.
+    expect(elapsedMs).toBeGreaterThanOrEqual(110);
   });
 
   it('kills the child and moves to crashed when a render exceeds its timeout', async () => {
@@ -186,6 +215,21 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     await manager.render(makeRequest(2));
 
     expect(manager.stderrTail().length).toBeLessThanOrEqual(3);
+  });
+
+  it('names the inflate.hostMaxHeap setting when the crash stderr shows a JVM OutOfMemoryError (T58)', async () => {
+    const manager = makeManager('oom-after-initialize', { backoffMs: [5, 5, 5] });
+    expect(manager.getLastCrashReason()).toBeUndefined();
+
+    await manager.ensureReady();
+    // The fake host's OOM stderr + exit(1) fire ~50ms after initialize; poll for the crash to land
+    // rather than racing the still-'ready' state immediately after ensureReady() resolves.
+    await waitUntil(() => manager.getLastCrashReason() !== undefined);
+
+    const crashReason = manager.getLastCrashReason();
+    expect(crashReason).toBeDefined();
+    expect(crashReason).toContain('inflate.hostMaxHeap');
+    expect(crashReason).toContain('OutOfMemoryError');
   });
 });
 

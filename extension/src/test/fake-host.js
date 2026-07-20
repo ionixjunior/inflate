@@ -13,6 +13,13 @@
 //                             instead of responding.
 //   hang-on-render          — initialize/warmup succeed; any `render` request never responds
 //                             (triggers the client-side render-timeout watchdog).
+//   slow-render             — initialize/warmup succeed; any `render` request takes ~60ms before
+//                             responding ok (T58: proves HostManager serializes concurrent renders
+//                             onto one host rather than dispatching them in parallel).
+//   oom-after-initialize    — initialize/warmup succeed, then the process prints a JVM-style
+//                             OutOfMemoryError line to stderr and exits(1) ~50ms later (stands in
+//                             for a real `-Xmx`-starved JVM in a fast unit test; the REAL tiny-heap
+//                             scenario is exercised end to end by the chaos integration suite, T58).
 'use strict';
 
 const fs = require('fs');
@@ -42,6 +49,15 @@ connection.onRequest('initialize', (...args) => {
       process.exit(1);
     }, 50);
   }
+  if (mode === 'oom-after-initialize') {
+    setTimeout(() => {
+      process.stderr.write(
+        'Exception in thread "main" java.lang.OutOfMemoryError: Java heap space\n' +
+          '\tat fake.Bridge.init(fake-host.js)\n',
+      );
+      process.exit(1);
+    }, 50);
+  }
   return { pinName: 'fake-host-pin', capabilities: [] };
 });
 
@@ -50,15 +66,7 @@ connection.onRequest('warmup', () => {
   return {};
 });
 
-connection.onRequest('render', (...args) => {
-  const params = args[0] || {};
-  process.stderr.write(`fake-host: render id=${params.id}\n`);
-  if (mode === 'crash-on-render') {
-    process.exit(1);
-  }
-  if (mode === 'hang-on-render') {
-    return new Promise(() => {}); // never resolves — triggers the client watchdog
-  }
+function buildRenderResult(params) {
   // Reflect the document content so the hot-reload integration test can drive ok/error transitions:
   // inlineContent (refresh) wins, else the file on disk. A "INFLATE_ERROR" sentinel yields a
   // structured error RenderResponse (P1-A AC3 shape); anything else renders the committed PNG.
@@ -119,6 +127,21 @@ connection.onRequest('render', (...args) => {
     timings: { prepareMs: 0, inflateMs: 0, renderMs: 0, totalMs: 0 },
     sessionRebuilt: false,
   };
+}
+
+connection.onRequest('render', (...args) => {
+  const params = args[0] || {};
+  process.stderr.write(`fake-host: render id=${params.id}\n`);
+  if (mode === 'crash-on-render') {
+    process.exit(1);
+  }
+  if (mode === 'hang-on-render') {
+    return new Promise(() => {}); // never resolves — triggers the client watchdog
+  }
+  if (mode === 'slow-render') {
+    return new Promise((resolve) => setTimeout(() => resolve(buildRenderResult(params)), 60));
+  }
+  return buildRenderResult(params);
 });
 
 connection.onRequest('listThemes', () => [
