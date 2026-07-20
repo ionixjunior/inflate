@@ -135,6 +135,11 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       });
       scheduler.notifyConfigChanged(docPath);
     },
+    (docPath, zoom) => {
+      // Zoom is persisted per file (CFG-05, P1-E AC5) but never re-renders by itself — only a
+      // resulting pixel-scale escalation (sent as a separate configChanged) does (T52, UX-03).
+      configStore.update(docPath, { zoom });
+    },
   );
 
   const api: InflateApi = { activationMs: 0, hostManager, panelManager };

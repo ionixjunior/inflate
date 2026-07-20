@@ -55,6 +55,27 @@ describe('webview view model — message contract (T37, design #9)', () => {
     expect(vm.imageUri).toBeUndefined();
   });
 
+  it('setImage carries canvasCapped through for the zoom viewport to stop escalating (T52, UX-03)', () => {
+    const capped = reduce(initialViewModel, {
+      type: 'setImage',
+      uri: 'img/1.png',
+      width: 10,
+      height: 10,
+      warnings: [],
+      canvasCapped: true,
+    });
+    expect(capped.canvasCapped).toBe(true);
+
+    const notCapped = reduce(initialViewModel, {
+      type: 'setImage',
+      uri: 'img/1.png',
+      width: 10,
+      height: 10,
+      warnings: [],
+    });
+    expect(notCapped.canvasCapped).toBe(false);
+  });
+
   it('setStatus sets a transient status without touching the image', () => {
     const withImage = reduce(initialViewModel, {
       type: 'setImage',

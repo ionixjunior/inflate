@@ -44,6 +44,8 @@ export interface PanelViewModel {
   warningsCollapsed: boolean;
   /** Drawable metadata from the latest successful render (toolbar picker/badge/matched display). */
   drawable?: DrawableMetaVM;
+  /** True when the last render hit the 4096 px canvas cap (T52, UX-03) — stops zoom escalation. */
+  canvasCapped: boolean;
 }
 
 export const initialViewModel: PanelViewModel = {
@@ -51,6 +53,7 @@ export const initialViewModel: PanelViewModel = {
   fileGone: false,
   warnings: [],
   warningsCollapsed: true,
+  canvasCapped: false,
 };
 
 /** Reduce one message into the next view model (pure). */
@@ -69,6 +72,7 @@ export function reduce(state: PanelViewModel, msg: WebviewMessage): PanelViewMod
         status: undefined,
         warnings: msg.warnings,
         drawable: msg.drawable,
+        canvasCapped: msg.canvasCapped ?? false,
       };
     case 'setError':
       // Keep the last good image (dimmed + stale) if one exists; show the error either way (UX-04).

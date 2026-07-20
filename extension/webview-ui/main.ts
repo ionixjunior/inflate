@@ -26,6 +26,17 @@ import {
   pickerVisible,
   toggleBackdrop,
 } from './toolbar';
+import {
+  ZoomState,
+  applyCanvasCapped,
+  clampPan,
+  initialPanOffset,
+  initialZoomState,
+  nextZoomState,
+  resolveZoomPercent,
+  shouldRequestPixelScale,
+  type PanOffset,
+} from './viewport';
 
 // Provided by the VS Code webview runtime.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -33,6 +44,39 @@ declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
 let state: PanelViewModel = initialViewModel;
 let toolbar: ToolbarState = { ...initialToolbarState };
+let zoom: ZoomState = { ...initialZoomState };
+let pan: PanOffset = { ...initialPanOffset };
+let zoomPersistTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Recompute the effective zoom against the current stage size + image, applying the resulting
+ * pixel-scale escalation (debounced persist, T52/UX-03) and CSS transform. */
+function applyZoom(nextSetting: ZoomState['zoom']): void {
+  const stage = $('stage');
+  const rect = stage?.getBoundingClientRect();
+  const percent = resolveZoomPercent(
+    nextSetting,
+    state.imageWidth ?? 1,
+    state.imageHeight ?? 1,
+    rect?.width ?? 1,
+    rect?.height ?? 1,
+  );
+  const next = nextZoomState(zoom, nextSetting, percent);
+  const requestPixelScale = shouldRequestPixelScale(zoom, next);
+  zoom = next;
+  pan = clampPan(pan, state.imageWidth ?? 1, state.imageHeight ?? 1, rect?.width ?? 1, rect?.height ?? 1, zoom.percent);
+  paintTransform();
+
+  clearTimeout(zoomPersistTimer);
+  zoomPersistTimer = setTimeout(() => vscode.postMessage({ type: 'zoomChanged', zoom: zoom.zoom }), 250);
+
+  if (requestPixelScale) vscode.postMessage({ type: 'configChanged', pixelScale: zoom.pixelScale });
+}
+
+/** Apply the current zoom/pan as a CSS transform on the preview image. */
+function paintTransform(): void {
+  const img = $('preview') as HTMLImageElement | null;
+  if (img) img.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom.percent / 100})`;
+}
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -143,8 +187,57 @@ function paint(): void {
 
 window.addEventListener('message', (event: MessageEvent) => {
   state = reduce(state, event.data as WebviewMessage);
+  if (state.canvasCapped) zoom = applyCanvasCapped(zoom);
   paint();
   paintToolbar();
+  applyZoom(zoom.zoom); // re-resolve against the (possibly new) image size, e.g. after setImage
+});
+
+// Wheel: plain wheel pans; ctrl/cmd+wheel (browser's pinch-zoom gesture) zooms (T52, UX-03).
+$('stage')?.addEventListener(
+  'wheel',
+  (e: WheelEvent) => {
+    e.preventDefault();
+    if (e.ctrlKey) {
+      applyZoom(typeof zoom.zoom === 'number' ? zoom.zoom - e.deltaY : zoom.percent - e.deltaY);
+    } else {
+      const stage = $('stage');
+      const rect = stage?.getBoundingClientRect();
+      pan = clampPan(
+        { x: pan.x - e.deltaX, y: pan.y - e.deltaY },
+        state.imageWidth ?? 1,
+        state.imageHeight ?? 1,
+        rect?.width ?? 1,
+        rect?.height ?? 1,
+        zoom.percent,
+      );
+      paintTransform();
+    }
+  },
+  { passive: false },
+);
+
+// Drag-to-pan (gesture pan, T52/UX-03).
+let dragStart: { x: number; y: number; pan: PanOffset } | undefined;
+$('stage')?.addEventListener('pointerdown', (e: PointerEvent) => {
+  dragStart = { x: e.clientX, y: e.clientY, pan: { ...pan } };
+});
+window.addEventListener('pointermove', (e: PointerEvent) => {
+  if (!dragStart) return;
+  const stage = $('stage');
+  const rect = stage?.getBoundingClientRect();
+  pan = clampPan(
+    { x: dragStart.pan.x + (e.clientX - dragStart.x), y: dragStart.pan.y + (e.clientY - dragStart.y) },
+    state.imageWidth ?? 1,
+    state.imageHeight ?? 1,
+    rect?.width ?? 1,
+    rect?.height ?? 1,
+    zoom.percent,
+  );
+  paintTransform();
+});
+window.addEventListener('pointerup', () => {
+  dragStart = undefined;
 });
 
 document.addEventListener('click', (e) => {
@@ -179,3 +272,4 @@ document.addEventListener('change', (e) => {
 vscode.postMessage({ type: 'ready' });
 paint();
 paintToolbar();
+paintTransform();

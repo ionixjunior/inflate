@@ -59,6 +59,13 @@ export interface ConfigPatch {
   isProjectTheme?: boolean;
 }
 
+/** `'fit'` = fit-to-window; a number is a persisted manual zoom percent (25-400, T52/UX-03). */
+export type ZoomSetting = 'fit' | number;
+
+/** The full webview → extension message shape this panel understands. `zoom` (a `zoomChanged`
+ * message) is persisted only — unlike `configChanged` it never by itself triggers a re-render. */
+type WebviewToExtensionMessage = { type?: string; zoom?: ZoomSetting } & ConfigPatch;
+
 function warningsToVm(warnings: Warning[]): Array<{ kind: string; message: string }> {
   return warnings.map((w) => ({ kind: w.kind, message: w.message }));
 }
@@ -75,6 +82,8 @@ export class PreviewPanelManager {
     /** A toolbar config change (drawable state/size, day/night, device, orientation, density, theme
      * — T49/T51) → merge into ConfigStore and re-render. */
     private readonly onConfigChanged: (docPath: string, patch: ConfigPatch) => void = () => {},
+    /** A zoom-level change (T52) → persist into ConfigStore only; never re-renders by itself. */
+    private readonly onZoomChanged: (docPath: string, zoom: ZoomSetting) => void = () => {},
   ) {
     this.sweepPngs();
   }
@@ -112,25 +121,23 @@ export class PreviewPanelManager {
    * Route a webview → extension message for a document. Public so the extension-side integration
    * loop (T18/T37 fake-host pattern) can drive the toolbar's config-change path without a live DOM.
    */
-  deliverWebviewMessage(docPath: string, msg: { type?: string } & ConfigPatch): void {
+  deliverWebviewMessage(docPath: string, msg: WebviewToExtensionMessage): void {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return;
     this.handleWebviewMessage(entry, docPath, msg);
   }
 
-  private handleWebviewMessage(
-    entry: PanelEntry,
-    docPath: string,
-    msg: { type?: string } & ConfigPatch,
-  ): void {
+  private handleWebviewMessage(entry: PanelEntry, docPath: string, msg: WebviewToExtensionMessage): void {
     if (msg?.type === 'ready') {
       entry.ready = true;
       if (entry.lastMessage) void entry.panel.webview.postMessage(entry.lastMessage);
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
     } else if (msg?.type === 'configChanged') {
-      const { type: _type, ...patch } = msg;
+      const { type: _type, zoom: _zoom, ...patch } = msg;
       this.onConfigChanged(docPath, patch);
+    } else if (msg?.type === 'zoomChanged' && msg.zoom !== undefined) {
+      this.onZoomChanged(docPath, msg.zoom);
     }
   }
 
@@ -156,7 +163,7 @@ export class PreviewPanelManager {
     const entry: PanelEntry = { panel, ready: false, hasGoodImage: false };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
-    panel.webview.onDidReceiveMessage((msg: { type?: string } & ConfigPatch) => {
+    panel.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(entry, doc.uri.fsPath, msg);
     });
     panel.onDidDispose(() => {
