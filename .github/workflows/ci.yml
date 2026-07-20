@@ -1,0 +1,118 @@
+name: CI
+
+# T56 (NFR-07 CI gate). AD-004: macOS only (arm64 primary, x64 fast-follow smoke). Runner labels
+# verified against GitHub's current hosted-runner reference (2026-07): macos-13/macos-13-arm64 are
+# deprecated/closing down, so the arm64 job uses macos-14 and the x64 smoke job uses the still-
+# supported Intel label macos-15-intel (valid through the macOS 15 image's retirement).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Primary gate: full pipeline (build, unit, integration, host unit + engineTest, golden corpus) on
+  # Apple Silicon — the architecture the product is developed and measured against (NFR-01/T57).
+  build-and-test-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # AD-011: engine cache keyed by the generated manifest hash — a pin bump (T38-style) changes
+      # extension/engine-manifest.json's contents and therefore this key, so a version bump always
+      # re-downloads while an unchanged pin restores the ~170 MB download-free (R8, NFR-01 cold start).
+      - name: Cache engine artifacts
+        uses: actions/cache@v4
+        with:
+          path: host/.engine-cache
+          key: engine-cache-${{ hashFiles('extension/engine-manifest.json') }}
+
+      - name: Install extension dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      - name: Extension unit tests
+        working-directory: extension
+        run: npm test
+
+      - name: Extension integration tests
+        working-directory: extension
+        run: npm run test:integration
+
+      - name: Fetch engine artifacts (skipped if cache restored)
+        working-directory: host
+        run: ./gradlew fetchEngine --console=plain
+
+      - name: Host build + unit tests
+        working-directory: host
+        run: ./gradlew build test --console=plain
+
+      - name: Host engine integration tests
+        working-directory: host
+        run: ./gradlew engineTest --console=plain
+
+      - name: Install corpus dependencies
+        working-directory: corpus
+        run: npm ci
+
+      - name: Golden-image corpus
+        run: npm run corpus
+
+      - name: Upload corpus report (always, so a pass is inspectable too)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-report-arm64
+          path: |
+            corpus/report.html
+          if-no-files-found: warn
+
+  # Fast-follow smoke: unit-test-only subset on Intel, so an x64-specific regression (e.g. a native
+  # layoutlib path difference) surfaces without paying the full engine-download + corpus cost twice.
+  smoke-x64:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install extension dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      - name: Extension unit tests
+        working-directory: extension
+        run: npm test
+
+      - name: Host unit tests
+        working-directory: host
+        run: ./gradlew test --console=plain

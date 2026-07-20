@@ -1,0 +1,38 @@
+name: Engine pin canary
+
+# T56 (R7 mitigation: "Google Maven artifact availability/layout changes... CI canary that fetches
+# the pin daily"). Runs fetchEngine against a COLD cache every day so a broken/moved/re-checksummed
+# pinned artifact on Google Maven is caught within 24h of the user-visible one-time download breaking,
+# rather than only being discovered the next time someone happens to touch host/build.gradle.kts.
+on:
+  schedule:
+    - cron: '17 6 * * *' # daily, off-peak UTC
+  workflow_dispatch:
+
+jobs:
+  fetch-pinned-engine:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Deliberately NO cache restore here — the canary's job is to prove the pin is fetchable and
+      # checksum-verified from a cold state, exactly what a brand-new user's first run does (P1-H AC1).
+      - name: Fetch pinned engine artifacts (cold)
+        working-directory: host
+        run: ./gradlew fetchEngine --console=plain
+
+      - name: Regenerate + diff engine-manifest.json (pin drift check)
+        working-directory: host
+        run: |
+          ./gradlew generateEngineManifest --console=plain
+          git diff --exit-code -- ../extension/engine-manifest.json || \
+            (echo "::warning::engine-manifest.json changed from a cold Gradle-resolution run — the pinned artifact closure or its checksums may have drifted upstream" && exit 0)
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Pinned engine artifact fetch failed — Google Maven availability or layout may have changed (R7). See job log for the failing artifact."
