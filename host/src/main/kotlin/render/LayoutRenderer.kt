@@ -2,6 +2,7 @@ package render
 
 import app.cash.paparazzi.DeviceConfig
 import engine.ConfigMapper
+import engine.Degradation
 import engine.EngineAdapter
 import log.LogBridge
 import out.PngWriter
@@ -73,14 +74,14 @@ class LayoutRenderer(
       overlayBaseDir = overlayBaseDir,
       log = log,
     )
-    val warnings = mapWarnings(pre.warnings)
+    val preWarnings = mapWarnings(pre.warnings)
     val dependencies = resolveDependencies(pre.referencedResources, roots)
 
     pre.syntaxError?.let { syntax ->
       return errorResponse(
         request,
         RenderError(message = syntax.message, file = request.docPath, line = syntax.line, column = syntax.column),
-        warnings = warnings,
+        warnings = preWarnings,
         dependencies = dependencies,
         timings = RenderTimings(0, 0, 0, elapsedMs(totalStart)),
         sessionRebuilt = false,
@@ -90,7 +91,7 @@ class LayoutRenderer(
     val overlayFile = pre.overlayFile ?: return errorResponse(
       request,
       RenderError(message = "preprocessing produced no overlay", file = request.docPath),
-      warnings = warnings,
+      warnings = preWarnings,
       dependencies = dependencies,
       timings = RenderTimings(0, 0, 0, elapsedMs(totalStart)),
       sessionRebuilt = false,
@@ -107,8 +108,30 @@ class LayoutRenderer(
     }
 
     val prepareStart = System.nanoTime()
-    val session = adapter.session(roots, request.packageName)
+    var session = adapter.session(roots, request.packageName)
+
+    // RES-04 / UX-05 / P1-G AC4: degrade unresolvable @color/@dimen/@string/@drawable references in
+    // the previewed content so the render still completes (magenta/0dp/name/placeholder per kind),
+    // recording an unresolvedRef warning for each. The session is now built, so the app repository's
+    // real existence check (appResourceExists — NOT the dynamic-id getIdentifier, which never reports
+    // absence, Q3) drives which references are unresolved. A degraded drawable emits a placeholder
+    // file into the overlay res dir, so the app repository must be rebuilt to index it.
+    val overlayResDir = File(overlayBaseDir, "res")
+    val degraded = Degradation(log, overlayResDir).degradeReferences(overlayFile.readText()) { kind, name ->
+      adapter.appResourceExists(kind, name)
+    }
+    if (degraded.unresolved.isNotEmpty()) {
+      overlayFile.writeText(degraded.content)
+      if (degraded.placeholderEmitted) {
+        adapter.invalidate()
+        session = adapter.session(roots, request.packageName)
+      }
+    }
     val prepareMs = elapsedMs(prepareStart)
+
+    // Degradation appends unresolvedRef entries to the same LogBridge the preprocessor used, so the
+    // response warnings are re-derived from the full log (preprocess + degradation) here.
+    val warnings = mapWarnings(log.warnings())
 
     // P1-B AC4: warn on any res-auto attribute the bundled Material/androidx version does not define
     // (layoutlib silently drops it). The session (app + library repositories) is now active, so
