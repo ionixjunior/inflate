@@ -44,6 +44,21 @@ export interface DrawableConfigPatch {
   sizeDp?: { w: number; h: number };
 }
 
+/**
+ * A `configChanged` patch from the webview toolbar (T49 drawable controls + T51 config controls,
+ * CFG-01..04). Every field is optional — a single control changing emits just its own field(s); the
+ * extension merges whatever is present into ConfigStore and re-renders.
+ */
+export interface ConfigPatch {
+  drawable?: DrawableConfigPatch;
+  night?: boolean;
+  deviceId?: string;
+  orientation?: 'portrait' | 'landscape';
+  density?: string;
+  themeName?: string;
+  isProjectTheme?: boolean;
+}
+
 function warningsToVm(warnings: Warning[]): Array<{ kind: string; message: string }> {
   return warnings.map((w) => ({ kind: w.kind, message: w.message }));
 }
@@ -57,8 +72,9 @@ export class PreviewPanelManager {
     /** Session PNG output dir (globalStorage) — a webview resource root and the sweep target. */
     private readonly outputDir: vscode.Uri,
     private readonly onRefresh: (docPath: string) => void = () => {},
-    /** A drawable toolbar change (state pick / size override) → re-render with the new config (T49). */
-    private readonly onConfigChanged: (docPath: string, drawable: DrawableConfigPatch) => void = () => {},
+    /** A toolbar config change (drawable state/size, day/night, device, orientation, density, theme
+     * — T49/T51) → merge into ConfigStore and re-render. */
+    private readonly onConfigChanged: (docPath: string, patch: ConfigPatch) => void = () => {},
   ) {
     this.sweepPngs();
   }
@@ -96,7 +112,7 @@ export class PreviewPanelManager {
    * Route a webview → extension message for a document. Public so the extension-side integration
    * loop (T18/T37 fake-host pattern) can drive the toolbar's config-change path without a live DOM.
    */
-  deliverWebviewMessage(docPath: string, msg: { type?: string; drawable?: DrawableConfigPatch }): void {
+  deliverWebviewMessage(docPath: string, msg: { type?: string } & ConfigPatch): void {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return;
     this.handleWebviewMessage(entry, docPath, msg);
@@ -105,15 +121,16 @@ export class PreviewPanelManager {
   private handleWebviewMessage(
     entry: PanelEntry,
     docPath: string,
-    msg: { type?: string; drawable?: DrawableConfigPatch },
+    msg: { type?: string } & ConfigPatch,
   ): void {
     if (msg?.type === 'ready') {
       entry.ready = true;
       if (entry.lastMessage) void entry.panel.webview.postMessage(entry.lastMessage);
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
-    } else if (msg?.type === 'configChanged' && msg.drawable) {
-      this.onConfigChanged(docPath, msg.drawable);
+    } else if (msg?.type === 'configChanged') {
+      const { type: _type, ...patch } = msg;
+      this.onConfigChanged(docPath, patch);
     }
   }
 
@@ -139,7 +156,7 @@ export class PreviewPanelManager {
     const entry: PanelEntry = { panel, ready: false, hasGoodImage: false };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
-    panel.webview.onDidReceiveMessage((msg: { type?: string; drawable?: DrawableConfigPatch }) => {
+    panel.webview.onDidReceiveMessage((msg: { type?: string } & ConfigPatch) => {
       this.handleWebviewMessage(entry, doc.uri.fsPath, msg);
     });
     panel.onDidDispose(() => {

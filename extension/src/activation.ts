@@ -15,7 +15,7 @@ import { classify, isEligible } from './classifier';
 import { ConfigStore, PreviewConfigPatch } from './config';
 import { HostManager, HostState } from './host';
 import { PreviewPanelManager } from './panel';
-import { DocKind } from './protocol';
+import { Density, DocKind, Orientation } from './protocol';
 import { ResourceRootResolver } from './roots';
 import { RenderScheduler } from './scheduler';
 
@@ -123,8 +123,16 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     output,
     outputDir,
     (docPath) => scheduler.refresh(docPath),
-    (docPath, drawable) => {
-      configStore.update(docPath, { drawable: drawable as PreviewConfigPatch['drawable'] });
+    (docPath, patch) => {
+      configStore.update(docPath, {
+        drawable: patch.drawable as PreviewConfigPatch['drawable'],
+        night: patch.night,
+        deviceId: patch.deviceId,
+        orientation: patch.orientation as Orientation | undefined,
+        density: patch.density as Density | undefined,
+        themeName: patch.themeName,
+        isProjectTheme: patch.isProjectTheme,
+      });
       scheduler.notifyConfigChanged(docPath);
     },
   );
