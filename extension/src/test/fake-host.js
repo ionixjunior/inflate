@@ -92,6 +92,20 @@ connection.onRequest('render', (...args) => {
       ? { index: 0, stateAttrs: ['state_pressed'] }
       : { index: 3, stateAttrs: [] };
   }
+  // T53 config-toolbar plumbing: echo the applied PreviewConfig back as a 'notice' warning so an
+  // extension-side integration test (no real qualifier-selection/rendering here — that's covered
+  // host-side by engineTest, T25 QualifierTest) can assert the extension sent the right config for
+  // each toolbar control (night/device/orientation/density/theme/pixelScale) without needing real
+  // pixels. Emitted for every ok render, not just drawables.
+  const cfg = params.config || {};
+  const device = cfg.device || {};
+  const configNotice = {
+    kind: 'notice',
+    message:
+      `config: theme=${cfg.themeName} night=${cfg.night} device=${device.id} ` +
+      `widthDp=${device.widthDp} heightDp=${device.heightDp} density=${cfg.density} ` +
+      `orientation=${cfg.orientation} pixelScale=${cfg.pixelScale}`,
+  };
   return {
     id: params.id,
     status: 'ok',
@@ -100,14 +114,17 @@ connection.onRequest('render', (...args) => {
     imageHeight: 1,
     stateSensitive,
     matchedStateItem,
-    warnings: [],
+    warnings: [configNotice],
     dependencies: [],
     timings: { prepareMs: 0, inflateMs: 0, renderMs: 0, totalMs: 0 },
     sessionRebuilt: false,
   };
 });
 
-connection.onRequest('listThemes', () => []);
+connection.onRequest('listThemes', () => [
+  { name: 'Theme.Material3.DayNight', isProjectTheme: false, source: 'material' },
+  { name: 'Theme.AppCompat.Light', isProjectTheme: false, source: 'appcompat' },
+]);
 connection.onRequest('invalidate', () => ({}));
 connection.onRequest('shutdown', () => {
   setTimeout(() => process.exit(0), 5);

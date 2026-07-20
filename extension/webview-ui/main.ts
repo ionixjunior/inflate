@@ -16,15 +16,28 @@ import {
 } from './viewmodel';
 import {
   Backdrop,
+  DENSITIES,
+  DEVICE_PRESETS,
   DRAWABLE_STATES,
+  Density,
   DrawableStateName,
+  Orientation,
+  ThemeOption,
   ToolbarState,
   backdropCss,
   buildConfigChanged,
+  buildDensityChanged,
+  buildDeviceChanged,
+  buildNightChanged,
+  buildOrientationChanged,
+  buildThemeChanged,
+  hydrateToolbarState,
   initialToolbarState,
   matchedLabel,
+  orderThemesForPicker,
   pickerVisible,
   toggleBackdrop,
+  toggleOrientation,
 } from './toolbar';
 import {
   ZoomState,
@@ -47,6 +60,7 @@ let toolbar: ToolbarState = { ...initialToolbarState };
 let zoom: ZoomState = { ...initialZoomState };
 let pan: PanOffset = { ...initialPanOffset };
 let zoomPersistTimer: ReturnType<typeof setTimeout> | undefined;
+let themeOptions: ThemeOption[] = [];
 
 /** Recompute the effective zoom against the current stage size + image, applying the resulting
  * pixel-scale escalation (debounced persist, T52/UX-03) and CSS transform. */
@@ -125,6 +139,44 @@ function paintToolbar(): void {
 
   const stage = $('stage');
   if (stage) stage.style.background = backdropCss(toolbar.backdrop);
+
+  // Config controls (T51, CFG-01..04): populate the static option lists once, then sync values.
+  const nightToggle = $('nightToggle') as HTMLInputElement | null;
+  if (nightToggle) nightToggle.checked = toolbar.night;
+
+  const devicePicker = $('devicePicker') as HTMLSelectElement | null;
+  if (devicePicker && devicePicker.options.length === 0) {
+    for (const d of DEVICE_PRESETS) {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.label;
+      devicePicker.appendChild(opt);
+    }
+  }
+  if (devicePicker) devicePicker.value = toolbar.deviceId;
+
+  const densityPicker = $('densityPicker') as HTMLSelectElement | null;
+  if (densityPicker && densityPicker.options.length === 0) {
+    for (const d of DENSITIES) {
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = d;
+      densityPicker.appendChild(opt);
+    }
+  }
+  if (densityPicker) densityPicker.value = toolbar.density;
+
+  const themePicker = $('themePicker') as HTMLSelectElement | null;
+  if (themePicker && themePicker.options.length !== themeOptions.length) {
+    themePicker.innerHTML = '';
+    for (const t of orderThemesForPicker(themeOptions)) {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      opt.textContent = t.isProjectTheme ? `${t.name} (project)` : t.name;
+      themePicker.appendChild(opt);
+    }
+  }
+  if (themePicker && themeOptions.some((t) => t.name === toolbar.themeName)) themePicker.value = toolbar.themeName;
 }
 
 function paint(): void {
@@ -186,7 +238,36 @@ function paint(): void {
 }
 
 window.addEventListener('message', (event: MessageEvent) => {
-  state = reduce(state, event.data as WebviewMessage);
+  const data = event.data as WebviewMessage | { type: 'setThemes'; themes: ThemeOption[] } | {
+    type: 'setConfig';
+    config: {
+      themeName: string;
+      isProjectTheme: boolean;
+      night: boolean;
+      deviceId: string;
+      orientation: Orientation;
+      density: Density;
+      backdrop: Backdrop;
+      zoom: ZoomState['zoom'];
+    };
+  };
+
+  // Theme list + persisted-config hydration (CFG-04/CFG-05, T51/T53) aren't render outcomes, so they
+  // are handled here directly rather than through the render view model.
+  if (data.type === 'setThemes') {
+    themeOptions = data.themes;
+    paintToolbar();
+    return;
+  }
+  if (data.type === 'setConfig') {
+    toolbar = hydrateToolbarState(toolbar, data.config);
+    toolbar = { ...toolbar, backdrop: data.config.backdrop };
+    paintToolbar();
+    applyZoom(data.config.zoom);
+    return;
+  }
+
+  state = reduce(state, data as WebviewMessage);
   if (state.canvasCapped) zoom = applyCanvasCapped(zoom);
   paint();
   paintToolbar();
@@ -254,6 +335,11 @@ document.addEventListener('click', (e) => {
     toolbar = { ...toolbar, backdrop: toggleBackdrop(toolbar.backdrop) as Backdrop };
     paintToolbar();
   }
+  if (target && target.id === 'orientationToggle') {
+    toolbar = { ...toolbar, orientation: toggleOrientation(toolbar.orientation) };
+    paintToolbar();
+    vscode.postMessage(buildOrientationChanged(toolbar.orientation));
+  }
 });
 
 document.addEventListener('change', (e) => {
@@ -265,6 +351,24 @@ document.addEventListener('change', (e) => {
   if (target && target.id === 'sizeInput') {
     toolbar = { ...toolbar, sizeText: (target as HTMLInputElement).value };
     emitConfig();
+  }
+  if (target && target.id === 'nightToggle') {
+    toolbar = { ...toolbar, night: (target as HTMLInputElement).checked };
+    vscode.postMessage(buildNightChanged(toolbar.night));
+  }
+  if (target && target.id === 'devicePicker') {
+    toolbar = { ...toolbar, deviceId: (target as HTMLSelectElement).value };
+    vscode.postMessage(buildDeviceChanged(toolbar.deviceId));
+  }
+  if (target && target.id === 'densityPicker') {
+    toolbar = { ...toolbar, density: (target as HTMLSelectElement).value as Density };
+    vscode.postMessage(buildDensityChanged(toolbar.density));
+  }
+  if (target && target.id === 'themePicker') {
+    const name = (target as HTMLSelectElement).value;
+    const theme = themeOptions.find((t) => t.name === name) ?? { name, isProjectTheme: false, source: 'platform' as const };
+    toolbar = { ...toolbar, themeName: theme.name, isProjectTheme: theme.isProjectTheme };
+    vscode.postMessage(buildThemeChanged(theme));
   }
 });
 

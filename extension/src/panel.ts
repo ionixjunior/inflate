@@ -36,6 +36,9 @@ export interface AppliedState {
   stateSensitive?: boolean;
   staticPreviewBadge?: boolean;
   matchedStateItem?: { index: number; stateAttrs: string[] };
+  /** Warnings from the last render (T53 — integration tests observe the applied config through
+   * these without a live DOM, e.g. a fake host echoing back the RenderRequest.config it received). */
+  warnings?: Array<{ kind: string; message: string }>;
 }
 
 /** A drawable config patch from the webview toolbar (state picker / size override). */
@@ -61,6 +64,25 @@ export interface ConfigPatch {
 
 /** `'fit'` = fit-to-window; a number is a persisted manual zoom percent (25-400, T52/UX-03). */
 export type ZoomSetting = 'fit' | number;
+
+/** A theme offered by the picker (CFG-04) — `setThemes`, fed by the `listThemes` RPC result. */
+export interface ThemeOption {
+  name: string;
+  isProjectTheme: boolean;
+  source: string;
+}
+
+/** The persisted per-file config pushed to the webview on open/reopen (CFG-05, P1-E AC5). */
+export interface HydratedConfig {
+  themeName: string;
+  isProjectTheme: boolean;
+  night: boolean;
+  deviceId: string;
+  orientation: string;
+  density: string;
+  backdrop: string;
+  zoom: ZoomSetting;
+}
 
 /** The full webview → extension message shape this panel understands. `zoom` (a `zoomChanged`
  * message) is persisted only — unlike `configChanged` it never by itself triggers a re-render. */
@@ -114,6 +136,7 @@ export class PreviewPanelManager {
       stateSensitive: r.stateSensitive,
       staticPreviewBadge: r.staticPreviewBadge,
       matchedStateItem: r.matchedStateItem,
+      warnings: warningsToVm(r.warnings),
     };
   }
 
@@ -208,6 +231,21 @@ export class PreviewPanelManager {
     }
   }
 
+  /** Push the theme list (project + bundled) to the toolbar's picker (CFG-04, `listThemes` RPC). */
+  setThemes(docPath: string, themes: ThemeOption[]): void {
+    const entry = this.entries.get(this.key(docPath));
+    if (!entry) return;
+    this.post(entry, { type: 'setThemes', themes });
+  }
+
+  /** Hydrate the toolbar + viewport from the persisted per-file config (ConfigStore) — restores the
+   * toolbar's config controls and zoom level on preview reopen (CFG-05, P1-E AC5). */
+  hydrateConfig(docPath: string, config: HydratedConfig): void {
+    const entry = this.entries.get(this.key(docPath));
+    if (!entry) return;
+    this.post(entry, { type: 'setConfig', config });
+  }
+
   /** Apply a host-level failure (crash / timeout) — keeps the last good render dimmed. */
   applyHostError(docPath: string, error: Error): void {
     const entry = this.entries.get(this.key(docPath));
@@ -289,6 +327,11 @@ export class PreviewPanelManager {
 <body>
   <div id="staleChip" style="display:none">stale</div>
   <div id="toolbar">
+    <label>Theme <select id="themePicker"></select></label>
+    <label><input id="nightToggle" type="checkbox" /> Night</label>
+    <label>Device <select id="devicePicker"></select></label>
+    <button id="orientationToggle" type="button">Orientation</button>
+    <label>Density <select id="densityPicker"></select></label>
     <span id="statePickerWrap" style="display:none">
       <label>State <select id="statePicker"></select></label>
     </span>

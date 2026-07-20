@@ -14,8 +14,8 @@ import * as vscode from 'vscode';
 import { classify, isEligible } from './classifier';
 import { ConfigStore, PreviewConfigPatch } from './config';
 import { HostManager, HostState } from './host';
-import { PreviewPanelManager } from './panel';
-import { Density, DocKind, Orientation } from './protocol';
+import { PreviewPanelManager, ThemeOption } from './panel';
+import { Density, DocKind, Orientation, parseThemeInfoList } from './protocol';
 import { ResourceRootResolver } from './roots';
 import { RenderScheduler } from './scheduler';
 
@@ -29,6 +29,8 @@ export interface InflateApi {
   hostManager: HostManager;
   /** The panel manager (test hook: panel count, last applied result per document). */
   panelManager: PreviewPanelManager;
+  /** The per-file config store (test hook: assert persistence/restore, T50/T53). */
+  configStore: ConfigStore;
 }
 
 const OUTPUT_CHANNEL_NAME = 'Inflate';
@@ -142,7 +144,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     },
   );
 
-  const api: InflateApi = { activationMs: 0, hostManager, panelManager };
+  const api: InflateApi = { activationMs: 0, hostManager, panelManager, configStore };
 
   void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', false);
 
@@ -152,11 +154,43 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateEligibility));
   updateEligibility(vscode.window.activeTextEditor);
 
+  /** Push the persisted per-file config to the toolbar/viewport so a reopened preview restores its
+   * theme/device/orientation/density/night/backdrop/zoom exactly as last left (CFG-05, P1-E AC5). */
+  function hydratePanelConfig(docPath: string): void {
+    const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
+    const stored = configStore.get(docPath, manifestTheme);
+    panelManager.hydrateConfig(docPath, {
+      themeName: stored.preview.themeName,
+      isProjectTheme: stored.preview.isProjectTheme,
+      night: stored.preview.night,
+      deviceId: stored.preview.device.id,
+      orientation: stored.preview.orientation,
+      density: stored.preview.density,
+      backdrop: stored.backdrop,
+      zoom: stored.zoom,
+    });
+  }
+
+  /** Best-effort push of the project + bundled theme list to the toolbar's picker (CFG-04). Never
+   * blocks or fails the render loop — a host that doesn't answer just leaves the picker unpopulated. */
+  async function pushThemes(docPath: string): Promise<void> {
+    try {
+      const { roots, packageName } = rootsResolver.resolve(docPath);
+      const raw = await hostManager.listThemes({ roots, packageName });
+      const themes: ThemeOption[] = parseThemeInfoList(raw);
+      panelManager.setThemes(docPath, themes);
+    } catch (e) {
+      output.appendLine(`[themes] listThemes failed for ${docPath}: ${(e as Error).message}`);
+    }
+  }
+
   async function openPreviewFor(doc: vscode.TextDocument): Promise<void> {
     output.appendLine(`[preview] openPreview requested for ${doc.uri.fsPath}`);
     api.lastPanel = panelManager.openFor(doc);
+    hydratePanelConfig(doc.uri.fsPath);
     await hostManager.ensureReady();
     scheduler.requestRender(doc.uri.fsPath, 'reopen');
+    void pushThemes(doc.uri.fsPath);
     // Await the first render so callers (and the walking-skeleton test) observe a settled host.
     await scheduler.settled(doc.uri.fsPath);
   }
