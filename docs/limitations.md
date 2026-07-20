@@ -9,26 +9,26 @@ an empirically-verified gap found while building and testing the golden-image co
 ## Material / androidx fidelity gaps (Q5)
 
 Under the pinned engine (layoutlib 14.0.11 + the SDK-free dynamic-id resource scheme — see
-[Engine and version pinning](#engine-and-version-pinning) below), a handful of real, verified
-divergences exist. Full per-widget detail, including the reference render and reasoning, is in
-[docs/material-quirks.md](material-quirks.md); the highlights:
+[Engine and version pinning](#engine-and-version-pinning) below). Full per-widget detail, including
+the reference render and reasoning, is in [docs/material-quirks.md](material-quirks.md).
 
-- **`Chip`, `TextInputEditText`, `ExtendedFloatingActionButton`, and `BottomNavigationView` degrade
-  to grey labelled placeholder boxes** (a `TextAppearance`/`ThemeEnforcement` inflation failure under
-  the bundled Material version) rather than rendering as themselves. This is a genuine gap against
-  the §FR-2 surface table, which names these components as supported — they inflate as MockView
-  placeholders instead, not their real class.
-- **Some widget backgrounds/tints render as a magenta (`#FF00FF`) placeholder fill** instead of the
-  correct themed color — the widget's class and geometry are correct, but a themed color/tint
-  attribute did not resolve. Geometry-only inspection (is this the right shape, size, position?)
-  is reliable; exact-color inspection of the affected widgets is not.
+**Fixed in AD-016 (no pin bump):** `Chip`, `TextInputEditText`, `ExtendedFloatingActionButton` and
+`BottomNavigationView` now inflate as their **real classes** (formerly grey placeholder boxes), and
+widget backgrounds/tints now paint their **real themed colours** (formerly the magenta `#FF00FF`
+placeholder). Root cause: the generated library `R.styleable` arrays zeroed every `android:`
+framework-attr slot because `RClassGenerator` merged symbols with an empty platform table, so
+`obtainStyledAttributes(...).getResourceId(android:textAppearance, -1)` returned `-1` and Material's
+`ThemeEnforcement` failed. The generator now reconstructs the framework-attr ids from the AAR `R.txt`
+styleable arrays, so those slots keep their canonical framework ids (layoutlib resolves them natively).
+
+**Remaining divergence:**
+
 - **`ConstraintLayout`'s `Guideline` does not reposition the views constrained to it** (chains and
   barriers DO work correctly). A layout relying on a guideline for positioning will show the
-  guideline's dependent view in the wrong place.
+  guideline's dependent view in the wrong place. This is a distinct id-application issue, not related
+  to the AD-016 fix above.
 
-These are documented divergences the corpus deliberately does **not** assert as "working" — the
-corpus's Material fixtures assert what the pinned engine faithfully produces today, not what Studio
-would show.
+The corpus's Material fixtures assert what the pinned engine faithfully produces today.
 
 ## Custom / unknown view classes render as placeholders (AD-007)
 

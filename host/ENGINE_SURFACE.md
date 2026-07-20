@@ -111,6 +111,26 @@ Verified (T38b): `engine.LibraryResourcesTest` inflates a real
 `com.google.android.material.button.MaterialButton` inside `androidx.constraintlayout.widget.ConstraintLayout`
 (no `NoClassDefFoundError`, no MockView) under `Theme.Material3.DayNight`.
 
+### AD-016 — framework-attr ids in generated library `R.styleable` arrays
+
+`RClassGenerator` runs AGP's `com.android.ide.common.symbols.mergeAndRenumberSymbols` (from
+`sdk-common`) to build the bundled AARs' `R` classes. That merge substitutes each `android:`-namespaced
+styleable child with the id from a **platform symbol table**, writing `0` when the table lacks it.
+Passing an *empty* platform table therefore zeroed every framework-attr slot in every generated
+styleable array (e.g. `Chip[Chip_android_textAppearance]` = `0` instead of `0x01010034`). At render
+time `obtainStyledAttributes(...).getResourceId(android:textAppearance, -1)` then returned `-1`, so
+Material's `ThemeEnforcement.checkTextAppearance` threw / NPEd (Chip, ExtendedFloatingActionButton,
+BottomNavigationView degraded to MockView; widget tints fell back to the magenta unresolved-colour
+placeholder — the Q5/Q-TEXTAPP + Q-COLOR quirks).
+
+**Fix (no pin bump, no SDK):** `RClassGenerator.platformAttrSymbols(...)` reconstructs the `android:`
+ATTR table from the canonical framework ids aapt2 already baked into the AAR `R.txt` styleable arrays,
+and passes it to `mergeAndRenumberSymbols`. Framework-attr slots keep their real ids (layoutlib
+resolves the `0x0101xxxx` namespace natively); own-library `0x7f` ids are unchanged, so the ids stay
+consistent with the `R` classes `PaparazziCallback.initResources` loads (`resolveResourceId` maps the
+`0x7f` ids; layoutlib maps the `0x01` ones). Verified by `render.MaterialTextAppearanceTest` and the
+regenerated Material corpus goldens.
+
 **New internal/library symbols touched.** `org.objectweb.asm.{ClassReader,ClassWriter}` and
 `org.objectweb.asm.commons.{ClassRemapper,Remapper}` (ASM 9.7). No new Paparazzi/layoutlib *internal*
 symbols beyond those already inventoried above; the delegation operates purely on layoutlib's published

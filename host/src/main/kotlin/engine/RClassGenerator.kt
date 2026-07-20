@@ -2,6 +2,7 @@ package engine
 
 import com.android.ide.common.symbols.IdProvider
 import com.android.ide.common.symbols.RGeneration
+import com.android.ide.common.symbols.Symbol
 import com.android.ide.common.symbols.SymbolIo
 import com.android.ide.common.symbols.SymbolTable
 import com.android.ide.common.symbols.mergeAndRenumberSymbols
@@ -49,11 +50,20 @@ object RClassGenerator {
       SymbolIo.readFromAaptNoValues(f, packageName)
     }
 
-    // Empty main + platform tables: we own no app resources, and framework (android:) symbols are
-    // resolved natively by layoutlib at render time — see class doc / material-quirks (T42).
+    // Empty main table: we own no app resources.
     val emptyMain = SymbolTable.builder().tablePackage(MAIN_PACKAGE).build()
-    val emptyPlatform = SymbolTable.builder().tablePackage("android").build()
-    val merged = mergeAndRenumberSymbols(MAIN_PACKAGE, emptyMain, libraryTables, emptyPlatform, IdProvider.sequential())
+    // Platform (android:) attr table. Library styleables reference framework attrs (e.g.
+    // `android:textAppearance`) by name; `mergeAndRenumberSymbols` substitutes each such slot with
+    // the id from this table (and writes 0 when it is absent). An EMPTY table therefore zeroed every
+    // framework-attr slot in every generated styleable array — so at render time
+    // `obtainStyledAttributes(...).getResourceId(android:textAppearance, -1)` read 0 and returned -1,
+    // tripping Material's `ThemeEnforcement.checkTextAppearance` (Chip/ExtendedFAB/BottomNavigationView
+    // degraded; widget tints fell back to the magenta unresolved-color placeholder). We ship no
+    // Android SDK (AD-006), but the real framework ids are already baked into the AAR R.txt styleable
+    // arrays (aapt2 emitted them against the AAR's compileSdk); reconstruct the platform table from
+    // them so each android: slot keeps its canonical framework id, which layoutlib resolves natively.
+    val platform = platformAttrSymbols(rTxtFiles)
+    val merged = mergeAndRenumberSymbols(MAIN_PACKAGE, emptyMain, libraryTables, platform, IdProvider.sequential())
 
     val srcDir = File(workDir, "src").apply { deleteRecursively(); mkdirs() }
     RGeneration.generateRForLibraries(merged, libraryTables, srcDir, /* finalIds = */ false)
@@ -63,6 +73,40 @@ object RClassGenerator {
     packJar(classesDir, outJar)
 
     return libraryTables.map { it.tablePackage }
+  }
+
+  /** `android:`/`android_` prefix length ("android:" and "android_" are both 8 chars). */
+  private const val ANDROID_PREFIX_LEN = 8
+
+  /**
+   * Reconstruct the framework (`android:`) ATTR symbol table from the framework ids that aapt2 baked
+   * into the AAR R.txt styleable arrays. For every styleable child named `android:<attr>` /
+   * `android_<attr>`, the id at the child's array index is the canonical framework attr id; collect
+   * them (first non-zero wins — they are globally fixed) into an `android`-package [SymbolTable] that
+   * feeds [mergeAndRenumberSymbols] so framework-attr slots keep their real ids instead of 0.
+   */
+  private fun platformAttrSymbols(rTxtFiles: List<File>): SymbolTable {
+    val byName = LinkedHashMap<String, Int>()
+    for (f in rTxtFiles) {
+      val pkg = f.name.removeSuffix(".txt")
+      val table = SymbolIo.readFromAapt(f, pkg)
+      for (symbol in table.symbols.values()) {
+        if (symbol !is Symbol.StyleableSymbol) continue
+        val children = symbol.children
+        val values = symbol.values
+        for (i in children.indices) {
+          val child = children[i]
+          if (!child.startsWith("android:") && !child.startsWith("android_")) continue
+          val id = values.getOrNull(i) ?: continue
+          if (id == 0) continue
+          val name = child.substring(ANDROID_PREFIX_LEN)
+          byName.putIfAbsent(name, id)
+        }
+      }
+    }
+    val builder = SymbolTable.builder().tablePackage("android")
+    for ((name, id) in byName) builder.add(Symbol.attributeSymbol(name, id, false))
+    return builder.build()
   }
 
   private fun compile(srcDir: File, classesDir: File) {
