@@ -8,6 +8,7 @@ import * as path from 'path';
 import {
   ArtifactManager,
   EngineManifest,
+  GenerateContext,
   ManifestArtifact,
   OfflineError,
   computeManifestHash,
@@ -328,6 +329,142 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     expect(manager.isReady()).toBe(false); // ...but no .complete marker, so never "ready"
     const report = manager.cacheState();
     expect(report.ready).toBe(false);
+  });
+});
+
+describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 generation step)', () => {
+  let tempRoot: string;
+  let server: http.Server | undefined;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-gen-'));
+  });
+
+  afterEach(async () => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    if (server) {
+      await new Promise<void>((resolve) => server?.close(() => resolve()));
+      server = undefined;
+    }
+  });
+
+  const jarBytes = Buffer.from('tiny-fake-layoutlib-jar-bytes');
+  const aarWithRTxt = buildZip({
+    'classes.jar': 'tiny-fake-classes-jar-bytes',
+    'AndroidManifest.xml': '<manifest package="com.example.withrtxt"></manifest>',
+    'res/values/dummy.xml': '<resources/>',
+    'R.txt': 'int attr colorPrimary 0x0\n',
+  });
+
+  const sdkCommonBytes = Buffer.from('tiny-fake-sdk-common-jar-bytes');
+
+  async function startFixtureAndManifest(): Promise<{ manifest: EngineManifest; server: http.Server }> {
+    const fixture = await startFixtureServer({
+      '/layoutlib.jar': jarBytes,
+      '/material.aar': aarWithRTxt,
+      '/sdk-common.jar': sdkCommonBytes,
+    });
+    const manifest: EngineManifest = {
+      pinName: 'test-pin',
+      artifacts: [
+        {
+          group: 'com.android.tools.layoutlib',
+          name: 'layoutlib',
+          version: '14.0.11',
+          kind: 'jar',
+          url: `${fixture.baseUrl}/layoutlib.jar`,
+          sha256: sha256(jarBytes),
+          sizeBytes: jarBytes.length,
+        },
+        {
+          group: 'com.google.android.material',
+          name: 'material',
+          version: '1.12.0',
+          kind: 'aar',
+          url: `${fixture.baseUrl}/material.aar`,
+          sha256: sha256(aarWithRTxt),
+          sizeBytes: aarWithRTxt.length,
+        },
+        // RClassGenerator needs AGP's symbol-table machinery (com.android.ide.common.symbols.*),
+        // which lives here — NOT in the host fat-jar (excluded, AD-011) — regression coverage for
+        // the real gap the T60 clean-profile smoke test caught (NoClassDefFoundError: SymbolIo).
+        {
+          group: 'com.android.tools',
+          name: 'sdk-common',
+          version: '31.4.2',
+          kind: 'jar',
+          url: `${fixture.baseUrl}/sdk-common.jar`,
+          sha256: sha256(sdkCommonBytes),
+          sizeBytes: sdkCommonBytes.length,
+        },
+      ],
+    };
+    return { manifest, server: fixture.server };
+  }
+
+  it('invokes generate() with a package-named R.txt copy when javaBin + hostJarPath are supplied', async () => {
+    const fixture = await startFixtureAndManifest();
+    server = fixture.server;
+    const calls: GenerateContext[] = [];
+    const manager = new ArtifactManager({
+      manifest: fixture.manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      javaBin: '/fake/bin/java',
+      hostJarPath: '/fake/host.jar',
+      generate: (ctx) => calls.push(ctx),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].javaBin).toBe('/fake/bin/java');
+    expect(calls[0].hostJarPath).toBe('/fake/host.jar');
+    expect(calls[0].layoutlibJarPath.endsWith('layoutlib-14.0.11.jar')).toBe(true);
+    expect(calls[0].rClassToolsJars.some((p) => p.endsWith('sdk-common-31.4.2.jar'))).toBe(true);
+    const copiedRTxt = path.join(calls[0].rTxtDir, 'com.example.withrtxt.txt');
+    expect(fs.existsSync(copiedRTxt)).toBe(true);
+    expect(fs.readFileSync(copiedRTxt, 'utf8')).toBe('int attr colorPrimary 0x0\n');
+  });
+
+  it('never invokes generate() when javaBin/hostJarPath are not supplied (most unit tests)', async () => {
+    const fixture = await startFixtureAndManifest();
+    server = fixture.server;
+    const calls: GenerateContext[] = [];
+    const manager = new ArtifactManager({
+      manifest: fixture.manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      generate: (ctx) => calls.push(ctx),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('resolvePaths includes the generated jars and merges r-packages.txt once generate() produces them', async () => {
+    const fixture = await startFixtureAndManifest();
+    server = fixture.server;
+    const manager = new ArtifactManager({
+      manifest: fixture.manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      javaBin: '/fake/bin/java',
+      hostJarPath: '/fake/host.jar',
+      generate: (ctx) => {
+        fs.mkdirSync(path.dirname(ctx.rClassesJarPath), { recursive: true });
+        fs.writeFileSync(ctx.rClassesJarPath, 'fake-r-classes-jar');
+        fs.writeFileSync(ctx.frameworkDelegatesJarPath, 'fake-framework-delegates-jar');
+        fs.writeFileSync(ctx.rPackagesPath, 'com.example.withrtxt\n');
+      },
+    });
+
+    const paths = await manager.ensureInstalled();
+
+    expect(paths.classpathJars.some((p) => p.endsWith('R-classes.jar'))).toBe(true);
+    expect(paths.classpathJars.some((p) => p.endsWith('framework-delegates.jar'))).toBe(true);
+    expect(paths.libraryPackages).toContain('com.example.withrtxt');
   });
 });
 

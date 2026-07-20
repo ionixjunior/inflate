@@ -17,6 +17,9 @@ extension/dist/
 corpus/dist/
 corpus/report.html
 
+# --- Packaging (T60) ---
+extension/host.jar
+
 # --- OS / editor ---
 .DS_Store
 *.log

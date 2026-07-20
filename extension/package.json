@@ -1,15 +1,34 @@
 {
   "name": "inflate",
   "displayName": "Inflate",
-  "description": "Faithful Android layout & drawable XML previews in VS Code, powered by layoutlib.",
+  "description": "Faithful Android layout & drawable XML previews in VS Code, powered by layoutlib. No Android Studio required.",
   "version": "0.0.1",
   "publisher": "inflate",
   "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inflate/inflate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/inflate/inflate/issues"
+  },
+  "keywords": [
+    "android",
+    "xml",
+    "layout",
+    "drawable",
+    "preview",
+    "layoutlib",
+    "xamarin",
+    "maui"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Visualization"
+    "Visualization",
+    "Other"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -57,6 +76,36 @@
           "when": "inflate:eligibleDocument"
         }
       ]
+    },
+    "configuration": {
+      "title": "Inflate",
+      "properties": {
+        "inflate.javaHome": {
+          "type": "string",
+          "default": null,
+          "markdownDescription": "Absolute path to a JDK 17+ install, overriding auto-detection (`JAVA_HOME` > `PATH` > platform-standard locations). Inflate never downloads a JVM itself (AD-003)."
+        },
+        "inflate.resourceRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra resource-root directories to merge in, for project layouts the automatic module/source-set discovery doesn't find (multi-module or unconventional layouts)."
+        },
+        "inflate.hostMaxHeap": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 256,
+          "markdownDescription": "The render host JVM's `-Xmx` in MB (NFR-02 default 1024). Raise this if Doctor or a crash message reports a JVM `OutOfMemoryError`."
+        },
+        "inflate.renderTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "markdownDescription": "How long a single render may run before Inflate kills and restarts the host, treating it as a crash."
+        }
+      }
     }
   },
   "scripts": {
@@ -64,7 +113,8 @@
     "compile-tests": "rm -rf out && tsc -p tsconfig.test.json",
     "pretest:integration": "npm run build && npm run compile-tests",
     "test": "vitest run",
-    "test:integration": "node ./out/test/integration/runTest.js"
+    "test:integration": "node ./out/test/integration/runTest.js",
+    "package": "npm run build && vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
@@ -72,6 +122,7 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.24.0",
     "glob": "^11.0.0",
     "mocha": "^10.7.0",

@@ -92,7 +92,9 @@ export class HostManager {
    * when the stderr tail shows heap exhaustion — see {@link describeCrash}. */
   private lastCrashReason?: string;
 
-  private readonly renderTimeoutMs: number;
+  /** Not `readonly`: {@link reconfigure} updates it from the real `inflate.renderTimeoutMs` setting,
+   * which is only known once activation.ts's lazy real-host setup runs (T60). */
+  private renderTimeoutMs: number;
   private readonly backoffMs: number[];
   private readonly crashWindowMs: number;
   private readonly maxAutoRestarts: number;
@@ -112,6 +114,27 @@ export class HostManager {
 
   getState(): HostState {
     return this.state;
+  }
+
+  /**
+   * Overwrites the spawn command/args and `initialize` params (T60: real JDK/ArtifactManager
+   * resolution happens lazily, on first preview request — P1-H AC1 — not at construction time,
+   * since it can involve a one-time ~170 MB download and must not block `activate()`, NFR-02). A
+   * no-op once the host has actually started (state !== 'stopped') — reconfiguring a live/crashed/
+   * restarting host would be incoherent; callers (activation.ts) re-derive the same real config on
+   * every call, so this is safe and idempotent to call repeatedly before the first `ensureReady()`.
+   */
+  reconfigure(next: {
+    command: string;
+    args: string[];
+    initializeParams?: Record<string, unknown>;
+    renderTimeoutMs?: number;
+  }): void {
+    if (this.state !== 'stopped') return;
+    this.opts.command = next.command;
+    this.opts.args = next.args;
+    if (next.initializeParams) this.opts.initializeParams = next.initializeParams;
+    if (next.renderTimeoutMs !== undefined) this.renderTimeoutMs = next.renderTimeoutMs;
   }
 
   onStateChange(cb: (state: HostState) => void): Disposable {

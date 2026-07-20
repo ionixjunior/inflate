@@ -22,6 +22,7 @@
  */
 
 import AdmZip from 'adm-zip';
+import { execFileSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -92,12 +93,51 @@ export type DownloadFn = (
 ) => Promise<void>;
 export type UnzipFn = (zipPath: string, destDir: string) => void;
 
+/** Inputs the host-subcommand generation step (framework-delegates.jar + R-classes.jar, T60/AD-014)
+ * needs to invoke `MainKt`-adjacent entry points (`engine.FrameworkDelegateGeneratorKt`,
+ * `engine.RClassGeneratorKt`) bundled in the shipped host fat-jar. */
+export interface GenerateContext {
+  javaBin: string;
+  hostJarPath: string;
+  layoutlibJarPath: string;
+  rTxtDir: string;
+  workDir: string;
+  rClassesJarPath: string;
+  rPackagesPath: string;
+  frameworkDelegatesJarPath: string;
+  /** `RClassGenerator` needs AGP's symbol-table machinery (`com.android.ide.common.symbols.*`),
+   * which lives in the downloaded `sdk-common`/`common`/`layoutlib-api` jars (excluded from the fat
+   * jar — AD-011, they're Google-Maven artifacts downloaded separately) rather than the host jar
+   * itself. Empty for `FrameworkDelegateGenerator`, which only needs the fat jar (ASM) + layoutlib.jar. */
+  rClassToolsJars: string[];
+}
+
+export type GenerateFn = (ctx: GenerateContext) => void;
+
+/** Real default generator: spawns the bundled host fat-jar's own generator entry points (T38b/T39
+ * moved to setup time — the ASM/AGP-symbol machinery is host-side Kotlin; the extension can't run it
+ * itself). Synchronous (`execFileSync`) — this runs once, during the one-time engine setup, never on
+ * the render hot path. */
+export function defaultGenerate(ctx: GenerateContext): void {
+  execFileSync(ctx.javaBin, ['-cp', ctx.hostJarPath, 'engine.FrameworkDelegateGeneratorKt', ctx.layoutlibJarPath, ctx.frameworkDelegatesJarPath]);
+  fs.mkdirSync(ctx.workDir, { recursive: true });
+  const rClassCp = [ctx.hostJarPath, ...ctx.rClassToolsJars].join(path.delimiter);
+  execFileSync(ctx.javaBin, ['-cp', rClassCp, 'engine.RClassGeneratorKt', ctx.rTxtDir, ctx.workDir, ctx.rClassesJarPath, ctx.rPackagesPath]);
+}
+
 export interface ArtifactManagerOptions {
   manifest: EngineManifest;
   globalStorageDir: string;
   arch: HostArch;
   download?: DownloadFn;
   unzip?: UnzipFn;
+  /** JDK binary + bundled host fat-jar path — when BOTH are supplied, `ensureInstalled` also
+   * generates `framework-delegates.jar` and `R-classes.jar` at setup time (T60, closes debt #1's
+   * "wire framework-delegates.jar generation at engine-setup time" item). Omitted in most unit tests
+   * (they don't need real Material/androidx rendering), so generation is entirely skipped then. */
+  javaBin?: string;
+  hostJarPath?: string;
+  generate?: GenerateFn;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -201,12 +241,14 @@ export class ArtifactManager {
   private readonly relevant: ManifestArtifact[];
   private readonly download: DownloadFn;
   private readonly unzip: UnzipFn;
+  private readonly generate: GenerateFn;
 
   constructor(private readonly opts: ArtifactManagerOptions) {
     this.relevant = selectRelevantArtifacts(opts.manifest, opts.arch);
     this.manifestHash = computeManifestHash(opts.manifest);
     this.download = opts.download ?? defaultDownload;
     this.unzip = opts.unzip ?? defaultUnzip;
+    this.generate = opts.generate ?? defaultGenerate;
   }
 
   private engineDir(): string {
@@ -229,6 +271,32 @@ export class ArtifactManager {
   }
   private aarResDir(artifactName: string): string {
     return path.join(this.engineDir(), 'aar-res', artifactName);
+  }
+  private rTxtDir(): string {
+    return path.join(this.engineDir(), 'generated', 'rtxt');
+  }
+  private generatedDir(): string {
+    return path.join(this.engineDir(), 'generated');
+  }
+  private frameworkDelegatesJarPath(): string {
+    return path.join(this.generatedDir(), 'framework-delegates.jar');
+  }
+  private rClassesJarPath(): string {
+    return path.join(this.generatedDir(), 'R-classes.jar');
+  }
+  private rPackagesPath(): string {
+    return path.join(this.generatedDir(), 'r-packages.txt');
+  }
+  private layoutlibJarPath(): string {
+    const artifact = this.relevant.find((a) => a.kind === 'jar' && a.name === 'layoutlib');
+    return artifact ? path.join(this.jarsDir(), jarFileName(artifact)) : '';
+  }
+  /** The downloaded `sdk-common`/`common`/`layoutlib-api` jars `RClassGenerator` needs on its
+   * classpath (AGP's symbol-table machinery) — see {@link GenerateContext.rClassToolsJars}. */
+  private rClassToolsJarPaths(): string[] {
+    return this.relevant
+      .filter((a) => a.kind === 'jar' && ['sdk-common', 'common', 'layoutlib-api'].includes(a.name))
+      .map((a) => path.join(this.jarsDir(), jarFileName(a)));
   }
 
   /** `.complete` marker presence — the only signal that gates readiness (never a partial cache). */
@@ -256,6 +324,7 @@ export class ArtifactManager {
           throw e;
         }
       }
+      this.runGeneration();
       fs.writeFileSync(this.completeMarker(), new Date().toISOString());
     } finally {
       fs.rmSync(this.tmpDir(), { recursive: true, force: true });
@@ -362,6 +431,43 @@ export class ArtifactManager {
     return match?.[1];
   }
 
+  /**
+   * Generates `framework-delegates.jar` (AD-014) and `R-classes.jar` (LAY-05) at engine-SETUP time
+   * by invoking the bundled host fat-jar's own generator entry points as subprocesses — the ASM class
+   * rename and the AGP symbol-table machinery are host-side Kotlin/JVM code the TS extension cannot
+   * run itself (T60, closes debt #1's remaining generation-wiring item). Skipped entirely when
+   * `javaBin`/`hostJarPath` aren't supplied (most unit tests, which don't need real Material/androidx
+   * rendering). Each bundled AAR's `R.txt` (already unzipped into `aar-res/<name>/R.txt` by
+   * [finalize]) is copied into a package-named rTxtDir first, matching what `RClassGenerator` expects.
+   */
+  private runGeneration(): void {
+    const { javaBin, hostJarPath } = this.opts;
+    if (!javaBin || !hostJarPath) return;
+
+    const rTxtDir = this.rTxtDir();
+    fs.mkdirSync(rTxtDir, { recursive: true });
+    for (const artifact of this.relevant.filter((a) => a.kind === 'aar')) {
+      const pkg = this.readPackageName(artifact.name);
+      const rTxt = path.join(this.aarResDir(artifact.name), 'R.txt');
+      if (pkg && fs.existsSync(rTxt)) {
+        fs.copyFileSync(rTxt, path.join(rTxtDir, `${pkg}.txt`));
+      }
+    }
+    if (fs.readdirSync(rTxtDir).length === 0) return; // no AARs shipped an R.txt — nothing to generate
+
+    this.generate({
+      javaBin,
+      hostJarPath,
+      layoutlibJarPath: this.layoutlibJarPath(),
+      rTxtDir,
+      workDir: path.join(this.generatedDir(), 'work'),
+      rClassesJarPath: this.rClassesJarPath(),
+      rPackagesPath: this.rPackagesPath(),
+      rClassToolsJars: this.rClassToolsJarPaths(),
+      frameworkDelegatesJarPath: this.frameworkDelegatesJarPath(),
+    });
+  }
+
   private resolvePaths(): EnginePaths {
     const aarArtifacts = this.relevant.filter((a) => a.kind === 'aar');
     // Plain jars (layoutlib, tools) plus each AAR's extracted `<name>-classes.jar` (see finalize):
@@ -373,11 +479,20 @@ export class ArtifactManager {
     const aarClassesJars = aarArtifacts
       .map((a) => path.join(this.jarsDir(), `${a.name}-classes.jar`))
       .filter((p) => fs.existsSync(p));
-    const classpathJars = [...jarJars, ...aarClassesJars];
+    // T60: R classes + framework delegates, generated once at setup time (see runGeneration) — join
+    // the classpath only when actually present (skipped when no javaBin/hostJarPath was supplied).
+    const generatedJars = [this.rClassesJarPath(), this.frameworkDelegatesJarPath()].filter((p) => fs.existsSync(p));
+    const classpathJars = [...jarJars, ...aarClassesJars, ...generatedJars];
     const libraryResDirs = aarArtifacts.map((a) => path.join(this.aarResDir(a.name), 'res'));
-    const libraryPackages = aarArtifacts
-      .map((a) => this.readPackageName(a.name))
-      .filter((p): p is string => Boolean(p));
+    const generatedPackages = fs.existsSync(this.rPackagesPath())
+      ? fs.readFileSync(this.rPackagesPath(), 'utf8').split('\n').filter((l) => l.trim().length > 0)
+      : [];
+    const libraryPackages = Array.from(
+      new Set([
+        ...aarArtifacts.map((a) => this.readPackageName(a.name)).filter((p): p is string => Boolean(p)),
+        ...generatedPackages,
+      ]),
+    );
 
     return {
       layoutlibRuntimeRoot: this.runtimeDir(),

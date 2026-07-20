@@ -1,0 +1,13 @@
+.vscode-test/**
+out/**
+src/**
+webview-ui/**/*.ts
+webview-ui/**/*.test.ts
+node_modules/**
+*.map
+.gitignore
+tsconfig.json
+tsconfig.test.json
+vitest.config.ts
+**/*.test.ts
+**/*.test.js

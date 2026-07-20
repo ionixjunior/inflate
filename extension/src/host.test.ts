@@ -198,6 +198,30 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(manager.getState()).toBe('stopped');
   });
 
+  it('reconfigure() before the first ensureReady() replaces the spawn command (T60 lazy setup)', async () => {
+    // Constructed pointing at a mode that would fail startup outright; reconfigure() swaps it for
+    // 'normal' BEFORE the host ever spawns — proving activation.ts's lazy real-JDK/ArtifactManager
+    // resolution (which can't run until openPreview, per P1-H AC1/NFR-02) actually takes effect.
+    const manager = makeManager('crash-on-start');
+    manager.reconfigure({ command: 'node', args: [FAKE_HOST, 'normal'] });
+
+    await manager.ensureReady();
+
+    expect(manager.getState()).toBe('ready');
+  });
+
+  it('reconfigure() is a no-op once the host has already started', async () => {
+    const manager = makeManager('normal');
+    await manager.ensureReady();
+    expect(manager.getState()).toBe('ready');
+
+    // Pointed at a script that doesn't exist — if this took effect, the next restart would fail.
+    manager.reconfigure({ command: 'node', args: ['/no/such/fake-host.js'] });
+    await manager.restart();
+
+    expect(manager.getState()).toBe('ready'); // still spawns the ORIGINAL ('normal') command
+  });
+
   it('surfaces the last stderr lines from the fake host (crash reporting, P1-I AC5)', async () => {
     const manager = makeManager('normal');
     await manager.ensureReady();

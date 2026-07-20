@@ -25,3 +25,4 @@ asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+shadow = { id = "com.gradleup.shadow", version = "8.3.6" }

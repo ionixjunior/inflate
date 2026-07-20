@@ -1,6 +1,7 @@
 plugins {
   alias(libs.plugins.kotlin.jvm)
   application
+  alias(libs.plugins.shadow)
 }
 
 application {
@@ -409,4 +410,68 @@ val writeCorpusClasspath = tasks.register("writeCorpusClasspath") {
     f.parentFile.mkdirs()
     f.writeText(json)
   }
+}
+
+// --- T60: host fat-jar for the shipped VSIX (AD-011) ---
+//
+// The fat jar bundles our code + Paparazzi + every Maven-Central-hosted transitive (moshi, asm,
+// kotlin stdlib, guava, bytebuddy, kxml2, jna, bouncycastle, jaxb, protobuf, gson, and the rest of
+// Paparazzi's own dependency graph) so the VSIX needs no further Maven-Central network access ever.
+// It deliberately EXCLUDES the exact Google-Maven artifacts ArtifactManager downloads per-user into
+// the versioned cache (layoutlib + layoutlib-api + common + sdk-common + ninepatch — the coordinates
+// in EngineArtifacts.kt's fixed pin table) so those ~140 MB of natives/resources are never duplicated
+// into the ~25-40 MB VSIX; they join the classpath at runtime from the download cache instead (see
+// `extension/src/host.ts`'s `buildJavaCommand` / `extension/src/artifacts.ts`'s `resolvePaths`).
+// The `application` plugin's own distribution tasks (a plain non-fat run-script zip/tar) are never
+// used — we only added `application` for its `mainClass` wiring, which `shadowJar` reads
+// automatically. Left enabled, they race `shadowJar` over the same `build/libs/` output directory
+// (a Gradle task-validation failure: "uses this output... without declaring a dependency"); disabling
+// them is simpler and more correct than adding artificial ordering to tasks we don't want to run.
+tasks.named("distTar") { enabled = false }
+tasks.named("distZip") { enabled = false }
+tasks.named("startScripts") { enabled = false }
+// Shadow's own application-plugin integration registers an equivalent set of "run the fat jar via a
+// start script + its own dist zip/tar" tasks — same story, same fix (we only ever run `shadowJar`
+// then copy the jar ourselves, per docs/release-checklist.md).
+tasks.named("startShadowScripts") { enabled = false }
+tasks.named("shadowDistTar") { enabled = false }
+tasks.named("shadowDistZip") { enabled = false }
+
+tasks.shadowJar {
+  archiveFileName.set("inflate-host.jar")
+  // mainClass mirrors the `application` block automatically (shadow's application-plugin integration).
+  dependencies {
+    exclude(dependency("com.android.tools.layoutlib:layoutlib:.*"))
+    exclude(dependency("com.android.tools.layoutlib:layoutlib-api:.*"))
+    exclude(dependency("com.android.tools:common:.*"))
+    exclude(dependency("com.android.tools:sdk-common:.*"))
+    exclude(dependency("com.android.tools:ninepatch:.*"))
+    // Android Studio's own usage-analytics protobuf message schema (~2800 classes, ~7.7 MB) — pure
+    // data-class definitions for a UsageTracker our narrow EngineAdapter usage never invokes. Unlike
+    // `minimize()` (see note below), excluding this ONE specific, well-understood artifact wholesale
+    // is deterministic and safe: nothing in the render path constructs or reflects on analytics protos.
+    exclude(dependency("com.android.tools.analytics-library:protos:.*"))
+  }
+  // AD-004: v1 is macOS-only — JNA's Windows-specific platform bindings (bundled inside jna-platform,
+  // which also carries the macOS bindings EngineAdapter/layoutlib actually use) are dead weight.
+  exclude("com/sun/jna/platform/win32/**")
+  // SPEC_DEVIATION (T60, AD-011 size estimate): `minimize()` was also tried, to shrink further toward
+  // AD-011's ~25-40 MB estimate, but its static reachability analysis broke the REAL engine twice in
+  // a row when smoke-tested end to end — first stripping kotlin-reflect (moshi-kotlin's Kotlin
+  // adapter needs it reflectively: `KotlinReflectionNotSupportedError`), then (even after excluding
+  // that) stripping `gnu.trove.THashMap` (needed by the bundled tools/layoutlib-adjacent code paths).
+  // Each fix surfaced a NEW missing class rather than converging, which is exactly the whack-a-mole
+  // risk minimize()'s docs warn about for reflection-heavy dependency graphs (Kotlin reflection,
+  // ServiceLoader-based layoutlib providers). Shipping an unverified minimized jar risks a broken
+  // render host in production, which is a far worse outcome than a smaller VSIX — so minimize() is
+  // NOT used; only the specific, well-understood exclusions above (downloaded-separately Google-Maven
+  // coordinates, analytics protos, Windows-only JNA bindings) are applied. Real measured size: ~40 MB
+  // (see docs/release-checklist.md) — smoke-tested end to end (real corpus renders) after every change.
+}
+
+// Convenience alias matching the naming used elsewhere in this file's engine-* tasks.
+tasks.register("buildHostFatJar") {
+  group = "engine"
+  description = "Builds the host fat-jar (T60, AD-011) embedded in the VSIX at extension/host.jar."
+  dependsOn(tasks.shadowJar)
 }

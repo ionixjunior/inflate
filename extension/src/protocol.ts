@@ -9,6 +9,21 @@
  * violates the contract — never a vague generic error.
  */
 
+/**
+ * The ONE package name every render/listThemes/invalidate request must carry, regardless of the
+ * previewed project's real manifest `applicationId` (T60 finding, closes a real render-pipeline
+ * bug found while building the golden corpus/chaos suite — see STATE.md and docs/limitations.md).
+ *
+ * `EngineAdapter.previewEnvironment` (host side) registers exactly ONE package name at Bridge-init
+ * time (defaulting to this exact string) as the dynamic-id resource namespace's owning package;
+ * `EngineAdapter.resourceId(name, type, packageName)` -> `Resources.getIdentifier` only resolves
+ * names under a package it knows about. Sending a real project's package (what
+ * `ResourceRootResolver`/`RootsInfo.packageName` naturally carries) makes every resource id resolve
+ * to 0 and the render fail with "layout id 0 inflated to null". `RootsInfo.packageName` is still
+ * useful for other purposes (ecosystem/manifest-theme detection) — just never for the wire protocol.
+ */
+export const ENGINE_PACKAGE_NAME = 'com.inflate.preview';
+
 export type DocKind = 'layout' | 'drawableXml' | 'ninePatch' | 'color';
 export type Orientation = 'portrait' | 'landscape';
 export type Density = 'mdpi' | 'hdpi' | 'xhdpi' | 'xxhdpi' | 'xxxhdpi';

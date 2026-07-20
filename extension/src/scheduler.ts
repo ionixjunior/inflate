@@ -19,7 +19,7 @@
  */
 
 import * as path from 'path';
-import { DocKind, PreviewConfig, RenderRequest, RenderResponse } from './protocol';
+import { DocKind, ENGINE_PACKAGE_NAME, PreviewConfig, RenderRequest, RenderResponse } from './protocol';
 
 export type RenderCause = 'save' | 'depSave' | 'config' | 'refresh' | 'reopen';
 
@@ -174,14 +174,16 @@ export class RenderScheduler {
 
     const { roots, packageName } = this.deps.resolveRoots(key);
     st.roots = roots;
-    st.packageName = packageName;
+    st.packageName = packageName; // kept for observability/tests — NEVER sent over the wire, below
 
     const request: RenderRequest = {
       id,
       docPath: key,
       docKind: this.deps.classify(key),
       roots,
-      packageName,
+      // The wire protocol always uses the fixed engine package (see ENGINE_PACKAGE_NAME's doc) —
+      // the project's REAL resolved package name is not what the host's dynamic-id session expects.
+      packageName: ENGINE_PACKAGE_NAME,
       config: this.deps.getConfig(key),
       timeoutMs: this.deps.timeoutMs ?? 15000,
     };

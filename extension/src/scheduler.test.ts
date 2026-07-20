@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PreviewConfig, RenderRequest, RenderResponse } from './protocol';
+import { ENGINE_PACKAGE_NAME, PreviewConfig, RenderRequest, RenderResponse } from './protocol';
 import { RenderScheduler, SchedulerDeps, SchedulerHost } from './scheduler';
 
 const CONFIG: PreviewConfig = {
@@ -77,6 +77,21 @@ describe('RenderScheduler — coalescing and stale discard (P1-F AC3, NFR-05)', 
   let host: FakeHost;
   beforeEach(() => {
     host = new FakeHost();
+  });
+
+  it('always dispatches ENGINE_PACKAGE_NAME on the wire, never resolveRoots()\'s real project package (T60)', async () => {
+    // resolveRoots() deliberately returns a real-looking, non-engine package ('com.example') — the
+    // render pipeline only resolves resource ids under the fixed engine package (see
+    // ENGINE_PACKAGE_NAME's doc in protocol.ts); sending the project's real package makes every id
+    // resolve to 0 and the render fail. This asserts the DISPATCHED wire value, not just that some
+    // packageName field is set.
+    const { scheduler } = makeScheduler(host);
+    scheduler.requestRender('/proj/res/layout/main.xml', 'save');
+    await tick();
+
+    expect(host.renderCalls).toHaveLength(1);
+    expect(host.renderCalls[0].packageName).toBe(ENGINE_PACKAGE_NAME);
+    expect(host.renderCalls[0].packageName).not.toBe('com.example');
   });
 
   it('collapses a 10-save burst to the latest content with zero stale displays', async () => {
