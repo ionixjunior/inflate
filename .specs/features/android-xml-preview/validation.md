@@ -7,7 +7,9 @@
 
 ---
 
-## Overall: ✅ PASS (fix-loop iteration 1 re-verified) — 3 gaps CLOSED; 1 minor residual noted
+## Overall: ✅ FEATURE PASS — AD-016 Material-fidelity fix closed & verified (2026-07-20); G1/G2/G3 closed (2026-07-19); 1 minor residual noted
+
+> **Latest (2026-07-20):** independent Closing Verification of the AD-016 Material-fidelity fix (`7fe5d25`) → **PASS**. Fix soundness (id-consistency) confirmed against real AGP source; 14 golden regens re-derived as correctness improvements (not masked regressions); pre-fix bug reproduced in scratch; no test/tolerance weakened; gates green (host unit 111, engineTest 47, corpus 42/42 @ 0%). AD-002 satisfied (Material fidelity), AD-008 preserved. Q-GUIDE remains a documented out-of-scope quirk. See the **Closing Verification — AD-016** section below.
 
 **Re-verifier (fix-loop iteration 1, 2026-07-19, independent; author ≠ verifier).**
 The prior CONDITIONAL-FAIL's three ship-blocking gaps (G1/G2/G3) are now closed
@@ -21,6 +23,49 @@ case), classed **minor / non-ship-blocking** (see Re-Verification section).
 - **Gate (re-verifier-run, `--rerun-tasks`, not inferred)**: host unit **111** ✅ · host engineTest **46** ✅ · corpus **42/42** @ 0.000% diff ✅. 0 failed, 0 skipped anywhere. (Extension unit 154 / integration 19 unchanged — no extension files in the fix diff.)
 - **New-test discrimination (scratch mutation, killed → reverted)**: CommentAwareTest 8/8 killed · DegradationLiveTest killed · LegacyCasingTest killed.
 - **Original sensor**: 5 mutations injected, 5 killed, 0 survived (below, unchanged).
+
+---
+
+## Closing Verification — AD-016 Material Fidelity Fix (2026-07-20)
+
+**Independent closing verifier (author ≠ verifier; evidence-or-zero; did NOT implement the fix; re-derived every claim).**
+Scope: commit `7fe5d25` "Resolve library styleable framework-attr ids…" (+ `9f47104` STATE record). Diff surface = `host/src/main/kotlin/engine/RClassGenerator.kt` (+52), new `host/src/engineTest/kotlin/render/MaterialTextAppearanceTest.kt`, `host/ENGINE_SURFACE.md`, `docs/{material-quirks,limitations}.md`, 14 corpus goldens + 1 doc render. No extension surface touched (0 `extension/` files in the diff → extension gates not required).
+
+### Verdict: ✅ FEATURE PASS — AD-002 satisfied (Material fidelity), AD-008 preserved (no pin bump).
+
+### 1. Fix soundness — id-consistency HOLDS; no risk to non-zero slots
+Verified against the REAL AGP `mergeAndRenumberSymbols` source (decompiled `com.android.tools:sdk-common` `SymbolUtils.kt`; runtime pin 31.4.2, algorithm cross-checked against 31.13.2 sources — identical shape):
+- **`idProvider.next()` is invoked ONLY for the app/dependency normal-symbols and own ATTRs** (SymbolUtils.kt:121). Platform (`android:`) symbols are **never** renumbered — they are only *looked up* (SymbolUtils.kt:153-157). Therefore adding the reconstructed platform table **cannot shift any own-library `0x7f` id**; own-library styleable children are resolved through `attrToValue` (SymbolUtils.kt:161-166), which is independent of `platformSymbols`.
+- **For an `android:`/`android_` styleable child** (SymbolUtils.kt:148-171): an EMPTY platform table → `platformSymbol == null` → falls through to `attrToValue[<prefixed name>]` which is always null for framework-prefixed names → **writes `0`** (SymbolUtils.kt:170). A populated table → writes the canonical framework id. This exactly reproduces the claimed pre-fix zeroing and the fix.
+- **Conclusion:** the only slots that change are framework-attr styleable slots that were provably `0` pre-fix, now set to their canonical `0x0101xxxx` id (resolved natively by layoutlib's framework R). **Strictly additive — a previously-`0` slot can only be corrected, never a previously-good non-zero slot corrupted.** `putIfAbsent` (first non-zero wins) is safe because framework attr ids are globally fixed by the platform, so cross-AAR duplicates carry identical values. This matches how a real AGP build bakes framework attrs into library styleables.
+
+### 2. Golden regeneration — IMPROVEMENTS, not blessed regressions (visually re-derived)
+For each sampled fixture I compared the pre-fix golden (`git show 7fe5d25^:…`) against the current golden and confirmed the current one is what the live engine now produces (corpus 42/42 @ 0.000%):
+| Fixture | Pre-fix (buggy) | Post-fix (correct) | Why it legitimately changed |
+| --- | --- | --- | --- |
+| `material/gallery` (default+night, 53KB→34KB) | Grey **MockView** boxes labeled `chip.Chip` ×3 / `TextInputEditText` / `BottomNavigationView` / `ExtendedFloatingActionButton`; magenta "A"/"B" buttons | Real Chips ("One"/"Two"/"Grouped"), real text field, real TabLayout, real "Extended" FAB, real BottomNavigationView; purple Material3 buttons; **zero MockView, zero magenta** | The 3 §FR-2 widgets that tripped `ThemeEnforcement.checkTextAppearance` now read a real `android:textAppearance` id and construct; framework tint slots resolve |
+| `gradle/material_buttons` | "Tap" button **magenta** | "Tap" button Material3 purple | `Button`→`MaterialButton` (Material3 view-inflater) reads `backgroundTint` framework slot — was `0`→magenta, now canonical→themed |
+| `gradle/grid_layout` (surprising) | 4 buttons all **magenta** | 4 buttons Material3 purple | Same `Button`→`MaterialButton` substitution; own `@color/background` (blue) unchanged, confirming only the framework-attr tint changed |
+| `gradle/checkbox_switch`, `constraint_basic`, `linear_horizontal` (surprising) | small tint/text-appearance deltas | themed | `CheckBox`/`Switch`/`RadioButton`/`TextView` are substituted to Material variants under `Theme.Material3.DayNight` and read framework attr slots — same additive correction |
+
+Every changed golden is explained by the one mechanism (framework-attr slot `0`→canonical under the Material view-inflater). No golden change is unexplained; none is a masked regression. (`MaterialTextAppearanceTest` asserts the 3 hard-throwing widgets as real classes; `TextInputEditText` is covered end-to-end by the regenerated gallery golden.)
+
+### 3. Pre-fix state was genuinely buggy (reproduced in scratch, tree restored clean)
+Reverted ONLY `RClassGenerator.kt` to `7fe5d25^`, force-regenerated the R classes (`--rerun-tasks generateEngineTestRClasses`), ran `MaterialTextAppearanceTest` → **FAILED at line 73** (widgets degrade to MockView, not real classes). This confirms (a) the pre-fix code was buggy exactly as claimed and (b) the new test genuinely discriminates the fix (fails when reverted). Restored `RClassGenerator.kt` to HEAD and regenerated correct R classes; `git status` = clean (only pre-existing untracked `host/local.properties`).
+
+### 4. No weakening
+- **Tolerances unchanged**: `corpus/manifest.json` last modified in `1a16ecc` (T55), untouched by `7fe5d25`. The only two `tolerance: 0.02` entries (material-gallery default+night) pre-date the fix.
+- **No test deleted/skipped/weakened**: non-golden/non-doc diff is exactly 3 files (RClassGenerator +52, new test, ENGINE_SURFACE). `MaterialGalleryTest` unmodified and non-contradictory (its required-class list never included the 3 formerly-degraded widgets).
+- **Counts**: host unit **111** (unchanged), engineTest **46→47** (+1 = the new discriminating test).
+
+### 5. Gates (run by this verifier, not inferred)
+| Gate | Command | Result |
+| --- | --- | --- |
+| Host build+unit+engine | `cd host && ./gradlew build test engineTest` | ✅ BUILD SUCCESSFUL — unit **111**/0 fail/0 skip; engineTest **47**/0 fail/0 skip |
+| Golden corpus | `npm run corpus` | ✅ **42/42 passed, 0.000% diff** each |
+
+### 6. AD-002 / Q-GUIDE
+AD-002 (complete + faithful v1) is now satisfied for Material fidelity **without a pin bump** (AD-008 preserved): all §FR-2 Material widgets — including Chip, explicitly named in P1-B's Independent Test — inflate as their real classes and paint their themed colours. **Q-TEXTAPP and Q-COLOR are FIXED** (docs/material-quirks.md, docs/limitations.md, ENGINE_SURFACE.md updated). The single remaining divergence is **Q-GUIDE** (ConstraintLayout `Guideline` does not reposition constrained views) — a **distinct root cause** (ConstraintLayout id application, unrelated to the styleable framework-attr fix), which remains a **documented, out-of-scope v1 quirk**. No lesson recorded (clean PASS, no grounded failure).
 
 ---
 
