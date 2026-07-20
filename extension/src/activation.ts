@@ -10,12 +10,12 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { classify, isEligible } from './classifier';
+import { ConfigStore, PreviewConfigPatch } from './config';
 import { HostManager, HostState } from './host';
 import { PreviewPanelManager } from './panel';
-import { DocKind, DrawableState, PreviewConfig } from './protocol';
+import { DocKind } from './protocol';
 import { ResourceRootResolver } from './roots';
 import { RenderScheduler } from './scheduler';
 
@@ -49,18 +49,6 @@ function isEligibleDocument(editor: vscode.TextEditor | undefined): boolean {
   const lastLine = Math.min(editor.document.lineCount - 1, 40);
   const firstKb = editor.document.getText(new vscode.Range(0, 0, lastLine, 0));
   return isEligible(classify(fsPath, firstKb));
-}
-
-function defaultPreviewConfig(): PreviewConfig {
-  return {
-    themeName: 'Theme.Material3.DayNight',
-    isProjectTheme: false,
-    night: false,
-    device: { id: 'phone', label: 'Phone', widthDp: 411, heightDp: 891, defaultDensity: 'xhdpi', sizeBucket: 'normal' },
-    orientation: 'portrait',
-    density: 'xhdpi',
-    pixelScale: 1,
-  };
 }
 
 /** Resolves the host spawn command. In test mode (`INFLATE_TEST_FAKE_HOST` set via
@@ -97,8 +85,9 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     /* created lazily by the host otherwise */
   }
 
-  // Per-file drawable toolbar config (state picker / size override), until ConfigStore lands (T50).
-  const drawableConfigs = new Map<string, { states: DrawableState[]; sizeDp?: { w: number; h: number } }>();
+  // Single per-file preview-config store (T50, CFG-05) — absorbs the ad-hoc drawableConfigs map +
+  // defaultPreviewConfig() that used to live here; workspaceState persists it across reopens.
+  const configStore = new ConfigStore(context.workspaceState);
 
   const scheduler = new RenderScheduler({
     host: {
@@ -114,10 +103,8 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       return (c.kind === 'unsupported' ? 'layout' : c.kind) as DocKind;
     },
     getConfig: (docPath: string) => {
-      const config = defaultPreviewConfig();
-      const drawable = drawableConfigs.get(path.resolve(docPath));
-      if (drawable) config.drawable = drawable;
-      return config;
+      const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
+      return configStore.get(docPath, manifestTheme).preview;
     },
     readBuffer: (docPath) =>
       vscode.workspace.textDocuments.find((d) => d.uri.fsPath === docPath)?.getText() ?? '',
@@ -137,10 +124,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     outputDir,
     (docPath) => scheduler.refresh(docPath),
     (docPath, drawable) => {
-      drawableConfigs.set(path.resolve(docPath), {
-        states: drawable.states as DrawableState[],
-        sizeDp: drawable.sizeDp,
-      });
+      configStore.update(docPath, { drawable: drawable as PreviewConfigPatch['drawable'] });
       scheduler.notifyConfigChanged(docPath);
     },
   );
