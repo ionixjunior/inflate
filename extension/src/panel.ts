@@ -115,6 +115,20 @@ export class PreviewPanelManager {
     return this.entries.size;
   }
 
+  /**
+   * Build the webview URI for a rendered PNG. The PNG lives in `outputDir`, a registered webview
+   * resource root; the resource URI MUST be derived from that SAME root Uri so it inherits its
+   * scheme. On desktop VS Code `context.globalStorageUri` is `vscode-userdata`-scheme, so `outputDir`
+   * (joined onto it) is too. Building the resource as `Uri.file(pngPath)` instead yields a `file:`
+   * resource that sits under a `vscode-userdata` root with a mismatched scheme — the webview resource
+   * service then rejects it with HTTP 401 ("not within localResourceRoots") and the image shows as a
+   * broken glyph. Joining the basename onto `outputDir` keeps scheme + root aligned. (Regression:
+   * `src/test/integration/webview-resource.test.ts`.)
+   */
+  static imageWebviewUri(webview: vscode.Webview, outputDir: vscode.Uri, pngPath: string): string {
+    return webview.asWebviewUri(vscode.Uri.joinPath(outputDir, path.basename(pngPath))).toString();
+  }
+
   hasPanel(docPath: string): boolean {
     return this.entries.has(this.key(docPath));
   }
@@ -205,7 +219,7 @@ export class PreviewPanelManager {
 
     if (response.status === 'ok' && response.pngPath) {
       entry.hasGoodImage = true;
-      const uri = entry.panel.webview.asWebviewUri(vscode.Uri.file(response.pngPath)).toString();
+      const uri = PreviewPanelManager.imageWebviewUri(entry.panel.webview, this.outputDir, response.pngPath);
       this.post(entry, {
         type: 'setImage',
         uri: `${uri}?v=${response.id}`,

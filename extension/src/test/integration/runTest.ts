@@ -13,7 +13,10 @@ async function main(): Promise<void> {
     await runTests({
       extensionDevelopmentPath,
       extensionTestsPath,
-      extensionTestsEnv: { INFLATE_TEST_FAKE_HOST: fakeHostScript },
+      extensionTestsEnv: {
+        INFLATE_TEST_FAKE_HOST: fakeHostScript,
+        ...(process.env.MOCHA_GREP ? { MOCHA_GREP: process.env.MOCHA_GREP } : {}),
+      },
       launchArgs: ['--disable-extensions', '--disable-gpu'],
     });
   } catch (err) {

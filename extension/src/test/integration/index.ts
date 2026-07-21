@@ -4,6 +4,7 @@ import { glob } from 'glob';
 
 export async function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'tdd', color: true, timeout: 60000 });
+  if (process.env.MOCHA_GREP) mocha.grep(process.env.MOCHA_GREP);
   const testsRoot = __dirname;
   const files = await glob('**/*.test.js', { cwd: testsRoot });
   files.forEach((f) => mocha.addFile(path.resolve(testsRoot, f)));
