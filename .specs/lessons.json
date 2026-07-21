@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 4,
+  "next_id": 5,
   "lessons": [
     {
       "id": "L-001",
@@ -58,6 +58,24 @@
       ],
       "created": "2026-07-20T02:05:13Z",
       "last_seen": "2026-07-20T02:05:13Z"
+    },
+    {
+      "id": "L-004",
+      "key": "ac_gap::build webview resource uris by joining onto the registered localresourceroots uri aswebviewuri uri joinpath root name never via uri file abspath context globalstorageuri is vscode userdata scheme so a file scheme resource under it 401s and test webview resource loading end to end not just img presence",
+      "text": "Build webview resource URIs by joining onto the registered localResourceRoots Uri (asWebviewUri(Uri.joinPath(root, name))), never via Uri.file(absPath): context.globalStorageUri is vscode-userdata-scheme, so a file:-scheme resource under it 401s; and test webview resource LOADING end-to-end, not just <img> presence.",
+      "signal": "ac_gap",
+      "scope": "extension/webview",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "extension/src/panel.ts:208 (pre-fix) (extension/webview)"
+      ],
+      "created": "2026-07-21T00:10:30Z",
+      "last_seen": "2026-07-21T00:10:30Z"
     }
   ]
 }

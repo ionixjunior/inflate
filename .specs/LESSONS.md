@@ -32,6 +32,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: P1-G AC1 (Resources/Layout capital casing) — host resolution case-sensitive (resource-resolution;ecosystem)
 - last seen: 2026-07-20T02:05:13Z
 
+### L-004 — Build webview resource URIs by joining onto the registered localResourceRoots Uri (asWebviewUri(Uri.joinPath(root, name))), never via Uri.file(absPath): context.globalStorageUri is vscode-userdata-scheme, so a file:-scheme resource under it 401s; and test webview resource LOADING end-to-end, not just <img> presence.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `extension/webview` · harmful: 0
+- features: android-xml-preview
+- evidence: extension/src/panel.ts:208 (pre-fix) (extension/webview)
+- last seen: 2026-07-21T00:10:30Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

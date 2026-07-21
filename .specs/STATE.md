@@ -105,6 +105,15 @@
 - **Date**: 2026-07-19
 - **Status**: active
 
+### AD-017 (post-release bug fix, 2026-07-20)
+- **Decision**: The preview panel builds the rendered-PNG webview URI by joining the basename onto the SAME `outputDir` resource-root Uri (`PreviewPanelManager.imageWebviewUri` → `asWebviewUri(Uri.joinPath(outputDir, basename))`), NOT via `Uri.file(pngPath)`.
+- **Reason**: Found in first real-world install use (not caught by any automated test). Symptom: valid host renders (correct PNGs on disk) but the webview showed a broken-image glyph; DevTools console showed **HTTP 401** on every PNG. Root cause: on desktop VS Code `context.globalStorageUri` is **`vscode-userdata`-scheme**, so the panel's `outputDir` (joined onto it) is a `vscode-userdata` resource root; building the image URI as `Uri.file(pngPath)` produced a `file:`-scheme resource under a `vscode-userdata` root → scheme mismatch → the webview resource service rejects it (401, "not in localResourceRoots"). The webview *script* loaded fine only because it sits under the `file:`-scheme `context.extensionUri`. Reproduced + fix confirmed in test-electron (`src/test/integration/webview-resource.test.ts`).
+- **Trade-off**: none; the resource now always inherits the registered root's scheme. Fix commit `f91e1b8`; VSIX rebuilt (sha256 `bd3e741f…`).
+- **Test-coverage gap closed**: integration tests used the fake host and only asserted the `<img>` element was *present* (skeleton.test.ts:48), never that a real PNG *loads* through a real webview. New regression test drives a genuine PNG load under a `vscode-userdata` root.
+- **Scope**: Webview resource loading, any future webview-hosted file (PNG sweep dir, etc.), packaging QA (add a real-install smoke that opens a preview and asserts the image loads).
+- **Date**: 2026-07-20
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: android-xml-preview (`.specs/features/android-xml-preview/`)
