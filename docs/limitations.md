@@ -137,5 +137,11 @@ currently wheel-gesture only, so silently leaving fit mode would strand the user
 - `tools:showIn` / render-in-parent-context and include-parent navigation are not supported.
 - No click-to-source selection sync, no hierarchy inspector, no animation playback — all tracked as
   post-v1 stories in the spec's P2/P3 backlogs.
-- Windows and Linux are not supported in v1 (macOS arm64/x64 only, AD-004) — the underlying engine
-  natives are published for both and a fast-follow is planned, but v1 ships macOS-only.
+- Windows and Linux are not supported in v1 (macOS only, AD-004) — the underlying engine natives
+  are published for both and a fast-follow is planned, but v1 ships macOS-only.
+- Within macOS, **Apple Silicon is the primary, CI-verified architecture; Intel Macs are supported
+  best-effort** (AD-004 amendment via AD-019, 2026-07-26): Intel users still receive the correct
+  x64 engine natives at first run (the `mac` classifier of the pinned layoutlib runtime), but no
+  Intel CI leg exists — the former smoke job never exercised the native rendering path (that lives
+  in `engineTest`/corpus) and Intel hosted runners are being phased out upstream. An
+  Intel-specific rendering bug would surface via user report rather than CI.

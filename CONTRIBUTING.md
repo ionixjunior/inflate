@@ -60,9 +60,15 @@ Or, from the repo root: `npm run corpus` (installs `corpus/`'s dependencies and 
 | Golden-image corpus | `npm run corpus` (repo root) or `cd corpus && npm run corpus` |
 | Full pipeline (what CI runs) | all of the above, in the order listed |
 
-CI (`.github/workflows/ci.yml`) runs the full pipeline on macOS arm64 on every push/PR, plus a
-lighter unit-test-only smoke on macOS Intel. A daily canary (`.github/workflows/canary.yml`) fetches
-the pinned engine artifacts from a cold cache to catch a broken/moved Google Maven artifact quickly.
+CI (`.github/workflows/ci.yml`) runs the full pipeline on macOS arm64 (`macos-26`) **on demand
+only** — there are no automatic push/PR runs (AD-019; hosted-runner usage stays deliberate).
+Maintainers start it from the Actions tab ("Run workflow"), with `gh workflow run ci.yml`, or by
+commenting **`/run ci`** on a pull request — comment-triggering is restricted to the owner and
+explicitly invited collaborators, and the gate then tests that PR's merge result
+(`refs/pull/<N>/merge`). Releases never depend on someone remembering to run CI: the release
+pipeline (`.github/workflows/release.yml`) always runs this same full gate before publishing. A
+daily canary (`.github/workflows/canary.yml`) fetches the pinned engine artifacts from a cold cache
+to catch a broken/moved Google Maven artifact quickly.
 
 ## The golden-image corpus
 

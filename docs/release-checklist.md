@@ -126,3 +126,69 @@ fixtures) — see `docs/limitations.md` and `.specs/STATE.md` for full detail:
   `inflate.renderTimeoutMs` — all now actually read from `vscode.workspace.getConfiguration('inflate')`
   (previously designed/tested at the unit level via injectable deps, but never wired to real VS Code
   configuration until this task).
+
+## Publishing & release automation (Amendment — 2026-07-26, REL-05/AD-019)
+
+> The manual VSIX/gate sections above remain valid for **local verification**, but actual releases
+> are now fully automated — one click in the GitHub UI, zero local commands
+> (`.github/workflows/release.yml`).
+
+### One-time setup: Marketplace publisher account (cannot be automated)
+
+1. Have a **Microsoft account** (any personal one works — account.microsoft.com).
+2. Create a (free) **Azure DevOps organization**: sign in at https://dev.azure.com with that
+   account and accept the default organization it offers (or create one; the name doesn't matter).
+3. Create the **publishing PAT**: Azure DevOps → User settings (top-right) → *Personal access
+   tokens* → *New Token*:
+   - Name: `vsce-publish`; Organization: **All accessible organizations** (the Marketplace
+     requires this); Expiration: up to 1 year.
+   - Scopes: *Custom defined* → show all scopes → **Marketplace → Manage**.
+   - Copy the token immediately (it is shown only once).
+   - ⚠ **Azure DevOps retires global PATs on 2026-12-01** and publishing PATs are global-scope.
+     This PAT works today; when rotation comes due, use whatever replacement Azure DevOps offers
+     then — `vsce` ≥3.x already supports Microsoft Entra ID sign-in (`vsce publish
+     --azure-credential`) as the PAT-free alternative for local publishes.
+4. Create the **publisher**: https://marketplace.visualstudio.com/manage → sign in with the SAME
+   Microsoft account → *Create publisher* → pick the public ID (e.g. `ionixjunior`) and display
+   name.
+5. Update `extension/package.json` → `"publisher"` from the `"inflate"` placeholder to the real ID
+   (one line; commit before the first release — `vsce` refuses to publish under a mismatched
+   publisher).
+6. Add the repo secret: GitHub → repo → Settings → *Secrets and variables* → *Actions* → *New
+   repository secret* → name `VSCE_PAT`, value = the token from step 3.
+7. **Optional — Open VSX** (VSCodium, Cursor, Gitpod users): https://open-vsx.org → sign in with
+   GitHub → create the namespace matching the publisher ID → generate an access token → save it as
+   repo secret `OVSX_TOKEN`. While this secret is absent the release pipeline skips the Open VSX
+   leg automatically (it is optional by design, REL-04 AC3).
+
+### Releasing — every time, no local commands
+
+1. Merge whatever should ship into `main`.
+2. GitHub → *Actions* → **Release** → *Run workflow* → pick `bump`:
+   - `patch` = only fixes since the last release · `minor` = any new feature · `major` = breaking
+     change.
+   - **First release: pick `major`** — 0.0.1 becomes **1.0.0** (AD-019).
+3. The pipeline then runs: full gate (identical to CI, incl. `engineTest` + golden corpus) →
+   version bump → host-jar + VSIX build → **Marketplace publish** (→ Open VSX when configured) →
+   `Release <version>` commit + `v<version>` tag pushed to `main` → **GitHub Release** with
+   auto-generated notes (from the merged PRs/commits) and the VSIX attached.
+
+### If a release run fails
+
+- **Gate, build, or publish step failed** → nothing was pushed and nothing was published; fix the
+  cause and simply re-run the workflow.
+- **Publish succeeded but the later push/tag failed** (rare race with a concurrent push to main) →
+  the version IS already live on the Marketplace. Do **not** re-run the workflow — a re-run would
+  bump again. Recover manually per the header comment in `release.yml`: land the bump commit, tag
+  it `v<version>`, and create the GitHub Release for that tag.
+
+### Before the FIRST release, additionally
+
+- Replace `extension/media/icon.png` with real brand artwork (see the Icon note above).
+- Push the repo to https://github.com/ionixjunior/inflate (the `origin` remote is already
+  configured locally) and confirm the Actions tab lists the CI / Release / Engine pin canary /
+  "Run CI from a PR comment" workflows.
+- Keep the repo **public**: GitHub-hosted standard runners (macOS included) are free for public
+  repos; a private repo bills macOS minutes at a 10× multiplier.
+- Sanity-run CI once from the Actions tab — this doubles as the live verification of the
+  `macos-26` runner bump and the reworked triggers (they cannot be exercised locally).
