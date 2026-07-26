@@ -85,3 +85,23 @@ describe('panelShellHtml — stage containment (fix-pack POLISH-05)', () => {
     expect(toolbarRule).toContain('background:');
   });
 });
+
+describe('panelShellHtml — native-drag suppression on the gesture surface (defect fix POLISH-09, AC1)', () => {
+  it('marks the preview image non-draggable', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(html).toContain('<img id="preview" alt="Inflate preview" style="display:none" draggable="false" />');
+  });
+
+  it('suppresses the native drag ghost and text/image selection on #preview', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    const previewRule = /#preview\s*\{[^}]*\}/.exec(html)?.[0] ?? '';
+    expect(previewRule).toContain('-webkit-user-drag: none');
+    expect(previewRule).toContain('user-select: none');
+  });
+
+  it('suppresses text/image selection on #stage', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    const stageRule = /#stage\s*\{[^}]*\}/.exec(html)?.[0] ?? '';
+    expect(stageRule).toContain('user-select: none');
+  });
+});

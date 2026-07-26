@@ -86,8 +86,10 @@ export function panelShellHtml(params: PanelShellParams): string {
     #matched { color: var(--vscode-descriptionForeground, #999); }
     #stage { flex: 1 1 0; min-height: 0; overflow: hidden; position: relative;
              display: flex; align-items: center; justify-content: center;
-             background: repeating-conic-gradient(#7f7f7f 0% 25%, #bfbfbf 0% 50%) 50% / 20px 20px; }
-    #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+             background: repeating-conic-gradient(#7f7f7f 0% 25%, #bfbfbf 0% 50%) 50% / 20px 20px;
+             user-select: none; }
+    #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated;
+               -webkit-user-drag: none; user-select: none; }
     #busyOverlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
                    justify-content: center; gap: 8px; }
     #busySpinner { width: 24px; height: 24px; border-radius: 50%;
@@ -126,7 +128,7 @@ export function panelShellHtml(params: PanelShellParams): string {
     <span id="matched" style="display:none"></span>
   </div>
   <div id="stage">
-    <img id="preview" alt="Inflate preview" style="display:none" />
+    <img id="preview" alt="Inflate preview" style="display:none" draggable="false" />
     <div id="busyOverlay" style="display:none">
       <div id="busySpinner"></div>
       <div id="busyLabel"></div>
