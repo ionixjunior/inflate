@@ -2284,7 +2284,7 @@ T75 → T76
   README covers purpose, features, requirements, quickstart, settings, links; CHANGELOG has a
   `1.0.0` section)
 - **Tests**: packaging validation — **Gate**: Full
-- **Status**: [ ] pending
+- **Status**: [x] complete (commit `571e1cd`)
 
 #### T72 — Make CI manual-only on macos-26 and drop smoke-x64
 
@@ -2294,7 +2294,7 @@ T75 → T76
   optional `ref` input wired into every checkout; `smoke-x64` gone; `macos-26` runners; canary
   keeps schedule)
 - **Tests**: static validation — **Gate**: Quick
-- **Status**: [ ] pending
+- **Status**: [x] complete (commit `4a5aa34`)
 
 #### T73 — Add the guarded /run ci PR comment command
 
@@ -2303,7 +2303,7 @@ T75 → T76
 - **Done when**: REL-03 AC1–AC5 hold (issue_comment trigger; OWNER/MEMBER/COLLABORATOR guard;
   reuses ci.yml at `refs/pull/N/merge`; ack comment; no publish secrets reachable)
 - **Tests**: static validation — **Gate**: Quick
-- **Status**: [ ] pending
+- **Status**: [x] complete (commit `fca863e`)
 
 #### T74 — Create the one-click release pipeline
 
@@ -2312,7 +2312,7 @@ T75 → T76
 - **Done when**: REL-04 AC1–AC5 hold (dispatch-only with bump choice; gate→bump→build→publish→
   commit+tag+Release order; secret-gated Open VSX; `concurrency: release`; `contents: write` only)
 - **Tests**: static validation — **Gate**: Quick
-- **Status**: [ ] pending
+- **Status**: [x] complete (commit `da14ddf`)
 
 #### T75 — Write the publisher runbook and CI-policy docs
 
@@ -2322,7 +2322,7 @@ T75 → T76
   first-release=major; CONTRIBUTING documents manual CI + `/run ci`; limitations notes Intel
   best-effort)
 - **Tests**: content presence — **Gate**: Quick
-- **Status**: [ ] pending
+- **Status**: [x] complete (commit `3f3c25f`)
 
 #### T76 — Record AD-019 and close out the amendment
 
@@ -2331,4 +2331,4 @@ T75 → T76
 - **Done when**: AD-019 + AD-004 amendment note in STATE.md Decisions; Handoff updated; final
   Build gate green
 - **Tests**: none — **Gate**: Build
-- **Status**: [ ] pending
+- **Status**: [x] complete (STATE.md close-out commit)
