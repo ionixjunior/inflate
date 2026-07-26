@@ -119,7 +119,6 @@ export function panelShellHtml(params: PanelShellParams): string {
     <span id="statePickerWrap" style="display:none">
       <label>State <select id="statePicker"></select></label>
     </span>
-    <label>Size <input id="sizeInput" type="text" size="8" placeholder="WxH" /></label>
     <span id="badge" style="display:none">static preview</span>
     <span id="matched" style="display:none"></span>
   </div>

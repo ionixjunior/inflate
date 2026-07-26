@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DisplayRect,
+  MIN_RESIZE_DP,
   ZoomState,
   applyCanvasCapped,
   clampPan,
   clampZoomPercent,
   computeFitPercent,
+  dragSizeToDp,
+  edgeHitTest,
   initialZoomState,
   nextZoomState,
   resolveZoomPercent,
@@ -106,3 +110,76 @@ interface PixelScaleTransition {
   from: number;
   to: number;
 }
+
+describe('edgeHitTest — resize zone hit-testing (fix-pack FP-3 AC2)', () => {
+  const rect: DisplayRect = { left: 100, top: 100, width: 200, height: 100 }; // right=300, bottom=200
+
+  it('returns null outside the image on any side', () => {
+    expect(edgeHitTest(50, 150, rect)).toBeNull(); // left of image
+    expect(edgeHitTest(150, 50, rect)).toBeNull(); // above image
+    expect(edgeHitTest(350, 150, rect)).toBeNull(); // right of image
+    expect(edgeHitTest(150, 250, rect)).toBeNull(); // below image
+  });
+
+  it('returns null inside the image but away from every edge', () => {
+    expect(edgeHitTest(200, 150, rect)).toBeNull();
+  });
+
+  it('returns "right" within the band of the right edge (not near the bottom)', () => {
+    expect(edgeHitTest(295, 120, rect)).toBe('right');
+    expect(edgeHitTest(300, 100, rect)).toBe('right'); // exactly at the edge, top corner of the band
+  });
+
+  it('returns "bottom" within the band of the bottom edge (not near the right)', () => {
+    expect(edgeHitTest(150, 195, rect)).toBe('bottom');
+    expect(edgeHitTest(100, 200, rect)).toBe('bottom'); // exactly at the edge, left corner of the band
+  });
+
+  it('returns "corner" when within the band of both the right and bottom edges', () => {
+    expect(edgeHitTest(295, 195, rect)).toBe('corner');
+    expect(edgeHitTest(300, 200, rect)).toBe('corner'); // exact bottom-right corner
+  });
+
+  it('honors a custom band width', () => {
+    // 20px from the right edge: outside the default 8px band, inside a 24px band.
+    expect(edgeHitTest(280, 150, rect)).toBeNull();
+    expect(edgeHitTest(280, 150, rect, 24)).toBe('right');
+  });
+});
+
+describe('dragSizeToDp — drag-to-resize dp conversion and clamps (fix-pack FP-3 AC4)', () => {
+  it('converts proportionally through the current zoom (2x zoom, scale factor baked into start px)', () => {
+    // Start: 100x200 dp shown at 200x400 displayed px (2x zoom) -> 2 displayed px per dp.
+    const result = dragSizeToDp({ w: 100, h: 200 }, { w: 200, h: 400 }, { w: 240, h: 440 }, { densityDpi: 160, pixelScale: 1 });
+    // 240 displayed px / 2 px-per-dp = 120 dp; 440 / 2 = 220 dp.
+    expect(result).toEqual({ w: 120, h: 220 });
+  });
+
+  it('rounds to the nearest integer dp', () => {
+    const result = dragSizeToDp({ w: 100, h: 100 }, { w: 300, h: 300 }, { w: 101, h: 305 }, { densityDpi: 160, pixelScale: 1 });
+    // scale = 100/300 = 1/3 dp per displayed px. 101/3 = 33.67 -> 34; 305/3 = 101.67 -> 102.
+    expect(result).toEqual({ w: 34, h: 102 });
+  });
+
+  it('clamps to the 16 dp floor per axis when dragged smaller', () => {
+    const result = dragSizeToDp({ w: 100, h: 100 }, { w: 100, h: 100 }, { w: 5, h: 1 }, { densityDpi: 160, pixelScale: 1 });
+    expect(result).toEqual({ w: MIN_RESIZE_DP, h: MIN_RESIZE_DP });
+  });
+
+  it('clamps to the 4096 px canvas cap at densityDpi (mdpi = 160, pixelScale 1 -> 1 px/dp)', () => {
+    // At mdpi/pixelScale 1, 1 dp == 1 px, so the cap is exactly 4096 dp.
+    const result = dragSizeToDp({ w: 100, h: 100 }, { w: 100, h: 100 }, { w: 5000, h: 5000 }, { densityDpi: 160, pixelScale: 1 });
+    expect(result).toEqual({ w: 4096, h: 4096 });
+  });
+
+  it('clamps to a lower dp cap at a higher density and pixelScale (xhdpi=320, pixelScale 2 -> 4 px/dp)', () => {
+    // 4096 px / 4 px-per-dp = 1024 dp cap.
+    const result = dragSizeToDp({ w: 100, h: 100 }, { w: 100, h: 100 }, { w: 100000, h: 100000 }, { densityDpi: 320, pixelScale: 2 });
+    expect(result).toEqual({ w: 1024, h: 1024 });
+  });
+
+  it('falls back to a 1:1 scale when the start displayed size is degenerate (0 px)', () => {
+    const result = dragSizeToDp({ w: 50, h: 50 }, { w: 0, h: 0 }, { w: 200, h: 200 }, { densityDpi: 160, pixelScale: 1 });
+    expect(result).toEqual({ w: 200, h: 200 });
+  });
+});

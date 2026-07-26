@@ -1,12 +1,13 @@
 /**
  * Pure drawable + config toolbar logic (T49/T51, DRW-07/08, P1-C AC1, P1-D AC1/AC3, CFG-01..04,
  * P1-E AC1-AC4). The webview toolbar for a document offers a drawable state picker (hidden when the
- * drawable is not state-sensitive), a size override, and the configuration controls: day/night, a
- * device preset dropdown (5 built-ins), an orientation toggle, a density dropdown (5 buckets), and a
- * theme picker fed by the `listThemes` RPC (project themes first, then bundled). Every config control
- * emits a `configChanged` message the extension plumbs into the next render; the static-preview badge
- * and the selector matched-item are displayed from the render response. Kept DOM-free so every rule
- * is unit-testable without jsdom; `main.ts` applies it.
+ * drawable is not state-sensitive) and the configuration controls: day/night, a device preset
+ * dropdown (5 built-ins), an orientation toggle, a density dropdown (5 buckets), and a theme picker
+ * fed by the `listThemes` RPC (project themes first, then bundled). Every config control emits a
+ * `configChanged` message the extension plumbs into the next render; the static-preview badge and the
+ * selector matched-item are displayed from the render response. Kept DOM-free so every rule is
+ * unit-testable without jsdom; `main.ts` applies it. (Size is no longer a toolbar field — it is set
+ * by the edge-drag gesture in `viewport.ts`/`main.ts`, fix-pack POLISH-06/07.)
  */
 
 export const DRAWABLE_STATES = [
@@ -67,11 +68,10 @@ export interface ThemeOption {
   source: ThemeSource;
 }
 
-/** UI-local toolbar state: drawable state/size (T49) plus the config controls (T51). Every field
- * flows to the extension via `configChanged` and triggers a re-render. */
+/** UI-local toolbar state: the drawable state picker (T49) plus the config controls (T51). Every
+ * field flows to the extension via `configChanged` and triggers a re-render. */
 export interface ToolbarState {
   selectedState: DrawableStateName;
-  sizeText: string;
   night: boolean;
   deviceId: string;
   orientation: Orientation;
@@ -82,7 +82,6 @@ export interface ToolbarState {
 
 export const initialToolbarState: ToolbarState = {
   selectedState: 'default',
-  sizeText: '',
   night: false,
   deviceId: 'phone',
   orientation: 'portrait',
@@ -92,8 +91,8 @@ export const initialToolbarState: ToolbarState = {
 };
 
 /** Hydrate the toolbar's config fields from a persisted/stored config (ConfigStore, CFG-05, P1-E
- * AC5) — leaves the drawable-only fields (`selectedState`, `sizeText`) untouched, since they are
- * addressed by the drawable toolbar's own hydration path. */
+ * AC5) — leaves the drawable-only `selectedState` untouched, since it is addressed by the drawable
+ * toolbar's own hydration path. */
 export function hydrateToolbarState(
   state: ToolbarState,
   stored: {
@@ -133,24 +132,11 @@ export function statesForSelection(state: DrawableStateName): DrawableStateName[
 }
 
 /**
- * Parse a size-override input: empty → `undefined` (no override), `"WxH"` (or `W×H`) with positive
- * integers → the size, anything else → `null` (invalid — rejected, no message emitted).
- */
-export function parseSizeOverride(text: string): { w: number; h: number } | undefined | null {
-  const t = text.trim();
-  if (t === '') return undefined;
-  const m = /^(\d+)\s*[x×]\s*(\d+)$/.exec(t);
-  if (!m) return null;
-  const w = parseInt(m[1], 10);
-  const h = parseInt(m[2], 10);
-  if (w <= 0 || h <= 0) return null;
-  return { w, h };
-}
-
-/**
  * `configChanged` covers the drawable state/size patch (T49) and the T51 config controls — every
  * field is optional so each control can emit just its own change; the extension merges whatever
- * fields are present into ConfigStore and always re-renders (CFG-01..04, P1-E AC1-AC4).
+ * fields are present into ConfigStore and always re-renders (CFG-01..04, P1-E AC1-AC4). `sizeDp` is
+ * no longer set by `buildConfigChanged` (POLISH-06 removed the Size field) — it stays in the type
+ * because the edge-drag gesture (POLISH-07, `main.ts`) emits it directly for a drawable resize.
  */
 export type ConfigChangedMessage = {
   type: 'configChanged';
@@ -163,16 +149,9 @@ export type ConfigChangedMessage = {
   isProjectTheme?: boolean;
 };
 
-/** Build the `configChanged` payload for a state + size override; `{error}` if the size is invalid. */
-export function buildConfigChanged(
-  state: DrawableStateName,
-  sizeText: string,
-): ConfigChangedMessage | { error: 'invalidSize' } {
-  const size = parseSizeOverride(sizeText);
-  if (size === null) return { error: 'invalidSize' };
-  const drawable: NonNullable<ConfigChangedMessage['drawable']> = { states: statesForSelection(state) };
-  if (size) drawable.sizeDp = size;
-  return { type: 'configChanged', drawable };
+/** Build the `configChanged` payload for a picked drawable state (P1-D AC2). */
+export function buildConfigChanged(state: DrawableStateName): ConfigChangedMessage {
+  return { type: 'configChanged', drawable: { states: statesForSelection(state) } };
 }
 
 /** Build the `configChanged` payload for the day/night toggle (CFG-01, P1-E AC1). */

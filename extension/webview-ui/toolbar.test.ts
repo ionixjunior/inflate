@@ -16,7 +16,6 @@ import {
   initialToolbarState,
   matchedLabel,
   orderThemesForPicker,
-  parseSizeOverride,
   pickerVisible,
   statesForSelection,
 } from './toolbar';
@@ -46,33 +45,15 @@ describe('drawable toolbar logic (T49, DRW-07/08, P1-C/P1-D)', () => {
     expect(statesForSelection('disabled')).toEqual(['disabled']);
   });
 
-  it('parses a size override and rejects invalid input', () => {
-    expect(parseSizeOverride('')).toBeUndefined();
-    expect(parseSizeOverride('  ')).toBeUndefined();
-    expect(parseSizeOverride('128x256')).toEqual({ w: 128, h: 256 });
-    expect(parseSizeOverride('128 x 256')).toEqual({ w: 128, h: 256 });
-    expect(parseSizeOverride('64×64')).toEqual({ w: 64, h: 64 });
-    expect(parseSizeOverride('abc')).toBeNull();
-    expect(parseSizeOverride('0x10')).toBeNull();
-    expect(parseSizeOverride('10x')).toBeNull();
-  });
-
-  it('builds a configChanged message for a picked state (P1-D AC2)', () => {
-    expect(buildConfigChanged('pressed', '')).toEqual({
+  it('builds a configChanged message for a picked state, states only (P1-D AC2, POLISH-06)', () => {
+    expect(buildConfigChanged('pressed')).toEqual({
       type: 'configChanged',
       drawable: { states: ['pressed'] },
     });
-  });
-
-  it('carries a valid size override in the configChanged message (DRW-08)', () => {
-    expect(buildConfigChanged('default', '96x96')).toEqual({
+    expect(buildConfigChanged('default')).toEqual({
       type: 'configChanged',
-      drawable: { states: [], sizeDp: { w: 96, h: 96 } },
+      drawable: { states: [] },
     });
-  });
-
-  it('rejects a configChanged with an invalid size override', () => {
-    expect(buildConfigChanged('pressed', 'nope')).toEqual({ error: 'invalidSize' });
   });
 
   it('labels the matched selector item (P1-D AC2)', () => {
@@ -80,7 +61,6 @@ describe('drawable toolbar logic (T49, DRW-07/08, P1-C/P1-D)', () => {
     expect(matchedLabel({ index: 3, stateAttrs: [] })).toBe('matched item #3, default');
     expect(matchedLabel(undefined)).toBe('');
   });
-
 });
 
 describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () => {
@@ -163,13 +143,5 @@ describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () =>
     expect(hydrated.isProjectTheme).toBe(true);
     // Drawable-only fields are untouched by config hydration.
     expect(hydrated.selectedState).toBe('pressed');
-  });
-
-  it('still builds the drawable configChanged patch without the new config fields present', () => {
-    // Backward-compat: T49's message shape (drawable only) must still be exactly what's built.
-    expect(buildConfigChanged('pressed', '')).toEqual({
-      type: 'configChanged',
-      drawable: { states: ['pressed'] },
-    });
   });
 });

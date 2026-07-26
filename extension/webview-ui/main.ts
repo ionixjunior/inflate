@@ -93,16 +93,9 @@ function $(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 
-/** Emit the current picker state + size override to the extension (state/size drive a re-render). */
+/** Emit the current picker state to the extension (drives a re-render). */
 function emitConfig(): void {
-  const msg = buildConfigChanged(toolbar.selectedState, toolbar.sizeText);
-  const sizeInput = $('sizeInput') as HTMLInputElement | null;
-  if ('error' in msg) {
-    if (sizeInput) sizeInput.style.borderColor = 'var(--vscode-inputValidation-errorBorder, #f14c4c)';
-    return;
-  }
-  if (sizeInput) sizeInput.style.borderColor = '';
-  vscode.postMessage(msg);
+  vscode.postMessage(buildConfigChanged(toolbar.selectedState));
 }
 
 function paintToolbar(): void {
@@ -345,10 +338,6 @@ document.addEventListener('change', (e) => {
   const target = e.target as HTMLElement;
   if (target && target.id === 'statePicker') {
     toolbar = { ...toolbar, selectedState: (target as HTMLSelectElement).value as DrawableStateName };
-    emitConfig();
-  }
-  if (target && target.id === 'sizeInput') {
-    toolbar = { ...toolbar, sizeText: (target as HTMLInputElement).value };
     emitConfig();
   }
   if (target && target.id === 'nightToggle') {

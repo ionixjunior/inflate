@@ -110,3 +110,79 @@ export function clampPan(
     y: Math.min(maxY, Math.max(-maxY, offset.y)),
   };
 }
+
+// ---- Edge-drag resize (fix-pack POLISH-07, FP-3) ----
+
+/** The displayed (on-screen, post-zoom) pixel bounds of the preview image. */
+export interface DisplayRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export type ResizeZone = 'right' | 'bottom' | 'corner' | null;
+
+/** The inner-band width (px) along an eligible edge that starts an edge-drag (FP-3 AC2). */
+const DEFAULT_EDGE_BAND_PX = 8;
+
+/**
+ * Which resize zone (if any) a pointer at `(x, y)` sits in, within `imageRect`'s right edge, bottom
+ * edge, or bottom-right corner (FP-3 AC2). Outside the image entirely, or inside it but not within
+ * `band` of an eligible edge, → `null` (no resize affordance — pan-drag proceeds as normal).
+ */
+export function edgeHitTest(x: number, y: number, imageRect: DisplayRect, band: number = DEFAULT_EDGE_BAND_PX): ResizeZone {
+  const right = imageRect.left + imageRect.width;
+  const bottom = imageRect.top + imageRect.height;
+  if (x < imageRect.left || x > right || y < imageRect.top || y > bottom) return null;
+
+  const nearRight = x >= right - band;
+  const nearBottom = y >= bottom - band;
+  if (nearRight && nearBottom) return 'corner';
+  if (nearRight) return 'right';
+  if (nearBottom) return 'bottom';
+  return null;
+}
+
+export interface DisplaySize {
+  w: number;
+  h: number;
+}
+
+/** The device/pixel-scale context needed to convert a displayed-px drag into dp (FP-3 AC4). */
+export interface DensityContext {
+  densityDpi: number;
+  pixelScale: number;
+}
+
+/** dp floor a resize can shrink to on either axis (FP-3 AC4/AC7, "Resize clamps" assumption). */
+export const MIN_RESIZE_DP = 16;
+/** The existing 4096 px canvas cap (UX-03) a resize's rendered pixels must never exceed. */
+const MAX_CANVAS_PX = 4096;
+
+/**
+ * Convert an edge-drag's displayed-px size into a clamped integer dp size (FP-3 AC4/AC5). The ratio
+ * between the drag's start dp size and its start displayed-px size is the current px-per-dp scale
+ * (zoom already baked in); applying that same scale to the dragged displayed size gives the new dp
+ * size — rounded to the nearest integer dp and clamped to [16 dp, 4096 px at `densityDpi × pixelScale`]
+ * per axis (the existing canvas cap, UX-03).
+ */
+export function dragSizeToDp(
+  startDp: DisplaySize,
+  startDisplayPx: DisplaySize,
+  draggedDisplayPx: DisplaySize,
+  density: DensityContext,
+): DisplaySize {
+  const pxPerDp = (density.densityDpi / 160) * density.pixelScale;
+  const maxDp = Math.max(MIN_RESIZE_DP, Math.floor(MAX_CANVAS_PX / pxPerDp));
+
+  const scaleW = startDisplayPx.w > 0 ? startDp.w / startDisplayPx.w : 1;
+  const scaleH = startDisplayPx.h > 0 ? startDp.h / startDisplayPx.h : 1;
+
+  const clamp = (dp: number) => Math.min(maxDp, Math.max(MIN_RESIZE_DP, dp));
+
+  return {
+    w: clamp(Math.round(draggedDisplayPx.w * scaleW)),
+    h: clamp(Math.round(draggedDisplayPx.h * scaleH)),
+  };
+}
