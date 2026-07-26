@@ -1,0 +1,54 @@
+name: Run CI from a PR comment
+
+# REL-03 (AD-019, 2026-07-26): CI never runs automatically on PRs (REL-02). Instead, a maintainer
+# comments `/run ci` on a PR to run the full gate against that PR's merge result.
+#
+# Security model (the guard below is the point of this file):
+# - Only OWNER / MEMBER / COLLABORATOR comment authors trigger anything — i.e. the repo owner and
+#   people explicitly invited with repo access. Fork-PR authors are CONTRIBUTOR (after a merged
+#   PR) or FIRST_TIME_CONTRIBUTOR/NONE — GitHub's post-merge CONTRIBUTOR label is deliberately NOT
+#   trusted, so no outside commenter can start (and pay for) runners.
+# - This workflow definition executes from the default branch on issue_comment events — a PR
+#   cannot modify this file to bypass the guard.
+# - Publish credentials (VSCE_PAT/OVSX_TOKEN) are referenced only by release.yml, which has no
+#   comment trigger — PR code built by this gate can never reach them.
+# - The gate tests refs/pull/<N>/merge (the would-be merge result). If GitHub has no merge ref
+#   (conflict with the base branch), checkout fails visibly — resolve the conflict and re-comment.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write # the ack comment (PR conversation comments use the issues API)
+
+# One gate per PR at a time; a newer /run ci supersedes a still-running older one.
+concurrency:
+  group: run-ci-comment-pr-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  ack:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run ci') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest # posting a comment does not need a macOS runner
+    steps:
+      - name: Acknowledge on the PR with a link to this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments" \
+            -f body="/run ci accepted from @${{ github.event.comment.user.login }} — running the full gate on this PR's merge result: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  gate:
+    # Same guard as ack (duplicated on purpose: the jobs are independent, so an ack failure can
+    # never block the actual gate).
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run ci') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: refs/pull/${{ github.event.issue.number }}/merge
