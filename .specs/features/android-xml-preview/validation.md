@@ -357,3 +357,151 @@ Both tasks' Done-when criteria are met with direct file:line evidence. All 4 POL
 **Gate**: build ✅ · unit 196/196 ✅ · integration 25/25 ✅ — fully clean, no environment caveats.
 **Sensor**: 2 mutations injected against the sensor-testable layer, 2 killed, 0 survived. `main.ts` pointer-glue changes are out of sensor reach per AD-018 (expected, not a gap).
 **Informational**: dp-axis sanity check on `dragSizeToDp`/`draggedGhostSize` — no bug found; fit-zoom rescale UX interaction confirmed as the more likely explanation, tracked as a non-blocking follow-up, not a POLISH-09 defect.
+
+---
+
+## Release & Publish Automation Verification (2026-07-26)
+
+**Scope**: spec section "Release & Publish Automation (Amendment — 2026-07-26)" (`spec.md:812-851`, REL-01..REL-05), tasks T71–T76 (phases 16–18)
+**Diff range**: `9d7432a..cc356c0` (implementation: `571e1cd` T71, `4a5aa34` T72, `fca863e` T73, `da14ddf` T74, `3f3c25f` T75, `21f8061` renumber, `cc356c0` T76) — diff surface = 4 workflows + `extension/README.md` + `extension/CHANGELOG.md` + 3 docs + specs/STATE.md only; no shipped code touched (matches the amendment's non-goal)
+**Verifier**: independent sub-agent (author ≠ verifier); every check below re-run from scratch, not read off the author's gate transcript
+**Method note**: workflow YAML has no local runtime (per the amendment's Test Coverage Matrix, `tasks.md:2231-2245`). Verification = YAML parse + an independent 44-assertion structural suite written by this verifier (`ruby -ryaml`, per-AC), packaging/CLI runs, docs greps, and a semantic review of GitHub-side behavior. GitHub-side execution itself is unverifiable locally — see Accepted Residual Gaps.
+
+### Verdict: ✅ PASS
+
+All 20 acceptance criteria across REL-01..REL-05 hold with direct evidence. Independent structural suite 44/44. Packaging gate exit 0 with both listing files packaged. Unit suite 196/196 (no regression; count unchanged from the pre-amendment record, consistent with a no-code-change amendment). Discrimination sensor 3/3 killed. Three beyond-AC semantic findings flagged (1 Major-reliability, 2 hardening) — none violates a spec AC; recommended as follow-up fix material before/at first live use.
+
+### Task Completion
+
+| Task | Status | Evidence |
+| ---- | ------ | -------- |
+| T71 | ✅ Done | commit `571e1cd`; `tasks.md:2287` |
+| T72 | ✅ Done | commit `4a5aa34`; `tasks.md:2297` |
+| T73 | ✅ Done | commit `fca863e`; `tasks.md:2306` |
+| T74 | ✅ Done | commit `da14ddf`; `tasks.md:2315` |
+| T75 | ✅ Done | commit `3f3c25f`; `tasks.md:2325` |
+| T76 | ✅ Done | commit `cc356c0` (STATE.md AD-019 `:126-132`, AD-004 amendment `:36`, Handoff `:136-137`); `tasks.md:2334` |
+
+### Spec-Anchored Acceptance Criteria (all re-derived and re-run by the verifier)
+
+| AC | Spec-defined outcome | Evidence (file:line / command output) | Result |
+| -- | -------------------- | ------------------------------------- | ------ |
+| REL-01 AC1 | `extension/README.md` exists, packaged, covers purpose/features/requirements/quickstart/settings/links | `cd extension && npx vsce ls --no-dependencies` → `README.md` listed (10 files). Topics: purpose `extension/README.md:3-9`, features `:11-19`, requirements macOS `:23` + JDK 17+ `:26-27`, quickstart `:38-45`, settings table `:57-64`, repo/issues links `:89-92` | ✅ PASS |
+| REL-01 AC2 | `extension/CHANGELOG.md` exists, packaged, has a `1.0.0` section | `vsce ls` → `CHANGELOG.md` listed; `extension/CHANGELOG.md:6` `## 1.0.0` | ✅ PASS |
+| REL-01 AC3 | `cd extension && npm run package` exits 0 | Run by verifier: `package_exit=0`, `DONE Packaged: …/inflate-0.0.1.vsix (12 files, 34.99 MB)` — filename also empirically confirms release.yml's `inflate-<version>.vsix` convention | ✅ PASS |
+| REL-02 AC1 | `ci.yml` `on:` exactly `workflow_dispatch` + `workflow_call`; no push/pull_request | `ci.yml:16-30`; ruby parse: `on` keys == `[workflow_call, workflow_dispatch]`, no `push`/`pull_request` keys | ✅ PASS |
+| REL-02 AC2 | `smoke-x64` removed; remaining gate on `macos-26` | jobs == `[build-and-test-arm64]` (`ci.yml:42`), `runs-on: macos-26` (`ci.yml:43`); no `smoke-x64:` job key anywhere; removal diff verified in `4a5aa34` | ✅ PASS |
+| REL-02 AC3 | Both triggers take optional string `ref` default `''`; every checkout passes `ref: ${{ inputs.ref }}` | dispatch input `ci.yml:18-23`, call input `ci.yml:24-30` (both `type: string`, `required: false`, `default: ''`); 1/1 checkout steps pass it (`ci.yml:45-47`) | ✅ PASS |
+| REL-02 AC4 | canary keeps daily `schedule` + `workflow_dispatch`, runs on `macos-26` | `canary.yml:7-10` (`cron: '17 6 * * *'` — day/month/weekday `* * *` = daily), `runs-on: macos-26` `canary.yml:17` | ✅ PASS |
+| REL-03 AC1 | triggers on `issue_comment` type `created` | `run-ci-comment.yml:17-19`; parsed == `{issue_comment: {types: [created]}}` (sole trigger) | ✅ PASS |
+| REL-03 AC2 | gate only when comment-on-PR AND body startsWith `/run ci` AND author_association ∈ {OWNER,MEMBER,COLLABORATOR}; CONTRIBUTOR/FIRST_TIME_CONTRIBUTOR/NONE can never trigger | `run-ci-comment.yml:48-51` (gate) and `:32-35` (ack): all three conditions AND-joined, exact `fromJSON('["OWNER","MEMBER","COLLABORATOR"]')` list, no other association granted anywhere | ✅ PASS |
+| REL-03 AC3 | gate = `ci.yml` via `workflow_call` with `ref: refs/pull/<PR#>/merge` | `run-ci-comment.yml:52-54` — `uses: ./.github/workflows/ci.yml`, `with.ref: refs/pull/${{ github.event.issue.number }}/merge` | ✅ PASS |
+| REL-03 AC4 | ack comment linking the run posted on the PR | `run-ci-comment.yml:38-43` — `gh api repos/…/issues/<N>/comments` with `…/actions/runs/${{ github.run_id }}` (same run hosts the reusable-workflow gate, so the link shows the gate) | ✅ PASS |
+| REL-03 AC5 | neither run-ci-comment.yml nor ci.yml references `VSCE_PAT`/`OVSX_TOKEN`; publish credentials unreachable from comment-triggered runs | grep: zero non-comment matches and zero `secrets.` usage in both files (sole textual match is the header comment `run-ci-comment.yml:13`, which references nothing). Secrets appear only in `release.yml:78,84`, which has no comment trigger | ✅ PASS (evidence note: a literal raw-text grep false-positives on the comment mention; the spec's operative outcome — credentials unreachable — is what was asserted) |
+| REL-04 AC1 | `release.yml` ONLY on `workflow_dispatch` with required `bump` choice ∈ {patch,minor,major} | `release.yml:19-29`; parsed: sole trigger; `bump` `type: choice`, `required: true`, `options == [patch, minor, major]` | ✅ PASS |
+| REL-04 AC2 | order gate → bump → build → publish → record; `npm version` no local tag; root `npm run package`; `vsce publish --packagePath` + `VSCE_PAT`; commit `Release <v>` + tag `v<v>` pushed to run's branch; GH Release `--generate-notes` + VSIX; publish precedes push | `release.yml:42-43` gate uses ci.yml, `:46` `needs: gate`; step indices bump(4) < build(5) < marketplace-publish(6) < push(8) < gh-release(9); `--no-git-tag-version` `:68`; root `npm run package` `:73` (script verified: shadowJar + VSIX); `env VSCE_PAT` `:77-78` + `vsce publish --packagePath … -p "$VSCE_PAT"` `:79`; commit msg `:97`, rebase `:99` before tag `:100`, `git push origin "HEAD:${{ github.ref_name }}" "v<v>"` `:101`; `gh release create "v<v>" extension/inflate-<v>.vsix --generate-notes` `:107-110`. Nothing is pushed before `:92` ⇒ failed gate/build/publish leaves the branch untouched | ✅ PASS |
+| REL-04 AC3 | Open VSX only when `OVSX_TOKEN` non-empty (shell guard) | `release.yml:86-90` — `if [ -n "$OVSX_TOKEN" ]`, positioned between Marketplace publish and push | ✅ PASS |
+| REL-04 AC4 | `concurrency: release`, `cancel-in-progress: false` | `release.yml:35-37`; parsed == `{group: release, cancel-in-progress: false}` | ✅ PASS |
+| REL-04 AC5 | workflow `permissions:` = `contents: write`, nothing broader | `release.yml:31-32`; parsed == exactly `{contents: write}` | ✅ PASS |
+| REL-05 AC1 | dated runbook: publisher setup chain, PAT retirement 2026-12-01 + Entra alternative, first release = bump `major` 0.0.1 → 1.0.0 | `docs/release-checklist.md:130` (dated heading); Microsoft account `:138`; Azure DevOps org `:139-140`; PAT "All accessible organizations" `:143-144` + "Marketplace → Manage" `:145`; retirement date + `--azure-credential` Entra alternative `:147-150`; create publisher at marketplace.visualstudio.com/manage `:151-153`; set real `publisher` `:154-156`; `VSCE_PAT` secret `:157-158`; optional `OVSX_TOKEN` `:159-162`; "First release: pick `major` — 0.0.1 becomes 1.0.0" `:167-170` | ✅ PASS |
+| REL-05 AC2 | CONTRIBUTING documents manual-only CI + `/run ci` (maintainer/collaborator-only) | `CONTRIBUTING.md:63-68` — "on demand only — there are no automatic push/PR runs", Actions tab, `/run ci` "restricted to the owner and explicitly invited collaborators" | ✅ PASS |
+| REL-05 AC3 | limitations notes Intel best-effort; users still get correct x64 artifacts at runtime | `docs/limitations.md:142-147` — best-effort + "Intel users still receive the correct x64 engine natives at first run" | ✅ PASS |
+
+**Status**: ✅ 20/20 ACs covered with evidence; 0 spec-precision gaps.
+
+### Gate Check (independently re-run)
+
+- YAML parse: all four workflows parse (`ruby -ryaml`) ✅
+- Independent structural suite (written by this verifier, not the author's greps): **44/44 PASS**
+- `cd extension && npx vsce ls --no-dependencies`: README.md + CHANGELOG.md listed ✅
+- `cd extension && npm run package`: **exit 0** ✅ (built VSIX removed after verification; `*.vsix` is gitignored)
+- `cd extension && npm test`: **196/196 passed, 15 files, exit 0** — test count unchanged vs the pre-amendment record (196), correct for an amendment whose coverage matrix declares no code layer touched
+- Empirical CLI checks: `npm version major --no-git-tag-version` on a scratch copy outputs exactly `v1.0.0` (single stdout line; `${VERSION#v}` parse correct; `package-lock.json` bumped too and both files are git-added in `release.yml:96`); extension has no `preversion`/`version`/`postversion` scripts that could pollute stdout; vsce **3.9.2** `publish --help` confirms `-i, --packagePath <paths...>` and `-p, --pat <token>`; `ovsx publish [extension.vsix] -p <token>` confirmed against ovsx 1.0.2 via `npx --yes`
+
+### Discrimination Sensor (scratch-only; tree restored and verified clean)
+
+Adapted per the amendment's coverage matrix: the executable "tests" are the per-AC structural assertions; mutations target the workflow invariants the ACs pin.
+
+| # | File | Mutation | Result |
+| - | ---- | -------- | ------ |
+| A | `.github/workflows/ci.yml` | added a `push: branches: [main]` trigger under `on:` | ✅ **Killed** — REL-02 AC1 assertions fail (on-keys-exact + no-push) |
+| B | `.github/workflows/run-ci-comment.yml` | added `"CONTRIBUTOR"` to the `fromJSON` guard list | ✅ **Killed** — 4 REL-03 AC2 assertions fail (exact-list + no-untrusted-grant, ack & gate) |
+| C | `.github/workflows/release.yml` | moved the commit+tag+push step before the Marketplace publish | ✅ **Killed** — REL-04 AC2 order assertion fails (push idx 6 < publish idx 7); AC3 position check also trips |
+
+Each mutation applied alone, assertions run, then restored via `git checkout --`; `git status --porcelain` empty after each and at the end; baseline suite re-run 44/44 after final restore. **3/3 killed, 0 survived.**
+
+### Semantic Review Beyond the ACs (real-world GitHub-side hazards the structural ACs cannot see)
+
+**Findings (none violates a spec AC; ranked):**
+
+1. **[Major reliability, PLAUSIBLE — mechanism supported by documented run-level concurrency semantics; not executable locally] Any new comment on a PR cancels that PR's in-progress `/run ci` gate.** `run-ci-comment.yml:26-28` sets *workflow-level* `concurrency: run-ci-comment-pr-${{ github.event.issue.number }}` with `cancel-in-progress: true`, while the `/run ci` guards live only at *job* level (`:32-35`, `:48-51`). `issue_comment` fires for every created comment; job `if`s skip jobs but do not prevent the run from being created and entering the concurrency group, and run-level cancel-in-progress applies when the new run is queued — before job conditions evaluate. Net effect: ordinary PR discussion (any author, any body) during a running gate cancels the gate; an outside commenter can grief-cancel maintainer-started gates at will (cancellation only — no code execution, no secrets; the guard itself remains airtight for *triggering*). The header's stated intent ("a newer /run ci supersedes a still-running older one", `:25`) needs cancellation only among guarded runs. Fix direction for a follow-up task: move the concurrency block to job level on both jobs (skipped jobs never enter a concurrency group), keeping the same group key. Note the runbook's first-run sanity step (one CI dispatch) would not surface this — it needs a comment racing a live gate.
+2. **[Minor hardening, PLAUSIBLE] Cache-poisoning chain from comment-triggered gates into the privileged release gate.** `issue_comment` runs execute with `github.ref` = default branch, so a `/run ci` gate that checks out and executes untrusted PR code (`refs/pull/N/merge`) saves `actions/cache` entries (`ci.yml:61-65`, key `engine-cache-<manifest-hash>`) scoped to `main`. PR code that leaves `extension/engine-manifest.json` untouched but poisons `host/.engine-cache` contents before the post-job save publishes a trusted-key, main-scoped poisoned cache — later restored by `release.yml`'s gate, which runs with inherited `contents: write` (`release.yml:31-32`, `:42-43`) and executes the cached engine jars in tests. Narrow preconditions: a maintainer must deliberately `/run ci` a malicious PR AND the exact key must not already be cached (exact-hit skips save — so the window is essentially post-pin-bump). Hardening options: event-scoped cache key or `lookup-only` restores for comment-triggered runs.
+3. **[Minor hardening, CONFIRMED grant / minor impact] Untrusted PR code in the gate holds a token with `issues: write`.** `run-ci-comment.yml:21-23` grants workflow-level `contents: read` + `issues: write`; a called workflow's jobs receive at most — and here inherit — the caller's permissions, so PR code run by the gate (`:45-52`) can post/edit issue comments as the bot for the duration of the run. Hardening: job-level `permissions: { contents: read }` on the `gate` job. (Informational nit, no action needed: `startsWith(body, '/run ci')` also accepts e.g. `/run cix` / trailing text — trailing text looks intended, and the association guard still applies.)
+
+**Verified sound (checked, no issue):** `inputs` context is valid for both `workflow_dispatch` and `workflow_call` (REL-02 AC3's single `ref` plumbing is correct for all three callers; empty ref ⇒ checkout's default behavior). ci.yml's workflow-level concurrency group `ci-${{ inputs.ref || github.ref }}` is correctly documented (`ci.yml:32-34`) as ignored under `workflow_call` — callers own their groups (`release`: serialized no-cancel; `run-ci-comment`: per-PR) — and is coherent for direct dispatches. release.yml's git choreography is coherent: detached/branch checkout → commit → `pull --rebase` → tag → single `push origin HEAD:<ref> <tag>` (tag created after rebase points at the landing commit; gitignored build outputs `extension/host.jar`, `dist/`, `out/` keep the tracked tree clean for the rebase; the shallow default checkout still rebases the raced case since raced commits descend from the fetched tip). `vsce publish --packagePath <vsix> -p "$VSCE_PAT"` is a valid vsce 3.9.2 invocation (flags confirmed against the pinned CLI); VSIX filename convention confirmed empirically (`inflate-0.0.1.vsix`). The ack comment cannot re-trigger the workflow (GITHUB_TOKEN-created events start no runs). The `publisher` field is still the `"inflate"` placeholder — publish would fail until the runbook's step 5 is done, and that is exactly what `docs/release-checklist.md:154-156` + STATE.md Handoff `:137` document as an outstanding user step, not a defect.
+
+### Code Quality
+
+| Principle | Status |
+| --------- | ------ |
+| Minimum code / no scope creep (diff surface = exactly the spec'd workflows, listing files, docs, specs) | ✅ |
+| Surgical changes (canary diff = runner label + comment only; no shipped-code files touched) | ✅ |
+| Matches patterns (amendment sections appended to existing spec/context/tasks files; verb-first atomic commits per task) | ✅ |
+| Spec-anchored outcome check (every assertion targets the AC's precise outcome) | ✅ |
+| Coverage expectation per the amendment's matrix (static validation + packaging + content presence; no unclaimed tests — no tests added, correct for a no-code amendment) | ✅ |
+| Documented guidelines followed (`tasks.md` Execution Protocol; append-only validation.md; STATE.md decision log) | ✅ |
+
+### Accepted Residual Gaps
+
+1. **Live GitHub-side behavior is unverifiable locally** (triggers, guards, publish path, runner labels). Confirmed this is explicitly documented as a runbook step: `docs/release-checklist.md:193-194` ("Sanity-run CI once from the Actions tab — this doubles as the live verification … they cannot be exercised locally") and STATE.md AD-019 trade-off (`.specs/STATE.md:129`). First-run verification remains open by design.
+2. **Publish-succeeded/push-failed race window** in release.yml — accepted by REL-04 AC2's design (publish precedes push); recovery documented in `release.yml:7-11` header and `docs/release-checklist.md:176-183` (explicitly: do not re-run).
+3. **Publisher account + real `publisher` id + secrets** — cannot be automated; documented outstanding user steps (`docs/release-checklist.md:136-162`, STATE.md Handoff `:137`).
+
+### Requirement Traceability
+
+| Requirement | Status after verification |
+| ----------- | ------------------------- |
+| REL-01 | ✅ Verified |
+| REL-02 | ✅ Verified |
+| REL-03 | ✅ Verified (semantic follow-ups #1–#3 recommended, beyond-AC) |
+| REL-04 | ✅ Verified |
+| REL-05 | ✅ Verified |
+
+### Lessons
+
+None recorded — the policy's qualifying signals (failed/uncovered AC, surviving mutant, spec-precision gap, spec deviation, gate fail) are all absent: 20/20 ACs pass, sensor 3/3 killed, gates green. The three semantic-review findings are beyond-AC follow-up recommendations (candidate fix tasks), not lesson-qualifying verification failures; stated here per the lessons self-check so the skip is explicit, not silent.
+
+### Summary
+
+**Overall**: ✅ PASS — Ready (pending the documented user-side publisher setup and the documented first-run live verification).
+**Spec-anchored check**: 20/20 ACs matched the spec-defined outcome; 0 spec-precision gaps.
+**Gate**: structural suite 44/44; packaging exit 0 with both listing files packaged; unit 196/196.
+**Sensor**: 3 injected, 3 killed, 0 survived.
+**Follow-up recommendations (beyond-AC, non-blocking)**: (1) job-level concurrency for `run-ci-comment.yml` so unrelated PR comments can't cancel a running gate — Major reliability; (2) event-scoped or lookup-only engine cache for comment-triggered gates — Minor hardening; (3) `permissions: contents: read` on the `/run ci` gate job — Minor hardening.
+
+### Re-verification — Fix Iteration 1 (2026-07-26, commit `78d6808`)
+
+**Scope**: delta only — `.github/workflows/run-ci-comment.yml` + `.github/workflows/ci.yml` (`78d6808` "Harden the /run ci gate against comment races and untrusted-code reach", 26 insertions / 5 deletions, no other files). Independently re-inspected from the diff and the working files; a 17-assertion delta suite was written and run by this verifier, plus the original 44-assertion structural suite re-run for AC regression.
+
+**Verdict: ✅ PASS — all three findings closed; no new hazard; no AC regression.**
+
+| Finding | Fix as implemented | Closure evidence | Verdict |
+| ------- | ------------------ | ---------------- | ------- |
+| #1 Major — any comment cancels a running gate | Concurrency group is now a ternary on the exact job guard: `run-ci-comment-${{ (<3-condition guard>) && format('pr-{0}', github.event.issue.number) \|\| github.run_id }}` (`run-ci-comment.yml:31-33`) | Programmatic check: the parenthesized ternary condition, whitespace-normalized, is **string-identical** to both jobs' `if` guards (`:37-40`, `:55-58`) — grouping and job execution can never disagree. Guard-matching `/run ci` ⇒ group `pr-<N>` (newer supersedes older — the intended, now maintainer-only, cancel); every other comment (plain-issue comment, non-command body, untrusted author) ⇒ falsy `&&` chain ⇒ `\|\| github.run_id` ⇒ a unique throwaway group that can cancel nothing. Expression semantics verified: `&&` binds tighter than `\|\|`; the truthy arm `format('pr-{0}', …)` is always a non-empty string, so the `&&/\|\|` ternary idiom's falsy-arm pitfall cannot misfire; `github` context and `startsWith`/`contains`/`fromJSON`/`format` are all valid in workflow-level `concurrency` expressions; the comment body is only ever an operand of `startsWith` inside an expression (no shell, no injection surface) | ✅ CLOSED |
+| #3 Minor — untrusted code held `issues: write` | Workflow permissions dropped to `contents: read` (`:23-24`); `issues: write` moved to the ack job (`:42-43`); gate call job pinned to `permissions: contents: read` (`:61-62`) | Job-level `permissions` **replace** the workflow set: ack token = `issues: write` only — safe, ack has no checkout (asserted) and only runs `gh api` to post the comment; gate token = `contents: read` only. `jobs.<id>.permissions` on a `uses:` job is legal and caps the token passed to the called workflow — ci.yml needs only `contents: read` (checkout; setup-java/node, cache restore/save, and upload-artifact@v4 need no GITHUB_TOKEN write scopes). Untrusted PR code now runs with a read-only token | ✅ CLOSED |
+| #2 Minor — comment-gate cache writes poison the main-scoped key | Combined `actions/cache@v4` split: unconditional `actions/cache/restore@v4` (`ci.yml:64-68`) + `actions/cache/save@v4` guarded `if: ${{ !startsWith(inputs.ref, 'refs/pull/') }}` placed directly after `fetchEngine` (`ci.yml:90-96`) | `/run ci` passes `ref: refs/pull/<N>/merge` ⇒ save **skipped**; empty `ref` (direct dispatch, release.yml's gate call) ⇒ `startsWith('', 'refs/pull/') = false` ⇒ save **runs** — asserted, and the guard keys on the *ref*, not the event, so even a manual dispatch pointed at a PR-merge ref won't save. Restore/save share identical path+key (asserted); restore < fetchEngine < save ordering asserted — the saved snapshot is produced by trusted-branch code only, before any later step could touch it | ✅ CLOSED |
+
+**New-hazard sweep of the delta (checked, none found):** both files still parse (`ruby -ryaml`); original structural suite **44/44** — REL-02/REL-03 ACs unaffected (triggers, guards, checkout-ref plumbing, secret-freedom all unchanged); release.yml path unaffected (its gate call job sets no job-level permissions and inherits `contents: write` for trusted code, as before); save-step failure semantics equivalent to the old post-job save (skipped if `fetchEngine` fails — nothing to save anyway). Two cosmetic non-hazards noted: (a) on trusted runs with an already-cached key, `actions/cache/save` logs a "cache already exists / unable to reserve" warning and completes without failing (could be silenced by gating on the restore step's `cache-hit` output — optional); (b) the throwaway concurrency groups mean skipped comment-runs still appear in the Actions run list, unchanged from before.
+
+**Honest residual (Low, PLAUSIBLE, non-blocking, inherent):** the guard closes the *workflow's own* save path — the chain this verification's finding #2 described. Code execution inside a gate job could in principle still reach the cache service directly (runner-process credentials), and `EngineFetcher.ensureDownloaded` verifies cached artifacts against their *sidecar* hash, not the pinned manifest (`host/src/main/kotlin/engine/EngineFetcher.kt:47-58`), so a hand-poisoned cache entry would not be self-healing. This class is inherent to executing untrusted code in default-branch-scoped runs and is mitigated by the same human step the feature already requires: a maintainer reviews a PR before commenting `/run ci`. No further action recommended within this amendment.
+
+**Delta sensor (scratch-only; both killed, tree restored and verified clean):**
+
+| # | Mutation | Result |
+| - | -------- | ------ |
+| M-D1 | dropped the `author_association` clause from the concurrency ternary only (guard drift — would silently re-open the cancel hole for untrusted authors) | ✅ **Killed** — "ternary condition == job guard" assertion fails |
+| M-D2 | inverted the save guard (`!startsWith` → `startsWith`; only PR gates would save) | ✅ **Killed** — save-guard assertion fails |
+
+**Gate**: delta suite 17/17 · original suite 44/44 · YAML parse OK. `git status` after restore: `validation.md` is the only modified file.
+
+**Lessons**: none recorded for this iteration — no qualifying signal (no failed AC, 2/2 delta mutants killed, no spec-precision gap); the findings themselves were beyond-AC recommendations, now closed.
