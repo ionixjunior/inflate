@@ -8,10 +8,10 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/inflate/inflate.git"
+    "url": "https://github.com/ionixjunior/inflate.git"
   },
   "bugs": {
-    "url": "https://github.com/inflate/inflate/issues"
+    "url": "https://github.com/ionixjunior/inflate/issues"
   },
   "keywords": [
     "android",

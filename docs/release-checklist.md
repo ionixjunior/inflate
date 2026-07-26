@@ -34,9 +34,9 @@ comment above `tasks.shadowJar` in `host/build.gradle.kts` for the full reasonin
 rounded-square glyph), not a commissioned design asset. Replace it with real brand artwork before
 publishing to the Marketplace for real.
 
-**Publisher/repository note:** `package.json`'s `publisher: "inflate"` and the `repository`/`bugs`
-URLs (`github.com/inflate/inflate`) are placeholders pending the real Marketplace publisher account
-and repository location — update them at the same time as the icon.
+**Publisher note:** `package.json`'s `repository`/`bugs` URLs point at the real repository
+(`github.com/ionixjunior/inflate`); `publisher: "inflate"` is still a placeholder pending the real
+Marketplace publisher account — update it at the same time as the icon.
 
 ## Gate before every release
 
