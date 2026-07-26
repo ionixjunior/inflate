@@ -18,6 +18,7 @@ import { ConfigStore, PreviewConfigPatch } from './config';
 import { assembleDoctorReport, DoctorRenderTimings, formatDoctorReport } from './doctor';
 import { HostManager, HostState, buildJavaCommand } from './host';
 import { GuidedError, isGuidedError, JdkLocator } from './jdk';
+import { PHASE_PREPARING_ENGINE, PHASE_RENDERING, PHASE_STARTING_HOST, preparingEnginePhase } from './loadingPhases';
 import { PreviewPanelManager, ThemeOption } from './panel';
 import { Density, DocKind, ENGINE_PACKAGE_NAME, Orientation, parseThemeInfoList } from './protocol';
 import { defaultDeps as defaultRootsDeps, ResourceRootResolver } from './roots';
@@ -97,12 +98,15 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
    * the guided JDK setup message with download/re-check actions (P1-H AC2/AC3) instead of
    * attempting a render. Returns whether the caller may proceed to `ensureReady()`. `onPhase` (fix-
    * pack POLISH-02) mirrors the "Preparing render engine…" loading phase — including download
-   * artifact/percent — into the panel's busy indicator; omitted by callers with no specific panel
-   * (e.g. `inflate.restartHost`). */
-  async function ensureRealHostConfigured(onPhase?: (label: string) => void): Promise<boolean> {
+   * artifact/percent — into the panel's busy indicator. `docPath`, when supplied, clears that busy
+   * indicator into a settled error on failure (fix-pack POLISH-02/03 edge case: "the in-panel
+   * indicator SHALL clear to the error state, not spin forever") — omitted by callers with no
+   * specific panel (e.g. `inflate.restartHost`). */
+  async function ensureRealHostConfigured(docPath?: string, onPhase?: (label: string) => void): Promise<boolean> {
     if (isFakeHostMode) return true;
     const result = await prepareRealHost(context, output, hostManager, jdkLocator, onPhase);
     if (result.ok) return true;
+    if (docPath) panelManager.applyHostError(docPath, new Error(result.guidedMessage));
     const actions = result.downloadUrl ? ['Open Download Page', 'Re-check'] : ['Re-check'];
     void vscode.window.showWarningMessage(`Inflate: ${result.guidedMessage}`, ...actions).then((choice) => {
       if (choice === 'Open Download Page' && result.downloadUrl) {
@@ -167,7 +171,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     onDispatch: (docPath) => {
       // Every actual host dispatch (initial attempt AND the automatic retry) is "Rendering…"
       // (fix-pack POLISH-02).
-      panelManager.setBusy(docPath, 'Rendering…');
+      panelManager.setBusy(docPath, PHASE_RENDERING);
     },
     onRetry: (docPath, error) => {
       // The suppressed first failure still needs a record (fix-pack POLISH-03) — the settled
@@ -260,8 +264,8 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     hydratePanelConfig(docPath);
     // guided setup message already shown on failure; "Preparing render engine…" mirrors into the
     // panel's busy indicator via onPhase (fix-pack POLISH-02).
-    if (!(await ensureRealHostConfigured((label) => panelManager.setBusy(docPath, label)))) return;
-    panelManager.setBusy(docPath, 'Starting render host…');
+    if (!(await ensureRealHostConfigured(docPath, (label) => panelManager.setBusy(docPath, label)))) return;
+    panelManager.setBusy(docPath, PHASE_STARTING_HOST);
     await hostManager.ensureReady();
     scheduler.requestRender(docPath, 'reopen');
     void pushThemes(docPath);
@@ -402,7 +406,7 @@ async function prepareRealHost(
     return { ok: false, guidedMessage: g.message, downloadUrl: g.downloadUrl };
   }
 
-  onPhase?.('Preparing render engine…');
+  onPhase?.(PHASE_PREPARING_ENGINE);
   const manifest = loadBundledManifest(context.extensionPath);
   const hostJarPath = path.join(context.extensionPath, 'host.jar');
   const artifactManager = new ArtifactManager({
@@ -420,9 +424,8 @@ async function prepareRealHost(
       (progress) =>
         artifactManager.ensureInstalled((event) => {
           const pct = event.totalBytes > 0 ? Math.round((event.bytesDownloaded / event.totalBytes) * 100) : undefined;
-          const suffix = `${event.artifactKey}${pct !== undefined ? ` ${pct}%` : ''}`;
-          progress.report({ message: suffix });
-          onPhase?.(`Preparing render engine… ${suffix}`);
+          progress.report({ message: `${event.artifactKey}${pct !== undefined ? ` ${pct}%` : ''}` });
+          onPhase?.(preparingEnginePhase(event.artifactKey, pct));
         }),
     );
   } catch (e) {
