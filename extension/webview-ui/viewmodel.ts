@@ -29,6 +29,7 @@ export type WebviewMessage =
     }
   | { type: 'setError'; message: string; file?: string; line?: number; column?: number; warnings: WarningVM[] }
   | { type: 'setStatus'; status: string }
+  | { type: 'setBusy'; label?: string }
   | { type: 'fileGone' };
 
 export interface PanelViewModel {
@@ -46,6 +47,11 @@ export interface PanelViewModel {
   drawable?: DrawableMetaVM;
   /** True when the last render hit the 4096 px canvas cap (T52, UX-03) — stops zoom escalation. */
   canvasCapped: boolean;
+  /** True while engine prep / host start / a render is in progress (POLISH-02) — shows the loading
+   * indicator instead of a blank stage; cleared the moment a render settles (ok or error). */
+  busy: boolean;
+  /** The current loading phase text (POLISH-02, e.g. "Rendering…"), shown alongside the spinner. */
+  busyLabel?: string;
 }
 
 export const initialViewModel: PanelViewModel = {
@@ -54,13 +60,14 @@ export const initialViewModel: PanelViewModel = {
   warnings: [],
   warningsCollapsed: true,
   canvasCapped: false,
+  busy: false,
 };
 
 /** Reduce one message into the next view model (pure). */
 export function reduce(state: PanelViewModel, msg: WebviewMessage): PanelViewModel {
   switch (msg.type) {
     case 'setImage':
-      // A fresh successful render clears any error/stale/file-gone state.
+      // A fresh successful render clears any error/stale/file-gone/busy state.
       return {
         ...state,
         imageUri: msg.uri,
@@ -73,9 +80,12 @@ export function reduce(state: PanelViewModel, msg: WebviewMessage): PanelViewMod
         warnings: msg.warnings,
         drawable: msg.drawable,
         canvasCapped: msg.canvasCapped ?? false,
+        busy: false,
+        busyLabel: undefined,
       };
     case 'setError':
       // Keep the last good image (dimmed + stale) if one exists; show the error either way (UX-04).
+      // A settled error also clears busy (POLISH-03) — the loading indicator never lingers past it.
       return {
         ...state,
         error: { message: msg.message, file: msg.file, line: msg.line, column: msg.column },
@@ -83,9 +93,13 @@ export function reduce(state: PanelViewModel, msg: WebviewMessage): PanelViewMod
         fileGone: false,
         status: undefined,
         warnings: msg.warnings,
+        busy: false,
+        busyLabel: undefined,
       };
     case 'setStatus':
       return { ...state, status: msg.status };
+    case 'setBusy':
+      return { ...state, busy: true, busyLabel: msg.label };
     case 'fileGone':
       return { ...state, fileGone: true, stale: state.imageUri !== undefined };
     default:

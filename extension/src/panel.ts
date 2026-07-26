@@ -13,18 +13,24 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { PendingMessageQueue } from './messageQueue';
 import { RenderResponse, Warning } from './protocol';
 import { panelShellHtml } from './webview';
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
   ready: boolean;
-  /** The most recent message posted (or queued until the webview signals ready). */
-  lastMessage?: unknown;
+  /** Messages posted before the webview signals `ready`, flushed in original order once it does
+   * (FP-1 AC7) — replaces the single-slot `lastMessage` that used to lose every message but the
+   * last. */
+  pending: PendingMessageQueue;
   lastResponse?: RenderResponse;
   hostError?: string;
   /** True once any successful image has been shown (survives a later error as the stale render). */
   hasGoodImage: boolean;
+  /** True while engine prep / host start / a render is in progress (POLISH-02/03) — cleared the
+   * moment a render settles (ok, domain error, or host error). */
+  busy: boolean;
 }
 
 /** What the manager last applied for a document — the extension/tests' observation hook. */
@@ -40,6 +46,8 @@ export interface AppliedState {
   /** Warnings from the last render (T53 — integration tests observe the applied config through
    * these without a live DOM, e.g. a fake host echoing back the RenderRequest.config it received). */
   warnings?: Array<{ kind: string; message: string }>;
+  /** True while a loading phase is in progress for this document (POLISH-02/03 observability). */
+  busy?: boolean;
 }
 
 /** A drawable config patch from the webview toolbar (state picker / size override). */
@@ -138,7 +146,7 @@ export class PreviewPanelManager {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return undefined;
     if (entry.hostError) {
-      return { status: 'hostError', hasStaleImage: entry.hasGoodImage, errorMessage: entry.hostError };
+      return { status: 'hostError', hasStaleImage: entry.hasGoodImage, errorMessage: entry.hostError, busy: entry.busy };
     }
     const r = entry.lastResponse;
     if (!r) return undefined;
@@ -151,6 +159,7 @@ export class PreviewPanelManager {
       staticPreviewBadge: r.staticPreviewBadge,
       matchedStateItem: r.matchedStateItem,
       warnings: warningsToVm(r.warnings),
+      busy: entry.busy,
     };
   }
 
@@ -167,7 +176,7 @@ export class PreviewPanelManager {
   private handleWebviewMessage(entry: PanelEntry, docPath: string, msg: WebviewToExtensionMessage): void {
     if (msg?.type === 'ready') {
       entry.ready = true;
-      if (entry.lastMessage) void entry.panel.webview.postMessage(entry.lastMessage);
+      for (const m of entry.pending.flush()) void entry.panel.webview.postMessage(m);
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
     } else if (msg?.type === 'configChanged') {
@@ -197,7 +206,7 @@ export class PreviewPanelManager {
         localResourceRoots: [this.context.extensionUri, this.outputDir],
       },
     );
-    const entry: PanelEntry = { panel, ready: false, hasGoodImage: false };
+    const entry: PanelEntry = { panel, ready: false, hasGoodImage: false, pending: new PendingMessageQueue(), busy: false };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
     panel.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
@@ -216,6 +225,7 @@ export class PreviewPanelManager {
     if (!entry) return;
     entry.lastResponse = response;
     entry.hostError = undefined;
+    entry.busy = false;
 
     if (response.status === 'ok' && response.pngPath) {
       entry.hasGoodImage = true;
@@ -265,7 +275,18 @@ export class PreviewPanelManager {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return;
     entry.hostError = error.message;
+    entry.busy = false;
     this.post(entry, { type: 'setError', message: `Render host error: ${error.message}`, warnings: [] });
+  }
+
+  /** Signal a busy/loading phase (POLISH-02/03, e.g. "Rendering…") — cleared automatically by the
+   * next {@link applyResult} or {@link applyHostError}. Queued like any other message if the webview
+   * isn't ready yet. */
+  setBusy(docPath: string, label?: string): void {
+    const entry = this.entries.get(this.key(docPath));
+    if (!entry) return;
+    entry.busy = true;
+    this.post(entry, { type: 'setBusy', label });
   }
 
   /** Mark the document's source file as gone (deleted/renamed). */
@@ -276,11 +297,12 @@ export class PreviewPanelManager {
   }
 
   private post(entry: PanelEntry, message: unknown): void {
-    entry.lastMessage = message;
     if (entry.ready) {
       void entry.panel.webview.postMessage(message);
+    } else {
+      // Queued until the webview's 'ready' signal flushes every pending message in order.
+      entry.pending.push(message);
     }
-    // If not ready yet, the queued lastMessage is flushed on the webview's 'ready' signal.
   }
 
   /** Delete PNG files in the session output dir (activation + panel close, design component #9). */

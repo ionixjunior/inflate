@@ -88,6 +88,14 @@ export function panelShellHtml(params: PanelShellParams): string {
              display: flex; align-items: center; justify-content: center;
              background: repeating-conic-gradient(#7f7f7f 0% 25%, #bfbfbf 0% 50%) 50% / 20px 20px; }
     #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+    #busyOverlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+                   justify-content: center; gap: 8px; }
+    #busySpinner { width: 24px; height: 24px; border-radius: 50%;
+                   border: 3px solid var(--vscode-descriptionForeground, #999); border-top-color: transparent;
+                   animation: inflate-spin 0.8s linear infinite; }
+    @keyframes inflate-spin { to { transform: rotate(360deg); } }
+    #busyLabel { font-size: 12px; color: var(--vscode-foreground);
+                 background: var(--vscode-editor-background, #1e1e1e); padding: 2px 8px; border-radius: 4px; }
     #staleChip { position: fixed; top: 8px; right: 8px; background: var(--vscode-badge-background, #666);
                  color: var(--vscode-badge-foreground, #fff); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
     #errorPanel { flex: 0 0 auto; color: var(--vscode-errorForeground, #f14c4c); padding: 1em;
@@ -115,7 +123,13 @@ export function panelShellHtml(params: PanelShellParams): string {
     <span id="badge" style="display:none">static preview</span>
     <span id="matched" style="display:none"></span>
   </div>
-  <div id="stage"><img id="preview" alt="Inflate preview" style="display:none" /></div>
+  <div id="stage">
+    <img id="preview" alt="Inflate preview" style="display:none" />
+    <div id="busyOverlay" style="display:none">
+      <div id="busySpinner"></div>
+      <div id="busyLabel"></div>
+    </div>
+  </div>
   <div id="errorPanel" style="display:none"></div>
   <div id="fileGone" style="display:none">The previewed file no longer exists.</div>
   <div id="status" style="display:none"></div>

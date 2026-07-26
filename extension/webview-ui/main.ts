@@ -190,11 +190,17 @@ function paint(): void {
     if (state.imageUri) {
       img.src = state.imageUri;
       img.style.display = '';
-      img.style.opacity = state.stale ? '0.4' : '1';
+      // Dimmed while stale (a retained render after a failure) or busy (a new one in progress).
+      img.style.opacity = state.stale || state.busy ? '0.4' : '1';
     } else {
       img.style.display = 'none';
     }
   }
+
+  const busyOverlay = $('busyOverlay');
+  if (busyOverlay) busyOverlay.style.display = state.busy ? 'flex' : 'none';
+  const busyLabel = $('busyLabel');
+  if (busyLabel) busyLabel.textContent = state.busyLabel ?? '';
 
   const stale = $('staleChip');
   if (stale) stale.style.display = state.stale ? '' : 'none';

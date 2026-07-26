@@ -102,6 +102,33 @@ describe('webview view model — message contract (T37, design #9)', () => {
     expect(vm.stale).toBe(true);
     expect(vm.imageUri).toBe('img/1.png');
   });
+
+  it('setBusy shows the loading indicator with its phase label (POLISH-02)', () => {
+    expect(initialViewModel.busy).toBe(false);
+    const vm = reduce(initialViewModel, { type: 'setBusy', label: 'Rendering…' });
+    expect(vm.busy).toBe(true);
+    expect(vm.busyLabel).toBe('Rendering…');
+  });
+
+  it('setBusy without a label still shows busy (label undefined)', () => {
+    const vm = reduce(initialViewModel, { type: 'setBusy' });
+    expect(vm.busy).toBe(true);
+    expect(vm.busyLabel).toBeUndefined();
+  });
+
+  it('setImage clears busy (POLISH-02/03)', () => {
+    const busy = reduce(initialViewModel, { type: 'setBusy', label: 'Starting render host…' });
+    const vm = reduce(busy, { type: 'setImage', uri: 'img/1.png', width: 1, height: 1, warnings: [] });
+    expect(vm.busy).toBe(false);
+    expect(vm.busyLabel).toBeUndefined();
+  });
+
+  it('setError clears busy even though the last good image is retained (POLISH-03)', () => {
+    const busy = reduce(initialViewModel, { type: 'setBusy', label: 'Rendering…' });
+    const vm = reduce(busy, { type: 'setError', message: 'boom', warnings: [] });
+    expect(vm.busy).toBe(false);
+    expect(vm.busyLabel).toBeUndefined();
+  });
 });
 
 describe('webview view model — warnings strip', () => {

@@ -39,6 +39,15 @@ describe('panelShellHtml — Orientation dropdown (fix-pack POLISH-08)', () => {
   });
 });
 
+describe('panelShellHtml — busy overlay (fix-pack POLISH-02)', () => {
+  it('contains a busy overlay with a spinner and a phase label, hidden by default', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(html).toContain('<div id="busyOverlay" style="display:none">');
+    expect(html).toContain('id="busySpinner"');
+    expect(html).toContain('id="busyLabel"');
+  });
+});
+
 describe('panelShellHtml — stage containment (fix-pack POLISH-05)', () => {
   function rule(html: string, selector: string): string {
     const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`);
