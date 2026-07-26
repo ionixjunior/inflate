@@ -360,7 +360,16 @@ interface ResizeDrag {
 }
 let resizeDrag: ResizeDrag | undefined;
 
+// Belt-and-braces platform precondition (POLISH-09 AC2, AD-018): a native HTML5 image drag cancels
+// the pointer stream mid-gesture, so every gesture pointerdown suppresses the browser default and
+// captures the pointer on the stage — for both the resize and the pan branches below.
+document.addEventListener('dragstart', (e) => {
+  e.preventDefault();
+});
+
 $('stage')?.addEventListener('pointerdown', (e: PointerEvent) => {
+  e.preventDefault();
+  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   const rect = imageDisplayRect();
   const zone = rect ? edgeHitTest(e.clientX, e.clientY, rect) : null;
   if (zone && rect) {
@@ -424,6 +433,8 @@ $('stage')?.addEventListener('pointermove', (e: PointerEvent) => {
 });
 
 window.addEventListener('pointerup', (e: PointerEvent) => {
+  const stage = $('stage');
+  if (stage?.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
   if (resizeDrag) {
     const drag = resizeDrag;
     const size = draggedGhostSize(drag, e.clientX, e.clientY);
@@ -447,8 +458,10 @@ window.addEventListener('pointerup', (e: PointerEvent) => {
   dragStart = undefined;
 });
 
-window.addEventListener('pointercancel', () => {
+window.addEventListener('pointercancel', (e: PointerEvent) => {
   // Abort with no render request (FP-3 AC7).
+  const stage = $('stage');
+  if (stage?.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
   resizeDrag = undefined;
   hideGhost();
   dragStart = undefined;
