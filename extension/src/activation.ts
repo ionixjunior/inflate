@@ -95,10 +95,13 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
 
   /** Runs {@link prepareRealHost} (no-op under the fake-host test harness) and, on failure, shows
    * the guided JDK setup message with download/re-check actions (P1-H AC2/AC3) instead of
-   * attempting a render. Returns whether the caller may proceed to `ensureReady()`. */
-  async function ensureRealHostConfigured(): Promise<boolean> {
+   * attempting a render. Returns whether the caller may proceed to `ensureReady()`. `onPhase` (fix-
+   * pack POLISH-02) mirrors the "Preparing render engine…" loading phase — including download
+   * artifact/percent — into the panel's busy indicator; omitted by callers with no specific panel
+   * (e.g. `inflate.restartHost`). */
+  async function ensureRealHostConfigured(onPhase?: (label: string) => void): Promise<boolean> {
     if (isFakeHostMode) return true;
-    const result = await prepareRealHost(context, output, hostManager, jdkLocator);
+    const result = await prepareRealHost(context, output, hostManager, jdkLocator, onPhase);
     if (result.ok) return true;
     const actions = result.downloadUrl ? ['Open Download Page', 'Re-check'] : ['Re-check'];
     void vscode.window.showWarningMessage(`Inflate: ${result.guidedMessage}`, ...actions).then((choice) => {
@@ -134,6 +137,9 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     host: {
       render: (req) => hostManager.render(req),
       invalidate: (paths) => hostManager.invalidate({ paths }),
+      // Awaited before the scheduler's one automatic retry (fix-pack POLISH-03) — HostManager's own
+      // ensureReady() immediately (re)spawns a crashed host rather than waiting out its backoff timer.
+      ensureReady: () => hostManager.ensureReady(),
     },
     resolveRoots: (docPath) => {
       const info = rootsResolver.resolve(docPath);
@@ -157,6 +163,16 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     onHostError: (docPath, error) => {
       output.appendLine(`[render] ${docPath} host error: ${error.message}`);
       panelManager.applyHostError(docPath, error);
+    },
+    onDispatch: (docPath) => {
+      // Every actual host dispatch (initial attempt AND the automatic retry) is "Rendering…"
+      // (fix-pack POLISH-02).
+      panelManager.setBusy(docPath, 'Rendering…');
+    },
+    onRetry: (docPath, error) => {
+      // The suppressed first failure still needs a record (fix-pack POLISH-03) — the settled
+      // (second) failure, if any, is already logged by onHostError above.
+      output.appendLine(`[render] ${docPath} host-level failure, retrying: ${error.message}`);
     },
   });
 
@@ -226,14 +242,18 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
 
   async function openPreviewFor(doc: vscode.TextDocument): Promise<void> {
     output.appendLine(`[preview] openPreview requested for ${doc.uri.fsPath}`);
+    const docPath = doc.uri.fsPath;
     api.lastPanel = panelManager.openFor(doc);
-    hydratePanelConfig(doc.uri.fsPath);
-    if (!(await ensureRealHostConfigured())) return; // guided setup message already shown
+    hydratePanelConfig(docPath);
+    // guided setup message already shown on failure; "Preparing render engine…" mirrors into the
+    // panel's busy indicator via onPhase (fix-pack POLISH-02).
+    if (!(await ensureRealHostConfigured((label) => panelManager.setBusy(docPath, label)))) return;
+    panelManager.setBusy(docPath, 'Starting render host…');
     await hostManager.ensureReady();
-    scheduler.requestRender(doc.uri.fsPath, 'reopen');
-    void pushThemes(doc.uri.fsPath);
+    scheduler.requestRender(docPath, 'reopen');
+    void pushThemes(docPath);
     // Await the first render so callers (and the walking-skeleton test) observe a settled host.
-    await scheduler.settled(doc.uri.fsPath);
+    await scheduler.settled(docPath);
   }
 
   // Hot reload: a save re-renders the document itself and every open preview that depends on it.
@@ -350,13 +370,16 @@ export type PrepareRealHostResult = { ok: true } | { ok: false; guidedMessage: s
  * download), assembles the real `java` invocation (`buildJavaCommand`, T17) against the bundled host
  * fat-jar, and `reconfigure`s [hostManager] with it plus the real `InitializeParams`. Idempotent and
  * cheap to call again once already configured (JdkLocator caches; ArtifactManager's `.complete`
- * check short-circuits; `reconfigure` no-ops once the host has started).
+ * check short-circuits; `reconfigure` no-ops once the host has started). `onPhase` (fix-pack
+ * POLISH-02) mirrors "Preparing render engine…" — plus the artifact/percent during an actual
+ * download — into the caller's panel busy indicator, alongside the existing progress notification.
  */
 async function prepareRealHost(
   context: vscode.ExtensionContext,
   output: vscode.OutputChannel,
   hostManager: HostManager,
   jdkLocator: JdkLocator,
+  onPhase?: (label: string) => void,
 ): Promise<PrepareRealHostResult> {
   const config = vscode.workspace.getConfiguration('inflate');
   const jdkResult = jdkLocator.locate(config.get<string>('javaHome') || undefined);
@@ -366,6 +389,7 @@ async function prepareRealHost(
     return { ok: false, guidedMessage: g.message, downloadUrl: g.downloadUrl };
   }
 
+  onPhase?.('Preparing render engine…');
   const manifest = loadBundledManifest(context.extensionPath);
   const hostJarPath = path.join(context.extensionPath, 'host.jar');
   const artifactManager = new ArtifactManager({
@@ -383,7 +407,9 @@ async function prepareRealHost(
       (progress) =>
         artifactManager.ensureInstalled((event) => {
           const pct = event.totalBytes > 0 ? Math.round((event.bytesDownloaded / event.totalBytes) * 100) : undefined;
-          progress.report({ message: `${event.artifactKey}${pct !== undefined ? ` ${pct}%` : ''}` });
+          const suffix = `${event.artifactKey}${pct !== undefined ? ` ${pct}%` : ''}`;
+          progress.report({ message: suffix });
+          onPhase?.(`Preparing render engine… ${suffix}`);
         }),
     );
   } catch (e) {

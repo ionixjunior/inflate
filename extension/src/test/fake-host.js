@@ -11,6 +11,12 @@
 //                             (simulates a host that dies shortly after reaching "ready").
 //   crash-on-render         — initialize/warmup succeed; any `render` request exits(1) immediately
 //                             instead of responding.
+//   crash-on-first-render   — initialize/warmup succeed; the FIRST `render` request across the
+//                             whole test (tracked via a marker file at argv[3], since a crash spawns
+//                             a brand-new process) exits(1) immediately; every render after that —
+//                             including the respawned process's own first — succeeds normally (fix-
+//                             pack POLISH-03: proves the scheduler's one automatic retry rides out a
+//                             single transient host failure with no error ever shown).
 //   hang-on-render          — initialize/warmup succeed; any `render` request never responds
 //                             (triggers the client-side render-timeout watchdog).
 //   slow-render             — initialize/warmup succeed; any `render` request takes ~60ms before
@@ -129,11 +135,21 @@ function buildRenderResult(params) {
   };
 }
 
+const crashOnFirstRenderMarker = process.argv[3];
+
 connection.onRequest('render', (...args) => {
   const params = args[0] || {};
   process.stderr.write(`fake-host: render id=${params.id}\n`);
   if (mode === 'crash-on-render') {
     process.exit(1);
+  }
+  if (mode === 'crash-on-first-render') {
+    const alreadyCrashedOnce = crashOnFirstRenderMarker && fs.existsSync(crashOnFirstRenderMarker);
+    if (!alreadyCrashedOnce) {
+      if (crashOnFirstRenderMarker) fs.writeFileSync(crashOnFirstRenderMarker, '1');
+      process.stderr.write('fake-host: crash-on-first-render firing (first render ever)\n');
+      process.exit(1);
+    }
   }
   if (mode === 'hang-on-render') {
     return new Promise(() => {}); // never resolves — triggers the client watchdog

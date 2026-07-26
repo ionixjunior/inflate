@@ -27,20 +27,34 @@ function okResponse(id: number, deps: string[] = []): RenderResponse {
   };
 }
 
-/** A fake host that records every call and, in `manual` mode, lets a test resolve renders by id. */
+function errorResponse(id: number): RenderResponse {
+  return {
+    id,
+    status: 'error',
+    warnings: [],
+    error: { message: 'fake domain error' },
+    dependencies: [],
+    timings: { prepareMs: 0, inflateMs: 0, renderMs: 0, totalMs: 0 },
+    sessionRebuilt: false,
+  };
+}
+
+/** A fake host that records every call and, in `manual` mode, lets a test resolve/reject renders by
+ * id (fix-pack: reject simulates a host-level failure — spawn/crash/timeout — distinct from a
+ * resolved `status:'error'` domain error). */
 class FakeHost implements SchedulerHost {
   events: string[] = [];
   renderCalls: RenderRequest[] = [];
   invalidateCalls: string[][] = [];
   mode: 'immediate' | 'manual' = 'immediate';
   depsFor = new Map<number, string[]>();
-  private deferred = new Map<number, (r: RenderResponse) => void>();
+  private deferred = new Map<number, { resolve: (r: RenderResponse) => void; reject: (e: Error) => void }>();
 
   render(req: RenderRequest): Promise<RenderResponse> {
     this.renderCalls.push(req);
     this.events.push(`render:${req.id}`);
     if (this.mode === 'immediate') return Promise.resolve(okResponse(req.id, this.depsFor.get(req.id) ?? []));
-    return new Promise<RenderResponse>((resolve) => this.deferred.set(req.id, resolve));
+    return new Promise<RenderResponse>((resolve, reject) => this.deferred.set(req.id, { resolve, reject }));
   }
 
   invalidate(paths: string[]): Promise<unknown> {
@@ -50,10 +64,21 @@ class FakeHost implements SchedulerHost {
   }
 
   resolveRender(id: number, deps: string[] = []): void {
-    const r = this.deferred.get(id);
-    if (!r) throw new Error(`no deferred render for id ${id}`);
+    this.resolveRenderWith(id, okResponse(id, deps));
+  }
+
+  resolveRenderWith(id: number, response: RenderResponse): void {
+    const d = this.deferred.get(id);
+    if (!d) throw new Error(`no deferred render for id ${id}`);
     this.deferred.delete(id);
-    r(okResponse(id, deps));
+    d.resolve(response);
+  }
+
+  rejectRender(id: number, error: Error): void {
+    const d = this.deferred.get(id);
+    if (!d) throw new Error(`no deferred render for id ${id}`);
+    this.deferred.delete(id);
+    d.reject(error);
   }
 }
 
@@ -218,5 +243,108 @@ describe('RenderScheduler — refresh and per-document isolation (P1-F AC4, NFR-
     expect(byDoc.get(path.resolve(docs[0]))).toBe(1);
     expect(byDoc.get(path.resolve(docs[1]))).toBe(2);
     expect(byDoc.get(path.resolve(docs[2]))).toBe(3);
+  });
+});
+
+describe('RenderScheduler — automatic retry of a host-level failure (fix-pack POLISH-03, FP-1 AC3-AC6)', () => {
+  let host: FakeHost;
+  beforeEach(() => {
+    host = new FakeHost();
+    host.mode = 'manual';
+  });
+
+  it('retries a host-level failure of the latest request exactly once, then delivers success without ever surfacing onHostError (FP-1 AC3)', async () => {
+    const hostErrors: Error[] = [];
+    const retries: Error[] = [];
+    const { scheduler, results } = makeScheduler(host, {
+      onHostError: (_docPath, error) => hostErrors.push(error),
+      onRetry: (_docPath, error) => retries.push(error),
+    });
+    const doc = '/proj/res/layout/main.xml';
+
+    scheduler.requestRender(doc, 'save');
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1]);
+
+    host.rejectRender(1, new Error('host crashed'));
+    await tick();
+
+    // The retry re-dispatched the SAME request id — not a new one.
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1, 1]);
+    expect(retries).toHaveLength(1);
+    expect(retries[0].message).toBe('host crashed');
+    expect(hostErrors).toHaveLength(0);
+
+    host.resolveRender(1);
+    await tick();
+
+    expect(results.map((r) => r.response.id)).toEqual([1]);
+    expect(hostErrors).toHaveLength(0);
+  });
+
+  it('surfaces onHostError exactly once after the automatic retry also fails (FP-1 AC4)', async () => {
+    const hostErrors: Error[] = [];
+    const { scheduler } = makeScheduler(host, { onHostError: (_docPath, error) => hostErrors.push(error) });
+    const doc = '/proj/res/layout/main.xml';
+
+    scheduler.requestRender(doc, 'save');
+    host.rejectRender(1, new Error('crash 1'));
+    await tick();
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1, 1]); // the one retry happened
+
+    host.rejectRender(1, new Error('crash 2'));
+    await tick();
+
+    expect(hostErrors).toHaveLength(1);
+    expect(hostErrors[0].message).toBe('crash 2');
+    // No further (third) attempt was dispatched.
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1, 1]);
+  });
+
+  it('discards a stale retry failure once a newer request supersedes it — no error ever surfaced (FP-1 AC5)', async () => {
+    const hostErrors: Error[] = [];
+    const { scheduler, results } = makeScheduler(host, { onHostError: (_docPath, error) => hostErrors.push(error) });
+    const doc = '/proj/res/layout/main.xml';
+
+    scheduler.requestRender(doc, 'save'); // id 1
+    host.rejectRender(1, new Error('crash 1'));
+    await tick(); // id 1's one retry is now in flight — renderCalls: [1, 1]
+
+    scheduler.requestRender(doc, 'config'); // id 2 becomes latest while id 1's retry is still in flight
+    host.rejectRender(1, new Error('stale crash')); // the retry also fails, but id 1 is no longer latest
+    await tick();
+
+    expect(hostErrors).toHaveLength(0); // the stale failure is discarded, never surfaced (AC5)
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1, 1, 2]); // latest (id 2) dispatched instead
+
+    host.resolveRender(2);
+    await tick();
+    expect(results.map((r) => r.response.id)).toEqual([2]);
+  });
+
+  it('delivers a domain error (status: error) immediately with no retry (FP-1 AC6)', async () => {
+    const retries: Error[] = [];
+    const { scheduler, results } = makeScheduler(host, { onRetry: (_docPath, error) => retries.push(error) });
+    const doc = '/proj/res/layout/main.xml';
+
+    scheduler.requestRender(doc, 'save');
+    host.resolveRenderWith(1, errorResponse(1));
+    await tick();
+
+    expect(results.map((r) => r.response.status)).toEqual(['error']);
+    expect(host.renderCalls.map((r) => r.id)).toEqual([1]); // never retried
+    expect(retries).toHaveLength(0);
+  });
+
+  it('fires onDispatch for every actual host dispatch, including the retry (fix-pack POLISH-02)', async () => {
+    const dispatches: string[] = [];
+    const { scheduler } = makeScheduler(host, { onDispatch: (_docPath, cause) => dispatches.push(cause) });
+    const doc = '/proj/res/layout/main.xml';
+
+    scheduler.requestRender(doc, 'save');
+    expect(dispatches).toEqual(['save']);
+
+    host.rejectRender(1, new Error('crash'));
+    await tick();
+    expect(dispatches).toEqual(['save', 'save']); // the retry re-dispatches with the same cause
   });
 });

@@ -11,7 +11,11 @@
  *  - **dependency invalidation before re-render** — a dependency save invalidates the host's cached
  *    repository (with the changed paths) *before* the dependent render is dispatched;
  *  - **refresh sends the dirty buffer** — `refresh` carries the editor's current (unsaved) content as
- *    `inlineContent`; every other cause lets the host read from disk.
+ *    `inlineContent`; every other cause lets the host read from disk;
+ *  - **one automatic retry of a host-level failure** (fix-pack POLISH-03, FP-1 AC3/AC4) — a
+ *    spawn/crash/timeout failure of the document's LATEST request is re-dispatched exactly once
+ *    before `onHostError` is surfaced; a failure that is no longer the latest request (a newer one
+ *    superseded it) is discarded like any other stale response, never retried, never surfaced.
  *
  * All I/O is behind {@link SchedulerDeps} so the scheduler is unit-tested against a fake host with
  * no VS Code or JVM. The extension wires the real HostManager, ResourceRootResolver, ConfigStore,
@@ -27,6 +31,11 @@ export type RenderCause = 'save' | 'depSave' | 'config' | 'refresh' | 'reopen';
 export interface SchedulerHost {
   render(req: RenderRequest): Promise<RenderResponse>;
   invalidate(paths: string[]): Promise<unknown>;
+  /** Waits for (re)spawning the host if it isn't already ready — awaited before the one automatic
+   * retry (fix-pack POLISH-03) so the retry has a real chance to land on a live host instead of
+   * failing instantly against a host still mid-crash. Optional: a fake host with no such concept
+   * (e.g. in unit tests) can omit it and the retry dispatches immediately, as before. */
+  ensureReady?(): Promise<void>;
 }
 
 export interface SchedulerDeps {
@@ -41,8 +50,15 @@ export interface SchedulerDeps {
   readBuffer(docPath: string): string;
   /** Deliver a completed render (ok or domain-error) to the panel. */
   onResult(docPath: string, response: RenderResponse): void;
-  /** Deliver a host-level failure (crash/timeout) to the panel. Optional. */
+  /** Deliver a host-level failure (crash/timeout) to the panel — called only once the failure is
+   * settled (the automatic retry, if any, already happened). Optional. */
   onHostError?(docPath: string, error: Error): void;
+  /** A render request is actually dispatched to the host — fired for the initial attempt AND the
+   * automatic retry (fix-pack POLISH-02: drives the "Rendering…" busy phase). Optional. */
+  onDispatch?(docPath: string, cause: RenderCause): void;
+  /** A host-level failure is about to be retried (fix-pack POLISH-03) — the failed attempt itself,
+   * suppressed from the panel, still needs to be logged somewhere. Optional. */
+  onRetry?(docPath: string, error: Error): void;
   /** Per-render timeout carried in the request (default 15000). */
   timeoutMs?: number;
 }
@@ -60,6 +76,8 @@ interface DocState {
   packageName: string;
   /** Resolvers waiting for this document to become fully idle ({@link RenderScheduler.settled}). */
   idleWaiters: Array<() => void>;
+  /** Request ids that already consumed their one automatic retry (fix-pack POLISH-03). */
+  retriedIds: Set<number>;
 }
 
 /** Normalize a path for stable comparison/keys across triggers and dependency lists. */
@@ -103,6 +121,7 @@ export class RenderScheduler {
         roots: [],
         packageName: '',
         idleWaiters: [],
+        retriedIds: new Set(),
       };
       this.states.set(key, st);
     }
@@ -172,6 +191,29 @@ export class RenderScheduler {
     const invalidatePaths = [...st.pendingInvalidate];
     st.pendingInvalidate.clear();
 
+    this.dispatch(key, id, cause, invalidatePaths);
+  }
+
+  /** Re-dispatch the SAME (id, cause) after a host-level failure — the one automatic retry (fix-pack
+   * POLISH-03). Awaits {@link SchedulerHost.ensureReady} first (if provided) so the retry has a real
+   * chance to succeed rather than failing instantly against a host still mid-crash. No
+   * re-invalidation: the original dispatch already invalidated whatever was pending at request time. */
+  private retryDispatch(docKey: string, id: number, cause: RenderCause): void {
+    const st = this.states.get(docKey);
+    if (!st) return;
+    st.inFlight = true;
+    void Promise.resolve(this.deps.host.ensureReady?.())
+      .catch(() => {
+        /* ensureReady failing just means the render() call below fails immediately too — handled
+         * the same as any other retry failure. */
+      })
+      .then(() => this.dispatch(docKey, id, cause, []));
+  }
+
+  private dispatch(key: string, id: number, cause: RenderCause, invalidatePaths: string[]): void {
+    const st = this.states.get(key);
+    if (!st) return;
+
     const { roots, packageName } = this.deps.resolveRoots(key);
     st.roots = roots;
     st.packageName = packageName; // kept for observability/tests — NEVER sent over the wire, below
@@ -189,13 +231,15 @@ export class RenderScheduler {
     };
     if (cause === 'refresh') request.inlineContent = this.deps.readBuffer(key);
 
+    this.deps.onDispatch?.(key, cause);
+
     const dispatch = invalidatePaths.length > 0
       ? this.deps.host.invalidate(invalidatePaths).then(() => this.deps.host.render(request))
       : this.deps.host.render(request);
 
     dispatch.then(
       (response) => this.onResponse(key, id, response),
-      (error) => this.onFailure(key, id, error as Error),
+      (error) => this.onFailure(key, id, cause, error as Error),
     );
   }
 
@@ -214,14 +258,25 @@ export class RenderScheduler {
     this.resolveIdleIfSettled(st);
   }
 
-  private onFailure(docKey: string, id: number, error: Error): void {
+  private onFailure(docKey: string, id: number, cause: RenderCause, error: Error): void {
     const st = this.states.get(docKey);
     if (!st) return;
     st.inFlight = false;
     if (id < st.lastRequestId) {
+      // A newer request superseded this one — stale failure, never retried, never surfaced
+      // (fix-pack FP-1 AC5; same latest-wins discipline as a stale success response).
       this.pump(docKey);
       return;
     }
+    if (!st.retriedIds.has(id)) {
+      // The latest request's first host-level failure: log it and retry exactly once (FP-1 AC3).
+      st.retriedIds.add(id);
+      this.deps.onRetry?.(docKey, error);
+      this.retryDispatch(docKey, id, cause);
+      return;
+    }
+    // The retry also failed (or a host-level failure hit a request that already retried): settle
+    // in failure (FP-1 AC4).
     this.deps.onHostError?.(docKey, error);
     this.resolveIdleIfSettled(st);
   }
