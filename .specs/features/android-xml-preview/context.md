@@ -3,6 +3,7 @@
 **Gathered:** 2026-07-19
 **Spec:** `.specs/features/android-xml-preview/spec.md`
 **Status:** Ready for design — spec confirmed 2026-07-19 (assumptions reviewed; engine pinned per AD-008)
+**Amendment:** UI Polish fix-pack context gathered 2026-07-26 — see the amendment section at the end of this file.
 
 ---
 
@@ -75,3 +76,75 @@ None declined. Gray areas not explicitly asked about were converted to the Assum
 - Locale/RTL/font-scale configs (P2-O); render-in-parent context `tools:showIn` (P2-P); on-type live render (P2-Q).
 - Animation playback (P3-R); custom-view bytecode opt-in (P3-T); PNG export (P3-U).
 - Menu/preference/navigation XML previews — separate future features, out of this feature's boundary.
+
+---
+---
+
+## UI Polish Fix-Pack Context (Amendment — 2026-07-26)
+
+**Gathered:** 2026-07-26
+**Spec:** the "UI Polish Fix-Pack" amendment section in `spec.md` (POLISH-01..08, stories FP-1..FP-5)
+**Status:** Ready for tasks (design phase skipped — no architectural decisions; all changes sit
+inside existing components: `panel.ts`, `scheduler.ts`, `config.ts`, `activation.ts`,
+`webview-ui/*`)
+
+### Fix-Pack Boundary
+
+Five polish fixes to the existing preview panel: backdrop-button removal, Size-field →
+edge-drag-resize replacement, first-open loading indicator + transient-error suppression, stage
+containment (image never over toolbar), orientation dropdown. Extension/webview only — no host
+(Kotlin), protocol, or corpus changes. The v1 scope and its verified requirements are not re-opened.
+
+### Implementation Decisions
+
+#### Backdrop button (user question 1)
+
+- Findings presented: checkerboard = transparency indicator (user's own screenshot shows the widget
+  layout's transparent window background through it); toggle was CSS-only and its state was never
+  persisted (dead ConfigStore plumbing).
+- **User decision: remove the button, keep the checkerboard permanently.** Remove the dead plumbing
+  end-to-end; no migration for previously persisted `backdrop` values (ignored on read).
+
+#### Size field → drag-to-resize (user question 2)
+
+- Findings presented: `sizeDp` is consumed only by the drawable/nine-patch renderers — layouts ignore
+  it (canvas = device × orientation × density), which is why it "didn't work"; the wire already
+  carries plain `widthDp`/`heightDp`, so arbitrary sizes need zero host changes.
+- **User decision: remove the field and implement edge-drag resize for BOTH kinds** — drawables
+  re-render via `drawable.sizeDp`; layouts re-render at a custom device size, with the Device
+  dropdown showing a transient selected "Custom (W×H dp)" entry; picking a preset snaps back.
+
+#### First-open feedback (user request 3, no gray area — behavior fully described by user)
+
+- Loading indicator while the operation is working (downloading dependencies, starting host,
+  rendering); error only if the operation finishes with a problem. Formalized as: phase-labelled
+  in-panel spinner; exactly one automatic retry for host-level failures of the latest request; domain
+  errors shown immediately; all failures logged to the output channel.
+
+#### Containment (user request 4) and Orientation dropdown (user request 5)
+
+- Clear defect / clear request — no discussion needed. Containment via app-shell CSS (body no-scroll,
+  toolbar fixed, stage clipped, existing pan/zoom reaches everything). Orientation becomes a
+  two-option dropdown (Portrait default), reusing the existing `configChanged{orientation}` path.
+
+#### Agent's Discretion
+
+- Resize handle zone width (8 px), clamps (16 dp floor, 4096 px cap), ghost-outline styling, spinner
+  visuals/phase strings, "Custom (W×H dp)" label format, how the webview learns docKind (via
+  `setConfig` hydration). All logged as assumptions in the spec amendment.
+
+#### Declined / Undiscussed Gray Areas → Assumptions
+
+- None declined; remaining defaults are recorded in the spec amendment's Assumptions & Open
+  Questions table.
+
+### Specific References
+
+- User screenshot (2026-07-26): widget layout preview where the transformed image paints over the
+  Theme/Orientation/Size controls — the POLISH-05 defect and the transparency-checkerboard evidence.
+- "Like the device option" — Orientation dropdown should match the Device `<select>` pattern.
+- Android Studio's resizable preview — the interaction model for edge-drag resize.
+
+### Deferred Ideas
+
+- None — discussion stayed within the fix-pack scope.

@@ -10,8 +10,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/android-xml-preview/design.md`
 **Spec**: `.specs/features/android-xml-preview/spec.md`
-**Status**: Approved (user, 2026-07-19) — **IN EXECUTION**
-**Date**: 2026-07-19
+**Status**: v1 (T1–T60 + T38b + fix loop + AD-016) COMPLETE & VERIFIED 2026-07-20 · **UI Polish
+fix-pack (T61–T68)**: Draft — awaiting user approval, see the amendment section at the end of this
+file
+**Date**: 2026-07-19 (v1) · 2026-07-26 (fix-pack amendment)
 
 **Execution progress** (orchestrator-maintained):
 - ✅ **Phase 1 (M0), T1–T9** — complete 2026-07-19. Commits 857a4b8…0fb303c. M0 gate PASSED (architecture validated); item 4 fallback → AD-013. Timings: cold 1956 ms / warm 30 ms / rebuild 9 ms; engine download 159.9 MB.
@@ -1706,3 +1708,395 @@ Diagram arrows were generated from the `Depends on` fields (same source of truth
 | T60 | packaging config | none | none (build + smoke) | ✅ |
 
 No ❌ VIOLATIONS — every code-producing task co-locates its required tests; `Tests: none` appears only on matrix-"none" layers (fixtures, docs, CI/packaging config, build config).
+
+---
+---
+
+## UI Polish Fix-Pack Tasks (Amendment — 2026-07-26)
+
+> Follow-up fixes to the delivered v1 (NOT a new feature). The **Execution Protocol at the top of
+> this file applies unchanged** (tlc-spec-driven Execute flow, per-task gate, atomic verb-first
+> commit per task, always-on Verifier). Task numbering continues the feature's sequence: **T61–T68**,
+> **phases 11–14**. Verifier output is **appended to `validation.md` as a dated fix-pack section** —
+> the v1 PASS record there is never rewritten.
+
+**Spec**: the "UI Polish Fix-Pack" amendment section in `spec.md` (POLISH-01..08, stories FP-1..FP-5)
+**Context**: the "UI Polish Fix-Pack Context" amendment section in `context.md` (design phase
+skipped — no architectural decisions; every change follows an existing component pattern)
+**Status**: Draft (awaiting user approval)
+
+### Test Coverage Matrix (fix-pack)
+
+> Generated from codebase, project guidelines, and spec — confirm before Execute. Guidelines found:
+> `CONTRIBUTING.md` (gate table), project convention from `.specs/STATE.md` ("`main.ts` only
+> exercised via integration"; webview pure logic kept DOM-free for vitest). Sampled:
+> `extension/webview-ui/*.test.ts`, `extension/src/*.test.ts`,
+> `extension/src/test/integration/*.test.ts`.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Webview pure logic (`toolbar.ts`, `viewmodel.ts`, `viewport.ts`) | unit | All branches; 1:1 with the spec ACs each function implements; every listed edge case (clamps, cancel, hit-zones) | `extension/webview-ui/*.test.ts` | `cd extension && npm test` |
+| Extension modules (`panel.ts`, `config.ts`, `scheduler.ts`) | unit | All branches; 1:1 spec ACs (queue order, retry counts, suppression, custom-device mapping) | `extension/src/*.test.ts` | `cd extension && npm test` |
+| Extension↔webview loop (`activation.ts` wiring, message contract) | integration | Happy + failure path for each changed flow, driven via fake host + `deliverWebviewMessage` | `extension/src/test/integration/*.test.ts` | `cd extension && npm run test:integration` |
+| `shellHtml` markup/CSS + `main.ts` DOM glue | unit (string-level structural invariants) + integration (message flows); visual outcome additionally verified by manual UAT | Elements present/absent asserted; containment CSS rules asserted as strings; gesture math lives in `viewport.ts` (unit) so glue stays thin | `extension/src/webview.test.ts`, integration suites | `cd extension && npm test && npm run test:integration` |
+| Host (Kotlin) / corpus | none — untouched by this fix-pack | — | — | not in gates (no host/protocol change; corpus configs unaffected) |
+
+### Gate Check Commands (fix-pack)
+
+> Generated from codebase (`extension/package.json` scripts, `CONTRIBUTING.md`) — confirm before
+> Execute.
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | After tasks with unit tests only | `cd extension && npm run build && npm test` |
+| Full | After tasks touching `shellHtml`/`main.ts`/activation wiring or with integration tests | `cd extension && npm run build && npm test && npm run test:integration` |
+| Build | After the final task | same as Full (host/corpus untouched) |
+
+### Execution Plan (fix-pack)
+
+Phases are ordered and run sequentially — each phase completes before the next begins, and tasks
+within a phase execute in order. 8 tasks → single batch, executed inline (no sub-agents).
+
+**Phase 11: Toolbar simplification**
+
+```
+T61 → T62
+```
+
+**Phase 12: Stage containment**
+
+```
+T63
+```
+
+**Phase 13: First-open feedback**
+
+```
+T64 → T65
+```
+
+**Phase 14: Drag-to-resize**
+
+```
+T66 → T67 → T68
+```
+
+### Task Breakdown (fix-pack)
+
+#### T61: Remove the Backdrop toggle and its plumbing
+
+**What**: Delete the Backdrop button and every trace of the backdrop state; the stage background is
+permanently the checkerboard.
+**Where**: `extension/webview-ui/toolbar.ts` (drop `Backdrop`, `toggleBackdrop`, `backdropCss`'s
+solid branch — keep/inline the checkerboard CSS constant; drop `ToolbarState.backdrop`),
+`extension/webview-ui/main.ts` (backdropToggle click handler, `setConfig` backdrop handling),
+`extension/src/panel.ts` (`shellHtml` button, `HydratedConfig.backdrop`), `extension/src/config.ts`
+(`Backdrop` type, `StoredPreviewConfig.backdrop`, `PreviewConfigPatch.backdrop`),
+`extension/src/activation.ts` (`hydratePanelConfig` backdrop field) + their tests
+(`toolbar.test.ts`, `config.test.ts`, `webview.test.ts`, `panel.test.ts` as applicable).
+**Depends on**: None
+**Reuses**: existing checkerboard CSS value from `backdropCss`
+**Requirement**: POLISH-01
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `shellHtml` contains no `backdropToggle`; `#stage` background is the checkerboard
+      (static CSS or one constant — no toggle path)
+- [ ] `grep -ri backdrop extension/src extension/webview-ui` returns no live code hits (docs/comments
+      about the removal are fine)
+- [ ] Previously persisted configs with a `backdrop` key still load (ignored field — covered by a
+      config.test case reading a stored object containing `backdrop`)
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+- [ ] Test count does not drop except tests that asserted the removed toggle (each removal named in
+      the commit message; no unrelated test deleted/weakened)
+
+**Tests**: unit
+**Gate**: quick
+
+---
+
+#### T62: Replace the Orientation button with a dropdown
+
+**What**: Orientation becomes a two-option `<select>` (Portrait/Landscape, default Portrait) using
+the same pattern as the Device picker; the toggle button and `toggleOrientation` go away.
+**Where**: `extension/webview-ui/toolbar.ts` (remove `toggleOrientation`; keep
+`buildOrientationChanged`), `extension/src/panel.ts` (`shellHtml`: `<select id="orientationPicker">`
+replacing the button), `extension/webview-ui/main.ts` (populate options in `paintToolbar`, `change`
+handler replacing the click handler) + `toolbar.test.ts`, `webview.test.ts`.
+**Depends on**: None (ordered after T61 to avoid same-file churn)
+**Reuses**: Device picker populate/sync pattern in `paintToolbar` (`main.ts:147-156`)
+**Requirement**: POLISH-08
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `shellHtml` has `orientationPicker` `<select>` and no `orientationToggle` button
+- [ ] Options are exactly Portrait and Landscape (wire values `portrait`/`landscape` unchanged);
+      unconfigured file shows Portrait (FP-4 AC2)
+- [ ] Picking an option emits `buildOrientationChanged` (existing persist/re-render/restore path
+      untouched — hydration selects the stored value)
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit
+**Gate**: quick
+
+---
+
+#### T63: Contain the preview inside the stage (app-shell CSS)
+
+**What**: Restructure `shellHtml` CSS so the body never scrolls, the toolbar is always visible, and
+the (CSS-transformed) image clips at the stage bounds instead of painting over the toolbar.
+**Where**: `extension/src/panel.ts` (`shellHtml` `<style>` block: `html,body{height:100%;
+overflow:hidden}`, body flex column; `#toolbar{flex:0 0 auto}` with opaque background; `#stage{flex:1
+1 0; min-height:0; overflow:hidden; position:relative}`; `#errorPanel`/`#warnings` strips get
+`max-height` + `overflow-y:auto`) + string-level invariants in `extension/src/webview.test.ts`.
+**Depends on**: None
+**Reuses**: existing pan/zoom (`clampPan` already bounds panning — behavior unchanged)
+**Requirement**: POLISH-05
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Unit assertions: `#stage` rule contains `overflow: hidden`; body rule prevents page scroll;
+      toolbar rule keeps it in normal flow above the stage with an opaque background
+- [ ] Existing integration suites (walking skeleton, config flows) still pass — full gate:
+      `cd extension && npm run build && npm test && npm run test:integration`
+- [ ] Manual UAT note recorded in the commit body: tall layout + narrow panel + zoom/pan → image
+      clips at stage, toolbar clickable (per FP-2's Independent Test)
+
+**Tests**: unit (string invariants) + existing integration
+**Gate**: full
+
+---
+
+#### T64: Panel busy state + ordered pre-ready message queue
+
+**What**: A `setBusy` message end-to-end (manager API → webview spinner/label) and a real FIFO queue
+for messages posted before the webview is ready (today: single `lastMessage` slot loses earlier
+messages).
+**Where**: `extension/src/panel.ts` (`setBusy(docPath, label?)`; replace `lastMessage` with a pending
+message array flushed in order on `ready`; expose busy in `AppliedState` for observability),
+`extension/webview-ui/viewmodel.ts` (`{type:'setBusy'; label?}` in `WebviewMessage` + reducer: busy
+set/cleared; `setImage`/`setError` clear busy), `extension/webview-ui/main.ts` + `shellHtml`
+(spinner element + phase label painted from the model, over the stage; last-good image stays dimmed
+behind it) + `panel.test.ts` (webview-ui), `webview.test.ts`, viewmodel reducer tests.
+**Depends on**: None
+**Reuses**: existing `setStatus` reducer/message plumbing as the pattern; `#status` styling
+**Requirement**: POLISH-02, POLISH-04
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Posting N messages before `ready` delivers all N in order after `ready` (unit-proved; FP-1 AC7)
+- [ ] Reducer: `setBusy{label}` shows busy; `setImage` and `setError` clear it (all branches)
+- [ ] Shell contains the spinner/label elements; `main.ts` paints them from the model
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit
+**Gate**: quick
+
+---
+
+#### T65: Wire loading phases, transient-error suppression, and one automatic retry
+
+**What**: The scheduler retries a host-level failure of the latest request exactly once and only
+surfaces `onHostError` when settled-in-failure; activation feeds phase labels ("Preparing render
+engine…" + download %, "Starting render host…", "Rendering…") into `setBusy` and clears busy on
+outcomes. Domain errors are delivered immediately, never retried.
+**Where**: `extension/src/scheduler.ts` (`onDispatch?(docPath, cause)` dep; per-doc `retried` flag in
+the pump/failure path — host-failure of the latest id re-dispatches once before `onHostError`),
+`extension/src/activation.ts` (`prepareRealHost` progress → `panelManager.setBusy` incl. download %;
+busy around `ensureReady()`; `onDispatch` → "Rendering…"; `onResult`/`onHostError` clear busy; every
+failed attempt logged to the output channel), `extension/src/test/fake-host.js` (new
+`crash-on-first-render` mode: fail the first render RPC, succeed afterwards) +
+`scheduler.test.ts`, new/extended integration test (open preview under `crash-on-first-render` →
+settles with an image and NO error state ever applied; under `crash-on-render` → exactly 2 attempts
+then error state).
+**Depends on**: T64
+**Reuses**: scheduler latest-wins id discipline (retry result must obey staleness rules);
+`ensureInstalled` progress callback already used by the notification toast
+**Requirement**: POLISH-02, POLISH-03
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Unit: host-failure → exactly one retry → success delivered, `onHostError` never called (FP-1
+      AC3); retry also fails → `onHostError` called once after 2 attempts (FP-1 AC4); newer request
+      during retry → latest-wins, no error painted for the stale failure (FP-1 AC5); domain error →
+      delivered immediately, no retry (FP-1 AC6)
+- [ ] Integration: `crash-on-first-render` open settles ok with `lastApplied.status === 'ok'` and no
+      intermediate error application; failed attempt visible in output-channel log
+- [ ] Gate check passes: `cd extension && npm run build && npm test && npm run test:integration`
+
+**Tests**: unit + integration
+**Gate**: full
+
+---
+
+#### T66: Remove the Size field; add pure resize math
+
+**What**: Drop the Size input (and its parse/emit path); add the DOM-free helpers the drag gesture
+needs: edge hit-testing and displayed-px → dp conversion with clamps.
+**Where**: `extension/webview-ui/toolbar.ts` (remove `sizeText`, `parseSizeOverride`, size handling
+in `buildConfigChanged` — it emits states only; keep `drawable.sizeDp` in the message type for the
+drag path), `extension/src/panel.ts` (`shellHtml`: remove the Size label/input),
+`extension/webview-ui/main.ts` (remove `sizeInput` handling/`emitConfig` size path),
+`extension/webview-ui/viewport.ts` (add `edgeHitTest(x, y, imageRect, band=8)` →
+`'right'|'bottom'|'corner'|null`; `dragSizeToDp(startDp, startDisplayPx, draggedDisplayPx, {densityDpi,
+pixelScale})` → `{w,h}` integer dp clamped to [16 dp, 4096 px]) + `toolbar.test.ts`,
+`viewport.test.ts`.
+**Depends on**: None (ordered after Phase 11 toolbar edits)
+**Reuses**: `clampZoomPercent`/canvas-cap constants in `viewport.ts`
+**Requirement**: POLISH-06, POLISH-07 (math)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] No `sizeInput` in shell; no `parseSizeOverride` export; `buildConfigChanged` emits states only;
+      State picker behavior unchanged (existing tests still green)
+- [ ] `edgeHitTest`/`dragSizeToDp` all-branch tested incl. clamps (16 dp floor, 4096 px cap at
+      density × pixelScale) and proportional conversion through zoom
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit
+**Gate**: quick
+
+---
+
+#### T67: Custom device size in ConfigStore + Device picker "Custom" entry
+
+**What**: A layout's dragged size becomes a per-file custom device (`{id:'custom', label:'Custom
+(W×H dp)', widthDp, heightDp}`); the Device dropdown shows it as a selected transient entry; picking
+a preset discards it. The webview learns the document kind via hydration so a drag can route to
+`sizeDp` (drawable) vs custom size (layout).
+**Where**: `extension/src/config.ts` (`PreviewConfigPatch.customSize?: {w,h}` → maps to the custom
+`DevicePreset` object, `sizeBucket` derived from width like the presets, `defaultDensity` = current
+density; a `deviceId` patch replaces/clears custom), `extension/src/panel.ts` (`ConfigPatch.customSize`;
+`HydratedConfig` gains `docKind` and optional `customSize`), `extension/src/activation.ts`
+(`hydratePanelConfig` passes `docKind` via `classify` + custom size; `onConfigChanged` forwards
+`customSize`), `extension/webview-ui/toolbar.ts` (`devicePickerOptions(custom?)` → presets + selected
+"Custom (W×H dp)" when active), `extension/webview-ui/main.ts` (`setConfig` stores docKind/custom;
+`paintToolbar` renders the custom option) + `config.test.ts`, `toolbar.test.ts`.
+**Depends on**: T66
+**Reuses**: `DEVICE_PRESETS` shape (`config.ts:35-41`); wire already carries the full device object
+(`protocol.ts` `DevicePreset`, host `Dto.kt` reads `widthDp`/`heightDp` — no protocol change)
+**Requirement**: POLISH-07 (extension side, FP-3 AC5/AC6 + persistence)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `configStore.update(doc, {customSize})` yields `preview.device` = custom preset (persisted,
+      restored by `get`); subsequent `{deviceId}` patch returns to the preset and drops custom
+- [ ] `devicePickerOptions` includes the selected Custom entry only while active (label format
+      `Custom (411×600 dp)`); picker tests cover both states
+- [ ] `HydratedConfig` carries `docKind` (layout/drawable classification) — unit-covered
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit
+**Gate**: quick
+
+---
+
+#### T68: Webview edge-drag gesture, ghost outline, end-to-end resize
+
+**What**: Pointer glue in the webview: resize cursor + drag start in the 8 px edge band (pan
+suppressed there), ghost outline during drag, one `configChanged` on pointerup routed by docKind
+(`drawable.sizeDp` vs `customSize`), abort on pointercancel/Esc, no affordance without an image.
+**Where**: `extension/webview-ui/main.ts` (pointer handlers using T66's `edgeHitTest`/`dragSizeToDp`;
+ghost element painting; routing by hydrated docKind), `extension/src/panel.ts` (`shellHtml`: ghost
+element + cursor styles), `extension/src/webview.test.ts` (structural invariants), integration test
+(fake host echoes config: deliver a layout `configChanged{customSize}` → next `RenderRequest.config.device`
+is the custom preset & `configStore` shows `device.id === 'custom'`; deliver a drawable
+`configChanged{drawable:{states,sizeDp}}` → request carries `sizeDp` — extending the existing
+config-flow integration suite).
+**Depends on**: T66, T67
+**Reuses**: existing pointer pan handlers in `main.ts:301-322` (resize takes precedence in the edge
+band); `deliverWebviewMessage` integration pattern
+**Requirement**: POLISH-07 (FP-3 AC2/AC3/AC4/AC7/AC8)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Gesture math delegated to T66 helpers (glue stays thin per project convention); ghost shown only
+      during drag; exactly one `configChanged` per completed drag; cancel emits nothing
+- [ ] No resize affordance when no image is displayed (FP-3 AC8 — model-driven, unit-covered where
+      pure)
+- [ ] Integration: both routing paths land in the fake host's echoed `RenderRequest.config` (custom
+      device for layout, `sizeDp` for drawable)
+- [ ] Manual UAT note in commit body: drag corner on a real layout → "Custom (W×H dp)" appears,
+      re-render at new size; preset pick snaps back (per FP-3's Independent Test)
+- [ ] Gate check passes: `cd extension && npm run build && npm test && npm run test:integration`
+
+**Tests**: unit + integration
+**Gate**: full
+
+### Phase Execution Map (fix-pack)
+
+```
+Phase 11 → Phase 12 → Phase 13 → Phase 14
+
+Phase 11:  T61 ──→ T62
+Phase 12:  T63
+Phase 13:  T64 ──→ T65
+Phase 14:  T66 ──→ T67 ──→ T68
+```
+
+Execution is strictly sequential — 8 tasks total → **single batch, inline** (≤ ~8: no sub-agent
+offer). After T68's commit, the always-on **Verifier** runs (author ≠ verifier): spec-anchored
+outcome check + discrimination sensor → results **appended to `validation.md`** as a dated "UI
+Polish Fix-Pack Verification" section; gaps become fix tasks (bounded 3 iterations). The v1 PASS
+record in `validation.md` is never modified.
+
+### Task Granularity Check (fix-pack)
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T61: Remove backdrop | 1 concern (one state field's full removal) across the files that reference it | ✅ Granular (cohesive) |
+| T62: Orientation dropdown | 1 control swap | ✅ Granular |
+| T63: Containment CSS | 1 style block | ✅ Granular |
+| T64: Busy state + ready queue | 1 message type + 1 queue fix (same delivery path) | ✅ Granular (cohesive) |
+| T65: Phases/suppression/retry | 1 behavior (settled-error delivery) across scheduler+activation | ✅ Granular (cohesive) |
+| T66: Size removal + math | 1 removal + 2 pure functions | ✅ Granular (cohesive) |
+| T67: Custom device config | 1 config concept | ✅ Granular |
+| T68: Drag gesture | 1 gesture (glue only, math in T66) | ✅ Granular |
+
+### Diagram-Definition Cross-Check (fix-pack)
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T61 | None | Phase 11 start | ✅ Match |
+| T62 | None (ordered after T61) | T61 → T62 (ordering only) | ✅ Match |
+| T63 | None | Phase 12 start | ✅ Match |
+| T64 | None | Phase 13 start | ✅ Match |
+| T65 | T64 | T64 → T65 | ✅ Match |
+| T66 | None (ordered after Phase 11) | Phase 14 start | ✅ Match |
+| T67 | T66 | T66 → T67 | ✅ Match |
+| T68 | T66, T67 | T66 → T67 → T68 | ✅ Match |
+
+No task depends on a later phase; arrows point backward/within phase only.
+
+### Test Co-location Validation (fix-pack)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T61 | webview pure + extension modules + shellHtml | unit (+ string invariants) | unit | ✅ OK |
+| T62 | webview pure + shellHtml + main.ts glue | unit (glue via existing integration) | unit | ✅ OK |
+| T63 | shellHtml CSS | unit string invariants + existing integration + manual UAT | unit + integration | ✅ OK |
+| T64 | extension panel + webview pure + shellHtml | unit | unit | ✅ OK |
+| T65 | scheduler + activation wiring + fake host | unit + integration | unit + integration | ✅ OK |
+| T66 | webview pure + shellHtml | unit | unit | ✅ OK |
+| T67 | config + panel + toolbar pure | unit | unit | ✅ OK |
+| T68 | main.ts glue + integration loop | integration (glue) + unit (pure parts) | unit + integration | ✅ OK |
+
+No `Tests: none` entries; no deferrals — every task verifies the code it changes (T62's `main.ts`
+glue is exercised by the existing config-flow integration suites that already drive the toolbar path,
+and its logic lives in unit-tested `toolbar.ts` builders).

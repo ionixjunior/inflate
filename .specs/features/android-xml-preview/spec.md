@@ -1,7 +1,10 @@
 # Inflate — Android XML Preview for VS Code: Specification
 
-**Feature**: android-xml-preview · **Status**: Draft for confirmation · **Date**: 2026-07-19
+**Feature**: android-xml-preview · **Status**: v1 confirmed & verified (`validation.md` PASS) · **Date**: 2026-07-19
 **Scope tier**: Complex (new domain, multi-component, cross-ecosystem)
+**Amendment**: UI Polish fix-pack (2026-07-26, POLISH-01..08, stories FP-1..FP-5) — see the
+[amendment section](#ui-polish-fix-pack-amendment--2026-07-26) at the end of this file. The v1
+content above it is the verified baseline and is not re-opened.
 
 ---
 
@@ -509,3 +512,256 @@ Single pinned matrix per extension release: {Paparazzi, layoutlib, framework-res
 - [ ] Every drawable type in FR-3 opens and renders from the gallery fixture; selector states switch correctly via the picker.
 - [ ] Warm-loop latency targets of NFR-01 met at p90 on a base Apple-Silicon machine.
 - [ ] Zero VS Code hangs/crashes attributable to host failures across the corpus + kill-the-host chaos test.
+
+---
+---
+
+## UI Polish Fix-Pack (Amendment — 2026-07-26)
+
+> Follow-up fixes to the delivered v1 (NOT a new feature). Requirement IDs `POLISH-01..08` and
+> stories `FP-1..FP-5` extend the v1 sets without collision; tasks continue the feature numbering as
+> **T61–T68** (phases 11–14) in `tasks.md`. Verifier output is appended to `validation.md` as a
+> dated fix-pack section — the v1 PASS record above it is never rewritten.
+
+### Problem Statement
+
+First real-world use of the v1 preview panel surfaced five UX defects: a confusing Backdrop button, a
+Size field that silently does nothing for layouts, a transient red error flash on first open, the
+rendered image painting **over** the toolbar when it overflows, and an orientation control with no
+visible state. This fix-pack polishes the preview panel's toolbar and viewport without touching the
+render host or the wire protocol.
+
+**Investigated root causes (2026-07-26, code-verified):**
+
+- **Backdrop** toggles the stage between checkerboard (transparency indicator) and a solid editor
+  background; CSS-only. Its state was never persisted (dead ConfigStore plumbing — the webview never
+  sends a backdrop change). User decision: remove the button, keep the checkerboard permanently.
+- **Size** maps to `RenderRequest.config.drawable.sizeDp`, consumed **only** by
+  `DrawableRenderer`/`NinePatchRenderer` — layouts ignore it entirely (canvas = device preset ×
+  orientation × density). User decision: remove the field, add drag-to-resize for both document
+  kinds. Feasible with zero host changes: the wire carries plain `widthDp`/`heightDp` numbers.
+- **Red flash on first open**: the webview contract has `setStatus` but no extension code ever sends
+  it, so the panel is blank during the multi-second first-open pipeline (JDK detect → engine
+  check/download → JVM host spawn → first render incl. session build); any transient failure paints
+  `#errorPanel` red. The scheduler has **no retry** — the observed "renders by itself a few seconds
+  later" is an accidental second render (e.g. config-hydration event). Related latent bug: the panel
+  queues only the **last** pre-ready message (`PanelEntry.lastMessage` is a single slot), so earlier
+  messages (e.g. `setConfig` hydration) are lost when the webview loads slowly.
+- **Image over toolbar**: `#preview` is CSS-transformed (`translate(pan) scale(zoom)`) inside
+  `#stage`, which has `min-height: 60vh` but **no `overflow: hidden`**; the toolbar creates no
+  stacking context. Tall images overflow the body (page scrollbar) and the transformed image paints
+  over the toolbar.
+- **Orientation** is a `<button>` that flips portrait↔landscape with no visible current state.
+
+### Goals (fix-pack)
+
+- [ ] The preview panel never paints render output outside its stage; the toolbar is always visible
+      and operable at any panel size, zoom, and pan.
+- [ ] First open shows an in-panel loading indicator with phase text; a red error appears only when
+      the operation truly ends in failure.
+- [ ] The preview is resizable by dragging its edges — drawables re-render at the dragged dp size,
+      layouts re-render at a custom device size — replacing the Size field.
+- [ ] Orientation is a dropdown (Portrait/Landscape, default Portrait); the Backdrop button is gone.
+
+### Out of Scope (fix-pack)
+
+| Feature | Reason |
+| ------- | ------ |
+| Host (Kotlin) or wire-protocol changes | All five fixes are extension/webview-side; `widthDp`/`heightDp`/`sizeDp` already flow |
+| Left/top edge drag handles | Right/bottom/corner mirrors Android Studio; keeps gesture disambiguation simple |
+| Touch/pinch gestures | v1 targets desktop VS Code; wheel/pointer only |
+| Webview screenshot/visual-regression infra | No such harness exists; CSS outcomes get string-level invariants + manual UAT |
+| Replacing the download notification toast | The panel additionally mirrors progress; the VS Code notification stays |
+| New device presets | Preset list unchanged; only a transient "Custom" entry is added while a drag-size is active |
+| Re-opening any v1 requirement | The v1 spec/validation record stands; this amendment covers only POLISH-01..08 |
+
+### Assumptions & Open Questions (fix-pack)
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | --------------- | --------- | ---------- |
+| Backdrop button fate | Remove button + all backdrop plumbing; stage permanently checkerboard | User decision after findings (transparency indicator stays) | y |
+| Size field fate | Remove; drag-to-resize for both drawables (sizeDp) and layouts (custom device size) | User decision ("resize when the mouse skirts the edges") | y |
+| Resize handle zones | 8 px inner band on right edge, bottom edge, and bottom-right corner of the displayed image | Mirrors common preview tools; avoids colliding with pan-drag | n (agent default, logged) |
+| Resize clamps | min 16×16 dp; max clamped so rendered px ≤ 4096 (existing canvas cap) at current density × pixelScale | Prevents degenerate/oversized canvases; reuses the UX-03 cap | n (agent default, logged) |
+| Live drag behavior | Ghost outline during drag; exactly one re-render on pointerup; pointercancel/Esc aborts with no render | Avoids render storms | n (agent default, logged) |
+| Custom device entry | `{id:'custom', label:'Custom (W×H dp)'}`; picking any preset discards the custom size; custom size persists per file (CFG-05 pattern) | Consistent with existing per-file persistence | n (agent default, logged) |
+| Retry policy | Host-level failures (spawn/crash/timeout) of the **latest** request retry automatically exactly once; domain errors (`status:'error'`) never retry and are shown when delivered; every failed attempt is logged to the output channel | Deterministic version of the accidental recovery the user observed; domain errors are real content errors | n (agent default, logged) |
+| Loading indicator visuals | Small CSS spinner + phase label, theme-colored, replacing the blank stage area (last-good image stays dimmed behind it when present) | Minimal, no new assets | n (agent default, logged) |
+| Loading phases | "Preparing render engine…" (+ artifact + % during download), "Starting render host…", "Rendering…" | Matches the real pipeline stages in `prepareRealHost`/`openPreviewFor` | n (agent default, logged) |
+| Orientation labels | Dropdown shows "Portrait"/"Landscape"; wire values stay `portrait`/`landscape`; default Portrait | User asked for droplist w/ portrait default; matches Device picker style | y |
+| Old persisted `backdrop` fields | Left in workspaceState, ignored on read (no migration) | Harmless; ConfigStore reads named fields only | n (agent default, logged) |
+| Webview learns docKind | Via the `setConfig` hydration message (extension classifies; kind is stable per document) | Needed to route a drag to `sizeDp` vs custom device size | n (agent default, logged) |
+
+**Open questions:** none — all resolved or logged above.
+
+### Fix-Pack User Stories
+
+#### FP-1 (P1): Trustworthy first-open feedback ⭐
+
+**User Story**: As a developer opening a layout preview, I want a loading indicator while the engine
+prepares/downloads/renders, and an error only when something actually failed, so that I don't see a
+scary red message that then fixes itself.
+
+**Why P1**: It's the first impression of every session; the current red flash reads as broken.
+
+**Acceptance Criteria**:
+
+1. WHEN a preview is opened and engine preparation, host start, or a render is in progress THEN the
+   panel SHALL display a loading indicator with the current phase text ("Preparing render engine…"
+   with artifact + percent during a download, "Starting render host…", "Rendering…") instead of a
+   blank stage. (POLISH-02)
+2. WHEN a render completes with `status:'ok'` THEN the loading indicator SHALL clear and the image
+   SHALL display. (POLISH-02)
+3. WHEN a render attempt fails at host level (spawn/crash/timeout) and it is still the document's
+   latest request THEN the scheduler SHALL automatically dispatch exactly one retry, the panel SHALL
+   keep showing the loading indicator (no error painted), and the failed attempt SHALL be logged to
+   the "Inflate" output channel. (POLISH-03)
+4. WHEN the automatic retry also fails (or a host-level failure occurs on a request that already
+   retried) THEN the panel SHALL show the error exactly as today (red `#errorPanel`, last-good image
+   dimmed + stale). (POLISH-03)
+5. WHEN a render attempt fails but a newer render for the same document is already pending or in
+   flight THEN the panel SHALL NOT paint the error (latest-wins preserved; the newer outcome
+   decides). (POLISH-03)
+6. WHEN the host returns a domain error (`status:'error'`, e.g. malformed XML) THEN it SHALL be shown
+   immediately when delivered — never retried, never suppressed once it is the settled latest
+   outcome. (POLISH-03)
+7. WHEN messages are posted to a panel before its webview signals `ready` THEN ALL of them SHALL be
+   delivered in original order once ready (today only the last survives). (POLISH-04)
+
+**Independent Test**: With the fake host in a fail-once mode, open a preview: spinner phases appear,
+no error is ever painted, the image lands. With a fail-always mode: spinner, then exactly one retry,
+then the red error.
+
+#### FP-2 (P1): The preview stays inside its stage ⭐
+
+**User Story**: As a developer previewing a big layout, I want the image clipped to its viewport with
+pan/zoom to reach every part, so that it never scrolls over the toolbar buttons.
+
+**Why P1**: Painting over the toolbar makes the controls unusable — a correctness bug (user's
+screenshot, 2026-07-26).
+
+**Acceptance Criteria**:
+
+1. WHEN the rendered image (at any zoom/pan/panel size) exceeds the stage THEN it SHALL be clipped at
+   the stage bounds and SHALL NOT paint over the toolbar, status, warnings, or error strips.
+   (POLISH-05)
+2. WHEN the webview is any size THEN the page body SHALL NOT scroll (no page-level scrollbars); the
+   toolbar SHALL remain visible and clickable at the top. (POLISH-05)
+3. WHEN the image is larger than the stage THEN the existing wheel-pan/drag-pan SHALL reach every
+   part of the image (clampPan bounds unchanged). (POLISH-05)
+
+**Independent Test**: Open a tall layout in a narrow panel, zoom in, pan up — the image visibly clips
+at the toolbar's lower border; all toolbar controls stay clickable.
+
+#### FP-3 (P2): Resize the preview by dragging its edges
+
+**User Story**: As a developer, I want to drag the preview's edges to change the rendered size —
+instead of a Size text field that only ever worked for drawables — so that resizing is direct and
+works for layouts too.
+
+**Why P2**: Replaces a misleading control with the interaction the user expects (Android
+Studio-like), no host changes needed.
+
+**Acceptance Criteria**:
+
+1. The toolbar SHALL NOT contain the Size text field; the drawable State picker keeps working
+   unchanged. (POLISH-06)
+2. WHEN the pointer is within the 8 px inner band of the displayed image's right edge, bottom edge,
+   or bottom-right corner THEN the system SHALL show the matching resize cursor and a pointerdown
+   there SHALL start an edge-drag (pan-drag SHALL NOT start). (POLISH-07)
+3. WHEN an edge-drag is in progress THEN a ghost outline SHALL track the pointer and NO render
+   request SHALL be dispatched until pointerup. (POLISH-07)
+4. WHEN an edge-drag ends on a **drawable** preview THEN the system SHALL re-render with
+   `drawable.sizeDp` equal to the outline's size converted through the current zoom, density factor,
+   and pixelScale, rounded to integer dp and clamped to [16 dp, 4096 px]. (POLISH-07)
+5. WHEN an edge-drag ends on a **layout** preview THEN the system SHALL re-render at a custom device
+   size (same conversion/clamping), the Device dropdown SHALL show a selected "Custom (W×H dp)"
+   entry, and the custom size SHALL persist per file and restore on reopen. (POLISH-07)
+6. WHEN a device preset is picked while a custom size is active THEN the preset SHALL replace the
+   custom size and the "Custom" entry SHALL disappear from the dropdown. (POLISH-07)
+7. WHEN the drag is canceled (pointercancel or Esc) THEN the ghost SHALL disappear and no render
+   SHALL be requested. (POLISH-07)
+8. WHEN no image is displayed (first load, fileGone, error with no last-good image) THEN no resize
+   affordance SHALL appear. (POLISH-07)
+
+**Independent Test**: Drag a layout preview's corner smaller → it re-renders at the smaller size and
+Device shows "Custom (…)"; pick "Phone" → custom disappears and the preset size renders.
+
+#### FP-4 (P2): Orientation as a dropdown
+
+**User Story**: As a developer, I want Orientation to be a dropdown showing Portrait/Landscape (like
+Device), so that I can see which orientation is active.
+
+**Why P2**: The current button shows no state — the control is unreadable.
+
+**Acceptance Criteria**:
+
+1. The toolbar SHALL show Orientation as a dropdown with exactly two options, "Portrait" and
+   "Landscape", replacing the button. (POLISH-08)
+2. WHEN a file has no persisted config THEN the dropdown SHALL default to Portrait. (POLISH-08)
+3. WHEN the user picks an orientation THEN the system SHALL emit the existing
+   `configChanged{orientation}` (re-render), persist it per file, and restore it on reopen —
+   identical semantics to today's toggle. (POLISH-08)
+
+**Independent Test**: Pick "Landscape" → render swaps dimensions; reopen the preview → dropdown still
+shows Landscape.
+
+#### FP-5 (P3): Simpler toolbar without the Backdrop button
+
+**User Story**: As a developer, I want the transparency checkerboard always on and the Backdrop
+button gone, so the toolbar only holds controls that change the render.
+
+**Why P3**: Pure simplification; no information is lost (checkerboard stays).
+
+**Acceptance Criteria**:
+
+1. The toolbar SHALL NOT contain the Backdrop button; the stage background SHALL always be the
+   checkerboard. (POLISH-01)
+2. The backdrop plumbing SHALL be removed end-to-end (toolbar `Backdrop` type/`toggleBackdrop`/solid
+   branch, webview click handler, `HydratedConfig.backdrop`, `StoredPreviewConfig.backdrop` +
+   patch field); previously persisted `backdrop` values are ignored harmlessly. (POLISH-01)
+
+**Independent Test**: Open any preview — checkerboard behind transparent regions, no Backdrop button;
+reopen — unchanged.
+
+### Edge Cases (fix-pack)
+
+- WHEN a resize drag would cross the 4096 px canvas cap at the current density × pixelScale THEN the
+  requested size SHALL clamp (and the existing `canvasCapped` handling stays intact).
+- WHEN a resize drag shrinks below 16×16 dp THEN the request SHALL clamp to 16 dp on that axis.
+- WHEN a newer user action (save/config/refresh) arrives while an automatic retry is pending or in
+  flight THEN latest-wins ordering SHALL hold (the retry result is discarded if stale — existing id
+  discipline).
+- WHEN the engine download fails (network) THEN the guided error/warning path behaves as today; the
+  in-panel indicator SHALL clear to the error state, not spin forever.
+- WHEN the density or pixelScale changes while a custom size is active THEN the custom dp dimensions
+  SHALL persist unchanged (only px output changes).
+- WHEN the warnings strip is expanded with many warnings THEN it SHALL scroll internally rather than
+  push the page into body scroll (containment holds).
+
+### Requirement Traceability (fix-pack)
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| POLISH-01 | FP-5: Backdrop removal | Tasks | Pending |
+| POLISH-02 | FP-1: Loading indicator + phases | Tasks | Pending |
+| POLISH-03 | FP-1: Transient suppression + bounded retry | Tasks | Pending |
+| POLISH-04 | FP-1: Pre-ready message queue | Tasks | Pending |
+| POLISH-05 | FP-2: Stage containment | Tasks | Pending |
+| POLISH-06 | FP-3: Size field removal | Tasks | Pending |
+| POLISH-07 | FP-3: Drag-to-resize (drawable sizeDp / layout custom device) | Tasks | Pending |
+| POLISH-08 | FP-4: Orientation dropdown | Tasks | Pending |
+
+**ID format:** `POLISH-NN` (extends the v1 id set — LAY/RES/CFG/UX/… — without collision).
+**Coverage:** 8 total, 8 mapped to tasks (`tasks.md` amendment, T61–T68), 0 unmapped.
+
+### Success Criteria (fix-pack)
+
+- [ ] Opening a large layout in a narrow panel never paints render output over the toolbar; controls
+      stay usable at every zoom/pan.
+- [ ] A cold first open shows spinner phases and ends in either an image or a single, final error —
+      never a red flash that self-heals.
+- [ ] A drawable and a layout can each be resized by edge-drag with one re-render per drag; the Size
+      field and Backdrop button are gone; Orientation reads as a dropdown defaulting to Portrait.
+- [ ] Extension unit + integration gates green; host and corpus untouched; the v1 sections of this
+      file and the v1 `validation.md` PASS record unmodified.
