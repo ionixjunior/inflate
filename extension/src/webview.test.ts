@@ -38,3 +38,27 @@ describe('panelShellHtml — Orientation dropdown (fix-pack POLISH-08)', () => {
     expect(html).not.toContain('orientationToggle');
   });
 });
+
+describe('panelShellHtml — stage containment (fix-pack POLISH-05)', () => {
+  function rule(html: string, selector: string): string {
+    const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`);
+    return re.exec(html)?.[0] ?? '';
+  }
+
+  it('never lets the page body scroll (html/body no-scroll rule)', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(rule(html, 'html, body')).toContain('overflow: hidden');
+  });
+
+  it('clips the stage at its bounds (overflow hidden) so the image cannot paint over the toolbar', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(rule(html, '#stage')).toContain('overflow: hidden');
+  });
+
+  it('keeps the toolbar in normal flow above the stage with an opaque background', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    const toolbarRule = rule(html, '#toolbar');
+    expect(toolbarRule).toContain('flex: 0 0 auto');
+    expect(toolbarRule).toContain('background:');
+  });
+});

@@ -74,24 +74,30 @@ export function panelShellHtml(params: PanelShellParams): string {
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; img-src ${cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
   <style>
-    body { margin: 0; font-family: sans-serif; color: var(--vscode-foreground); }
-    #toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px;
-               border-bottom: 1px solid var(--vscode-panel-border, #444); font-size: 12px; }
+    html, body { height: 100%; overflow: hidden; }
+    body { margin: 0; font-family: sans-serif; color: var(--vscode-foreground);
+           display: flex; flex-direction: column; }
+    #toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px;
+               border-bottom: 1px solid var(--vscode-panel-border, #444); font-size: 12px;
+               background: var(--vscode-editor-background, #1e1e1e); }
     #toolbar label { display: inline-flex; align-items: center; gap: 4px; }
     #badge { background: var(--vscode-badge-background, #666); color: var(--vscode-badge-foreground, #fff);
              padding: 2px 8px; border-radius: 8px; }
     #matched { color: var(--vscode-descriptionForeground, #999); }
-    #stage { display: flex; align-items: center; justify-content: center; min-height: 60vh;
+    #stage { flex: 1 1 0; min-height: 0; overflow: hidden; position: relative;
+             display: flex; align-items: center; justify-content: center;
              background: repeating-conic-gradient(#7f7f7f 0% 25%, #bfbfbf 0% 50%) 50% / 20px 20px; }
     #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
     #staleChip { position: fixed; top: 8px; right: 8px; background: var(--vscode-badge-background, #666);
                  color: var(--vscode-badge-foreground, #fff); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
-    #errorPanel { color: var(--vscode-errorForeground, #f14c4c); padding: 1em; white-space: pre-wrap; }
-    #fileGone { color: var(--vscode-descriptionForeground, #999); padding: 1em; }
-    #warnings { border-top: 1px solid var(--vscode-panel-border, #444); padding: 4px 8px; font-size: 12px; }
+    #errorPanel { flex: 0 0 auto; color: var(--vscode-errorForeground, #f14c4c); padding: 1em;
+                  white-space: pre-wrap; max-height: 30vh; overflow-y: auto; }
+    #fileGone { flex: 0 0 auto; color: var(--vscode-descriptionForeground, #999); padding: 1em; }
+    #warnings { flex: 0 0 auto; border-top: 1px solid var(--vscode-panel-border, #444); padding: 4px 8px;
+                font-size: 12px; max-height: 20vh; overflow-y: auto; }
     #warningsHeader { cursor: pointer; user-select: none; }
     #warningsList { margin: 4px 0; padding-left: 1.2em; }
-    #status { padding: 4px 8px; font-size: 12px; color: var(--vscode-descriptionForeground, #999); }
+    #status { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; color: var(--vscode-descriptionForeground, #999); }
   </style>
 </head>
 <body>
