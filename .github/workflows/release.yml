@@ -1,0 +1,116 @@
+name: Release
+
+# REL-04 (AD-019, 2026-07-26): the one-click release. Actions tab → Release → "Run workflow" →
+# pick the SemVer bump. No local commands anywhere in the flow.
+#
+# Pipeline order (deliberate): gate → bump → build → PUBLISH → commit+tag+push → GitHub Release.
+# The Marketplace publish happens BEFORE the version-bump commit is pushed, so a failed gate,
+# build, or publish leaves the branch completely untouched (nothing to roll back). The narrow
+# residual window: if the publish succeeds and the later push/tag fails (e.g. a concurrent push
+# raced the rebase), the Marketplace already has the version — recover by pushing the tag manually
+# (docs/release-checklist.md documents this); do NOT just re-run, a re-run bumps again.
+#
+# First release: run with bump=major to go 0.0.1 → 1.0.0 (AD-019).
+#
+# Secrets: VSCE_PAT (required — Azure DevOps PAT with Marketplace→Manage; see the release
+# checklist for creation + the 2026-12-01 global-PAT retirement note). OVSX_TOKEN (optional —
+# when present, the same VSIX also goes to Open VSX, honoring the v1 "Marketplace + Open VSX"
+# assumption).
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'SemVer bump for this release'
+        type: choice
+        required: true
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write # push the bump commit + tag, create the GitHub Release
+
+# Releases queue up; a running release is never cancelled mid-publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # The exact same gate CI runs (full pipeline incl. engineTest + golden corpus) — a release can
+  # never skip it, which is what makes manual-only day-to-day CI safe (REL-02).
+  gate:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: gate
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install extension dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Bump the version (commit and tag come after a successful publish)
+        id: bump
+        working-directory: extension
+        run: |
+          VERSION="$(npm version "${{ inputs.bump }}" --no-git-tag-version)"
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${VERSION#v}"
+
+      - name: Build the host jar and package the VSIX
+        run: npm run package
+
+      - name: Publish to the VS Code Marketplace
+        working-directory: extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath "inflate-${{ steps.bump.outputs.version }}.vsix" -p "$VSCE_PAT"
+
+      - name: Publish to Open VSX (runs only when OVSX_TOKEN is configured)
+        working-directory: extension
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: |
+          if [ -n "$OVSX_TOKEN" ]; then
+            npx --yes ovsx publish "inflate-${{ steps.bump.outputs.version }}.vsix" -p "$OVSX_TOKEN"
+          else
+            echo "OVSX_TOKEN not configured — skipping the optional Open VSX publish (docs/release-checklist.md)"
+          fi
+
+      - name: Commit the bump, tag, and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add extension/package.json extension/package-lock.json
+          git commit -m "Release ${{ steps.bump.outputs.version }}"
+          # Rebase BEFORE tagging so the tag points at the commit that actually lands.
+          git pull --rebase origin "${{ github.ref_name }}"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}" "v${{ steps.bump.outputs.version }}"
+
+      - name: Create the GitHub Release (auto-generated notes) with the VSIX attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.bump.outputs.version }}" \
+            "extension/inflate-${{ steps.bump.outputs.version }}.vsix" \
+            --title "v${{ steps.bump.outputs.version }}" \
+            --generate-notes
+
+      - name: Upload the VSIX as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inflate-${{ steps.bump.outputs.version }}-vsix
+          path: extension/inflate-${{ steps.bump.outputs.version }}.vsix
