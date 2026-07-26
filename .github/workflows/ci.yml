@@ -1,27 +1,50 @@
 name: CI
 
-# T56 (NFR-07 CI gate). AD-004: macOS only (arm64 primary, x64 fast-follow smoke). Runner labels
-# verified against GitHub's current hosted-runner reference (2026-07): macos-13/macos-13-arm64 are
-# deprecated/closing down, so the arm64 job uses macos-14 and the x64 smoke job uses the still-
-# supported Intel label macos-15-intel (valid through the macOS 15 image's retirement).
+# T56 (NFR-07 CI gate), reworked by the release-automation amendment (REL-02, AD-019, 2026-07-26):
+# - Triggers are on-demand ONLY: workflow_dispatch (Actions tab / gh CLI), or workflow_call from
+#   release.yml and run-ci-comment.yml. No push/pull_request triggers — the maintainer runs CI
+#   deliberately to keep hosted-runner usage low; releases stay gated because release.yml always
+#   calls this workflow before publishing.
+# - The optional `ref` input lets callers point the gate at any ref (the /run ci comment command
+#   passes refs/pull/<N>/merge). Empty = the ref the run was started from.
+# - Runner: macos-26 (arm64; GA since 2026-02, the macos-latest target since 2026-06). AD-004:
+#   macOS only, Apple Silicon primary.
+# - The former smoke-x64 job was dropped (REL-02): it only re-ran architecture-independent unit
+#   tests (the native layoutlib x64 paths live in engineTest/corpus, which it never ran) while
+#   Intel hosted runners are being phased out upstream. Intel Macs = best-effort, documented in
+#   docs/limitations.md.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to test (empty = the branch you dispatch from)'
+        type: string
+        required: false
+        default: ''
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to test (empty = the caller's ref)"
+        type: string
+        required: false
+        default: ''
 
+# Keyed on the tested ref so concurrent /run ci checks of different PRs never cancel each other.
+# (When this workflow runs via workflow_call, this workflow-level group is ignored — callers set
+# their own concurrency groups.)
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   # Primary gate: full pipeline (build, unit, integration, host unit + engineTest, golden corpus) on
   # Apple Silicon — the architecture the product is developed and measured against (NFR-01/T57).
   build-and-test-arm64:
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-java@v4
         with:
@@ -84,35 +107,3 @@ jobs:
           path: |
             corpus/report.html
           if-no-files-found: warn
-
-  # Fast-follow smoke: unit-test-only subset on Intel, so an x64-specific regression (e.g. a native
-  # layoutlib path difference) surfaces without paying the full engine-download + corpus cost twice.
-  smoke-x64:
-    runs-on: macos-15-intel
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install extension dependencies
-        working-directory: extension
-        run: npm ci
-
-      - name: Build extension
-        working-directory: extension
-        run: npm run build
-
-      - name: Extension unit tests
-        working-directory: extension
-        run: npm test
-
-      - name: Host unit tests
-        working-directory: host
-        run: ./gradlew test --console=plain
