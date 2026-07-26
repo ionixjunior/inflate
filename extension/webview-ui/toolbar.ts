@@ -28,6 +28,16 @@ export interface DrawableMeta {
 }
 
 export type Orientation = 'portrait' | 'landscape';
+
+/** The Orientation dropdown's exactly-two options (FP-4 AC1), Portrait first/default (FP-4 AC2). */
+export interface OrientationOption {
+  value: Orientation;
+  label: string;
+}
+export const ORIENTATION_OPTIONS: readonly OrientationOption[] = [
+  { value: 'portrait', label: 'Portrait' },
+  { value: 'landscape', label: 'Landscape' },
+];
 export type Density = 'mdpi' | 'hdpi' | 'xhdpi' | 'xxhdpi' | 'xxxhdpi';
 export const DENSITIES: readonly Density[] = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
 
@@ -188,11 +198,6 @@ export function buildDensityChanged(density: Density): ConfigChangedMessage {
 /** Build the `configChanged` payload for a theme pick (CFG-04, P1-E AC4). */
 export function buildThemeChanged(theme: ThemeOption): ConfigChangedMessage {
   return { type: 'configChanged', themeName: theme.name, isProjectTheme: theme.isProjectTheme };
-}
-
-/** Toggle the orientation (CFG-02). */
-export function toggleOrientation(o: Orientation): Orientation {
-  return o === 'portrait' ? 'landscape' : 'portrait';
 }
 
 /** The selector matched-item label, e.g. "matched item #2, state_pressed" (P1-D AC2). */

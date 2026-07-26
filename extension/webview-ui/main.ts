@@ -20,6 +20,7 @@ import {
   DRAWABLE_STATES,
   Density,
   DrawableStateName,
+  ORIENTATION_OPTIONS,
   Orientation,
   ThemeOption,
   ToolbarState,
@@ -34,7 +35,6 @@ import {
   matchedLabel,
   orderThemesForPicker,
   pickerVisible,
-  toggleOrientation,
 } from './toolbar';
 import {
   ZoomState,
@@ -148,6 +148,17 @@ function paintToolbar(): void {
     }
   }
   if (devicePicker) devicePicker.value = toolbar.deviceId;
+
+  const orientationPicker = $('orientationPicker') as HTMLSelectElement | null;
+  if (orientationPicker && orientationPicker.options.length === 0) {
+    for (const o of ORIENTATION_OPTIONS) {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      orientationPicker.appendChild(opt);
+    }
+  }
+  if (orientationPicker) orientationPicker.value = toolbar.orientation;
 
   const densityPicker = $('densityPicker') as HTMLSelectElement | null;
   if (densityPicker && densityPicker.options.length === 0) {
@@ -322,11 +333,6 @@ document.addEventListener('click', (e) => {
   if (target && target.id === 'refreshButton') {
     vscode.postMessage({ type: 'refresh' });
   }
-  if (target && target.id === 'orientationToggle') {
-    toolbar = { ...toolbar, orientation: toggleOrientation(toolbar.orientation) };
-    paintToolbar();
-    vscode.postMessage(buildOrientationChanged(toolbar.orientation));
-  }
 });
 
 document.addEventListener('change', (e) => {
@@ -346,6 +352,10 @@ document.addEventListener('change', (e) => {
   if (target && target.id === 'devicePicker') {
     toolbar = { ...toolbar, deviceId: (target as HTMLSelectElement).value };
     vscode.postMessage(buildDeviceChanged(toolbar.deviceId));
+  }
+  if (target && target.id === 'orientationPicker') {
+    toolbar = { ...toolbar, orientation: (target as HTMLSelectElement).value as Orientation };
+    vscode.postMessage(buildOrientationChanged(toolbar.orientation));
   }
   if (target && target.id === 'densityPicker') {
     toolbar = { ...toolbar, density: (target as HTMLSelectElement).value as Density };

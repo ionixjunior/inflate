@@ -3,6 +3,7 @@ import {
   DENSITIES,
   DEVICE_PRESETS,
   DRAWABLE_STATES,
+  ORIENTATION_OPTIONS,
   ThemeOption,
   ToolbarState,
   buildConfigChanged,
@@ -18,7 +19,6 @@ import {
   parseSizeOverride,
   pickerVisible,
   statesForSelection,
-  toggleOrientation,
 } from './toolbar';
 
 describe('drawable toolbar logic (T49, DRW-07/08, P1-C/P1-D)', () => {
@@ -104,10 +104,17 @@ describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () =>
     expect(buildDeviceChanged('tablet7')).toEqual({ type: 'configChanged', deviceId: 'tablet7' });
   });
 
-  it('toggles and builds a configChanged patch for orientation (CFG-02, P1-E AC2)', () => {
-    expect(toggleOrientation('portrait')).toBe('landscape');
-    expect(toggleOrientation('landscape')).toBe('portrait');
+  it('builds a configChanged patch for an orientation pick (CFG-02, P1-E AC2)', () => {
     expect(buildOrientationChanged('landscape')).toEqual({ type: 'configChanged', orientation: 'landscape' });
+    expect(buildOrientationChanged('portrait')).toEqual({ type: 'configChanged', orientation: 'portrait' });
+  });
+
+  it('offers exactly two orientation options, Portrait first (FP-4 AC1/AC2)', () => {
+    expect(ORIENTATION_OPTIONS.map((o) => o.value)).toEqual(['portrait', 'landscape']);
+    expect(ORIENTATION_OPTIONS[0]).toEqual({ value: 'portrait', label: 'Portrait' });
+    expect(ORIENTATION_OPTIONS[1]).toEqual({ value: 'landscape', label: 'Landscape' });
+    // Portrait is first/default (initialToolbarState.orientation, FP-4 AC2).
+    expect(initialToolbarState.orientation).toBe('portrait');
   });
 
   it('builds a configChanged patch for a density pick (CFG-03, P1-E AC3)', () => {

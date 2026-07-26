@@ -100,7 +100,7 @@ export function panelShellHtml(params: PanelShellParams): string {
     <label>Theme <select id="themePicker"></select></label>
     <label><input id="nightToggle" type="checkbox" /> Night</label>
     <label>Device <select id="devicePicker"></select></label>
-    <button id="orientationToggle" type="button">Orientation</button>
+    <label>Orientation <select id="orientationPicker"></select></label>
     <label>Density <select id="densityPicker"></select></label>
     <span id="statePickerWrap" style="display:none">
       <label>State <select id="statePicker"></select></label>

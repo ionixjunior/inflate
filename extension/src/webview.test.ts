@@ -30,3 +30,11 @@ describe('panelShellHtml — Backdrop removal (fix-pack POLISH-01)', () => {
     expect(stageRule).toContain('repeating-conic-gradient');
   });
 });
+
+describe('panelShellHtml — Orientation dropdown (fix-pack POLISH-08)', () => {
+  it('has an orientationPicker <select>, no orientationToggle button', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(html).toContain('<select id="orientationPicker">');
+    expect(html).not.toContain('orientationToggle');
+  });
+});
