@@ -186,6 +186,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
         drawable: patch.drawable as PreviewConfigPatch['drawable'],
         night: patch.night,
         deviceId: patch.deviceId,
+        customSize: patch.customSize,
         orientation: patch.orientation as Orientation | undefined,
         density: patch.density as Density | undefined,
         themeName: patch.themeName,
@@ -211,10 +212,17 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   updateEligibility(vscode.window.activeTextEditor);
 
   /** Push the persisted per-file config to the toolbar/viewport so a reopened preview restores its
-   * theme/device/orientation/density/night/zoom exactly as last left (CFG-05, P1-E AC5). */
+   * theme/device/orientation/density/night/zoom exactly as last left (CFG-05, P1-E AC5). Also tells
+   * the webview the document's kind (layout vs drawable) and any active custom device size, so an
+   * edge-drag resize (fix-pack POLISH-07) routes correctly and restores its "Custom (W×H dp)" picker
+   * entry on reopen. */
   function hydratePanelConfig(docPath: string): void {
     const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
     const stored = configStore.get(docPath, manifestTheme);
+    // Mirrors the scheduler's own classify() mapping just below: unsupported documents preview as
+    // layouts (T60 convention).
+    const classified = classify(docPath);
+    const docKind: 'layout' | 'drawable' = classified.kind === 'layout' || classified.kind === 'unsupported' ? 'layout' : 'drawable';
     panelManager.hydrateConfig(docPath, {
       themeName: stored.preview.themeName,
       isProjectTheme: stored.preview.isProjectTheme,
@@ -223,6 +231,11 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       orientation: stored.preview.orientation,
       density: stored.preview.density,
       zoom: stored.zoom,
+      docKind,
+      customSize:
+        stored.preview.device.id === 'custom'
+          ? { w: stored.preview.device.widthDp, h: stored.preview.device.heightDp }
+          : undefined,
     });
   }
 

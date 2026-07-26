@@ -104,6 +104,47 @@ describe('ConfigStore (T50, CFG-05, P1-E AC5, design #8 defaults chain)', () => 
     expect(config.zoom).toBe('fit');
   });
 
+  it('a customSize patch yields a custom device preset, persisted and restored (fix-pack POLISH-07)', () => {
+    const memento = fakeMemento();
+    const store = new ConfigStore(memento);
+    const config = store.update('/proj/res/layout/main.xml', { customSize: { w: 411, h: 600 } });
+
+    expect(config.preview.device).toEqual({
+      id: 'custom',
+      label: 'Custom (411×600 dp)',
+      widthDp: 411,
+      heightDp: 600,
+      defaultDensity: 'xhdpi', // the default density (no prior density patch on this file)
+      sizeBucket: 'normal',
+    });
+
+    // Restored by a later get() through a brand new instance backed by the same memento.
+    const reopened = new ConfigStore(memento);
+    expect(reopened.get('/proj/res/layout/main.xml').preview.device.id).toBe('custom');
+  });
+
+  it('customSize derives the size bucket like the built-in presets (>=600 large, >=720 xlarge)', () => {
+    const store = new ConfigStore(fakeMemento());
+    expect(store.update('/a.xml', { customSize: { w: 599, h: 400 } }).preview.device.sizeBucket).toBe('normal');
+    expect(store.update('/b.xml', { customSize: { w: 600, h: 400 } }).preview.device.sizeBucket).toBe('large');
+    expect(store.update('/c.xml', { customSize: { w: 719, h: 400 } }).preview.device.sizeBucket).toBe('large');
+    expect(store.update('/d.xml', { customSize: { w: 720, h: 400 } }).preview.device.sizeBucket).toBe('xlarge');
+  });
+
+  it('customSize uses the current density as defaultDensity, not a fixed default', () => {
+    const store = new ConfigStore(fakeMemento());
+    store.update('/proj/res/layout/main.xml', { density: 'xxxhdpi' });
+    const config = store.update('/proj/res/layout/main.xml', { customSize: { w: 300, h: 300 } });
+    expect(config.preview.device.defaultDensity).toBe('xxxhdpi');
+  });
+
+  it('a subsequent deviceId patch replaces the custom device and drops it entirely (fix-pack POLISH-07, FP-3 AC6)', () => {
+    const store = new ConfigStore(fakeMemento());
+    store.update('/proj/res/layout/main.xml', { customSize: { w: 500, h: 900 } });
+    const config = store.update('/proj/res/layout/main.xml', { deviceId: 'tablet7' });
+    expect(config.preview.device).toEqual(DEVICE_PRESETS.find((d) => d.id === 'tablet7'));
+  });
+
   it('fires a change event with the document path and the resulting config on every update', () => {
     const store = new ConfigStore(fakeMemento());
     const events: Array<{ docPath: string; night: boolean }> = [];

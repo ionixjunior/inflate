@@ -16,7 +16,6 @@ import {
 } from './viewmodel';
 import {
   DENSITIES,
-  DEVICE_PRESETS,
   DRAWABLE_STATES,
   Density,
   DrawableStateName,
@@ -30,6 +29,7 @@ import {
   buildNightChanged,
   buildOrientationChanged,
   buildThemeChanged,
+  devicePickerOptions,
   hydrateToolbarState,
   initialToolbarState,
   matchedLabel,
@@ -58,6 +58,12 @@ let zoom: ZoomState = { ...initialZoomState };
 let pan: PanOffset = { ...initialPanOffset };
 let zoomPersistTimer: ReturnType<typeof setTimeout> | undefined;
 let themeOptions: ThemeOption[] = [];
+/** The document's kind (layout vs drawable) — routes an edge-drag resize (fix-pack POLISH-07) to a
+ * custom device size (layout) or `drawable.sizeDp` (drawable); learned via `setConfig` hydration. */
+let docKind: 'layout' | 'drawable' = 'layout';
+/** The active custom device size, if any (fix-pack POLISH-07, FP-3 AC5) — drives the Device picker's
+ * transient "Custom (W×H dp)" entry; cleared locally the moment a preset is picked (FP-3 AC6). */
+let customSize: { w: number; h: number } | undefined;
 
 /** Recompute the effective zoom against the current stage size + image, applying the resulting
  * pixel-scale escalation (debounced persist, T52/UX-03) and CSS transform. */
@@ -131,16 +137,19 @@ function paintToolbar(): void {
   const nightToggle = $('nightToggle') as HTMLInputElement | null;
   if (nightToggle) nightToggle.checked = toolbar.night;
 
+  // Device picker: rebuilt every paint (not populate-once) since the transient Custom entry's
+  // label/presence changes with the active drag-resize (fix-pack POLISH-07, FP-3 AC5/AC6).
   const devicePicker = $('devicePicker') as HTMLSelectElement | null;
-  if (devicePicker && devicePicker.options.length === 0) {
-    for (const d of DEVICE_PRESETS) {
+  if (devicePicker) {
+    devicePicker.innerHTML = '';
+    for (const d of devicePickerOptions(customSize)) {
       const opt = document.createElement('option');
       opt.value = d.id;
       opt.textContent = d.label;
       devicePicker.appendChild(opt);
     }
+    devicePicker.value = toolbar.deviceId;
   }
-  if (devicePicker) devicePicker.value = toolbar.deviceId;
 
   const orientationPicker = $('orientationPicker') as HTMLSelectElement | null;
   if (orientationPicker && orientationPicker.options.length === 0) {
@@ -252,6 +261,8 @@ window.addEventListener('message', (event: MessageEvent) => {
       orientation: Orientation;
       density: Density;
       zoom: ZoomState['zoom'];
+      docKind: 'layout' | 'drawable';
+      customSize?: { w: number; h: number };
     };
   };
 
@@ -264,6 +275,8 @@ window.addEventListener('message', (event: MessageEvent) => {
   }
   if (data.type === 'setConfig') {
     toolbar = hydrateToolbarState(toolbar, data.config);
+    docKind = data.config.docKind;
+    customSize = data.config.customSize;
     paintToolbar();
     applyZoom(data.config.zoom);
     return;
@@ -346,6 +359,10 @@ document.addEventListener('change', (e) => {
   }
   if (target && target.id === 'devicePicker') {
     toolbar = { ...toolbar, deviceId: (target as HTMLSelectElement).value };
+    // Picking any preset drops the active custom size — the Custom entry disappears immediately,
+    // without waiting for a round trip (fix-pack POLISH-07, FP-3 AC6).
+    customSize = undefined;
+    paintToolbar();
     vscode.postMessage(buildDeviceChanged(toolbar.deviceId));
   }
   if (target && target.id === 'orientationPicker') {

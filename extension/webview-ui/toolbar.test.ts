@@ -12,6 +12,7 @@ import {
   buildNightChanged,
   buildOrientationChanged,
   buildThemeChanged,
+  devicePickerOptions,
   hydrateToolbarState,
   initialToolbarState,
   matchedLabel,
@@ -82,6 +83,17 @@ describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () =>
 
   it('builds a configChanged patch for a device-preset pick (CFG-02, P1-E AC2)', () => {
     expect(buildDeviceChanged('tablet7')).toEqual({ type: 'configChanged', deviceId: 'tablet7' });
+  });
+
+  it('devicePickerOptions omits the Custom entry when no custom size is active (FP-3 AC6)', () => {
+    const options = devicePickerOptions();
+    expect(options.map((o) => o.id)).toEqual(['small', 'phone', 'large', 'tablet7', 'tablet10']);
+  });
+
+  it('devicePickerOptions appends a selected "Custom (W×H dp)" entry while active (FP-3 AC5)', () => {
+    const options = devicePickerOptions({ w: 411, h: 600 });
+    expect(options.map((o) => o.id)).toEqual(['small', 'phone', 'large', 'tablet7', 'tablet10', 'custom']);
+    expect(options.at(-1)).toEqual({ id: 'custom', label: 'Custom (411×600 dp)' });
   });
 
   it('builds a configChanged patch for an orientation pick (CFG-02, P1-E AC2)', () => {

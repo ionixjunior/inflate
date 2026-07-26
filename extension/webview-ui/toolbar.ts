@@ -59,6 +59,21 @@ export const DEVICE_PRESETS: readonly DevicePresetOption[] = [
   { id: 'tablet10', label: '10" Tablet', widthDp: 800, heightDp: 1280 },
 ];
 
+export interface DevicePickerOption {
+  id: string;
+  label: string;
+}
+
+/** The Device picker's option list (CFG-02, P1-E AC2): the 5 built-in presets, plus a transient
+ * selected "Custom (W×H dp)" entry while a layout's drag-resize custom size is active (fix-pack
+ * POLISH-07, FP-3 AC5) — omitted (picker shows only presets) when `custom` is undefined, i.e. no
+ * custom size is active (FP-3 AC6: picking any preset makes it disappear). */
+export function devicePickerOptions(custom?: { w: number; h: number }): DevicePickerOption[] {
+  const presets = DEVICE_PRESETS.map((d) => ({ id: d.id, label: d.label }));
+  if (!custom) return presets;
+  return [...presets, { id: 'custom', label: `Custom (${custom.w}×${custom.h} dp)` }];
+}
+
 export type ThemeSource = 'project' | 'material' | 'appcompat' | 'platform';
 
 /** A theme offered by the picker (CFG-04) — fed by the `listThemes` RPC result. */

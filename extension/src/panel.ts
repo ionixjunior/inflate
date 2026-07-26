@@ -65,6 +65,8 @@ export interface ConfigPatch {
   drawable?: DrawableConfigPatch;
   night?: boolean;
   deviceId?: string;
+  /** A layout's edge-drag resize (fix-pack POLISH-07) — becomes a transient custom device size. */
+  customSize?: { w: number; h: number };
   orientation?: 'portrait' | 'landscape';
   density?: string;
   themeName?: string;
@@ -90,6 +92,12 @@ export interface HydratedConfig {
   orientation: string;
   density: string;
   zoom: ZoomSetting;
+  /** 'layout' vs 'drawable' — lets the webview route an edge-drag resize to a custom device size
+   * (layout) vs `drawable.sizeDp` (drawable/nine-patch/color), fix-pack POLISH-07. */
+  docKind: 'layout' | 'drawable';
+  /** The active custom device's dp size, present only when `deviceId === 'custom'` (fix-pack
+   * POLISH-07, FP-3 AC5) — lets the webview render the "Custom (W×H dp)" picker entry on reopen. */
+  customSize?: { w: number; h: number };
 }
 
 /** The full webview → extension message shape this panel understands. `zoom` (a `zoomChanged`
