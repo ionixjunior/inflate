@@ -89,6 +89,31 @@ above — transparency over silence:
   resource id resolve to zero. This is an internal wiring detail (not something you configure), noted
   here for completeness since it was a real, previously-undiscovered gap in the render pipeline.
 
+## Edge-drag resize under fit-to-window zoom refits the whole preview (by design)
+
+The preview's zoom defaults to **fit-to-window**. When an edge-drag resize completes, the preview
+re-renders at the new dp size and the new image — which has different pixel dimensions — is fitted
+to the stage again with one uniform scale for both axes (`min(stageW/imageW, stageH/imageH)`). Two
+visible consequences whenever the axis you dragged is (or becomes) the one that limits the fit:
+
+- the dragged axis stops growing on screen (it pins at the stage bound), and
+- the on-screen box **changes size on the axis you didn't drag** — e.g. dragging the bottom edge of
+  a tall portrait layout downward makes the displayed preview *narrower*, because the now-taller
+  render is fitted back into the same stage height.
+
+The render itself is correct: the Device dropdown's "Custom (W×H dp)" entry shows exactly the size
+the drag produced, and only the dragged axis changed in dp (the displayed-px → dp conversion is
+per-axis and round-trips the undragged axis exactly). Only the *displayed* size moves on both axes,
+because fit-to-window always preserves the render's aspect ratio inside the stage — the same refit
+that happens when you pick a different device preset.
+
+**If you want the drag to be WYSIWYG**, zoom to a manual level first (Ctrl/Cmd + wheel): a manual
+zoom percent is not recomputed after a render, so the resized preview lands exactly where the ghost
+outline was released and the undragged axis doesn't move on screen. Making drag-resize WYSIWYG under
+fit mode too (e.g. locking the zoom when a drag completes) is a possible future UX enhancement that
+needs its own design — it requires a zoom/fit toolbar control that doesn't exist yet (zoom is
+currently wheel-gesture only, so silently leaving fit mode would strand the user with no way back).
+
 ## Engine and version pinning
 
 - **Engine pin**: Paparazzi 1.3.5 + layoutlib 14.0.11 (Android API 34), JDK 17 minimum. This is an
