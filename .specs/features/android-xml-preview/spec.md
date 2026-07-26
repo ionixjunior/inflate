@@ -808,3 +808,44 @@ gap recorded in STATE.md Handoff "Known accepted gaps" item (3) and T68's commit
 
 **Unchanged:** FP-3's ACs stand as written — this amendment adds the platform preconditions they
 implicitly assumed. No wire, host, config-store, or gesture-math change.
+
+## Release & Publish Automation (Amendment — 2026-07-26)
+
+> Final pre-release work on the delivered v1 (NOT a new feature): Marketplace listing content, CI
+> trigger policy, and a fully automated release pipeline. Requirement IDs `REL-01..05` extend the
+> v1 sets without collision; tasks continue the feature numbering as **T71–T76** (phases 15–17) in
+> `tasks.md`. Verifier output is appended to `validation.md` as a dated release-automation section —
+> prior PASS records are never rewritten.
+
+### Problem Statement
+
+v1 is complete and verified but cannot ship: there is no Marketplace publisher account, no publish
+pipeline, and no Marketplace listing content (`extension/` has no `README.md`/`CHANGELOG.md`, so the
+listing page would be empty). CI auto-runs on every PR/push, conflicting with the maintainer's
+CI-usage policy, and the `smoke-x64` job spends an Intel runner without exercising any
+architecture-specific path (native layoutlib paths live only in `engineTest`/corpus, which it never
+runs). The maintainer requires: **zero local commands** in the release flow, one-click publishing,
+manual-only CI, and SemVer with automated release notes — without conventional commits (conflicts
+with the repo's verb-first commit convention) and without CI-computed versions. **GitVersion was
+evaluated and rejected** (2026-07-26): it patches `package.json` at build time (repo version becomes
+a placeholder), generates no release notes, adds .NET tooling, and still needs human bump hints
+(`+semver:` tokens). **release-please rejected**: requires conventional commits on main.
+
+### Requirements
+
+| ID | Requirement | Acceptance criteria (spec-defined outcomes) |
+| -- | ----------- | ------------------------------------------- |
+| REL-01 | Marketplace listing content | AC1: `extension/README.md` exists, is packaged (`vsce ls` output contains `README.md`), and covers: what the extension does, feature list, requirements (macOS, JDK 17+), quickstart, settings reference, repo/issues links. AC2: `extension/CHANGELOG.md` exists, is packaged (`vsce ls` contains `CHANGELOG.md`), and has a `1.0.0` section. AC3: `cd extension && npm run package` exits 0. |
+| REL-02 | CI runs only on demand | AC1: `ci.yml` `on:` contains exactly `workflow_dispatch` and `workflow_call` — no `push`, no `pull_request`. AC2: the `smoke-x64` job is removed; the remaining gate job runs on `macos-26`. AC3: both triggers accept an optional string input `ref` (default `''`) and every `actions/checkout` step in the gate passes `ref: ${{ inputs.ref }}` (empty ⇒ default-branch behavior). AC4: `canary.yml` keeps `schedule` (daily) + `workflow_dispatch` and its job runs on `macos-26`. |
+| REL-03 | Maintainer-only `/run ci` on PRs | AC1: new `run-ci-comment.yml` triggers on `issue_comment` type `created`. AC2: the gate job runs only when ALL hold — comment is on a PR, body starts with `/run ci`, and `comment.author_association` ∈ {OWNER, MEMBER, COLLABORATOR}; fork-PR authors (CONTRIBUTOR / FIRST_TIME_CONTRIBUTOR / NONE) can never trigger it. AC3: the gate is `ci.yml` reused via `workflow_call` with `ref: refs/pull/<PR#>/merge` (tests the merge result). AC4: an ack comment linking the run is posted on the PR. AC5: neither this workflow nor `ci.yml` references `VSCE_PAT`/`OVSX_TOKEN` — publish credentials are unreachable from comment-triggered runs. |
+| REL-04 | One-click release pipeline | AC1: new `release.yml` triggers ONLY on `workflow_dispatch` with a required `bump` choice input ∈ {patch, minor, major}. AC2: order is gate → bump → build → publish → record: full gate (reuses `ci.yml`), `npm version <bump>` (no local tag yet), root `npm run package` (host shadowJar + VSIX), `vsce publish --packagePath` authenticated by the `VSCE_PAT` secret, then commit `Release <version>` + tag `v<version>` pushed to the run's branch, then GitHub Release `v<version>` created with `--generate-notes` and the VSIX attached. Marketplace publish precedes the push, so a failed gate/build/publish leaves the branch untouched. AC3: Open VSX publish runs only when the `OVSX_TOKEN` secret is non-empty (shell-level guard; satisfies the v1 "Marketplace + Open VSX" assumption without blocking on the optional account). AC4: `concurrency: release` with `cancel-in-progress: false` serializes releases. AC5: workflow-level `permissions:` grants `contents: write` and nothing broader. |
+| REL-05 | Zero-local-command runbook | AC1: `docs/release-checklist.md` gains a dated amendment documenting publisher setup (Microsoft account → Azure DevOps org → PAT with Marketplace→Manage scope over "All accessible organizations" → create publisher at marketplace.visualstudio.com/manage → set the real `publisher` in `extension/package.json` → add `VSCE_PAT` repo secret → optional `OVSX_TOKEN`), the Azure DevOps global-PAT retirement (2026-12-01) with the Entra-credential alternative, and the first release = Release button with bump `major` (0.0.1 → 1.0.0). AC2: `CONTRIBUTING.md` documents the CI policy — no automatic runs; maintainers trigger from the Actions tab or with a `/run ci` PR comment (maintainer/collaborator-only). AC3: `docs/limitations.md` notes Intel Macs are best-effort (no Intel CI leg; users still receive the correct x64 engine artifacts at runtime). |
+
+### Non-Goals
+
+- No repo-settings automation (branch protection, secrets) — GitHub UI steps, documented only.
+- No pre-release channel; no GitVersion/release-please adoption.
+- No change to the shipped code surface — only packaging metadata, workflows, and docs.
+
+Decisions recorded in `STATE.md` as **AD-019** (release automation model) plus an **AD-004
+amendment note** (Intel = best-effort, untested in CI).

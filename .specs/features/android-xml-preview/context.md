@@ -148,3 +148,48 @@ containment (image never over toolbar), orientation dropdown. Extension/webview 
 ### Deferred Ideas
 
 - None — discussion stayed within the fix-pack scope.
+
+## Release & Publish Automation Context (Amendment — 2026-07-26)
+
+Design phase skipped — no architectural decisions beyond tool selection, all captured here; every
+workflow uses GitHub-documented primitives (`workflow_dispatch`, `workflow_call`, `issue_comment`).
+
+### User Decisions (captured from the 2026-07-26 discussion)
+
+- **Release mechanism: "Release button"** — `workflow_dispatch` with a required `bump` choice
+  (patch/minor/major); CI itself runs `npm version`, commits the bump back, tags, publishes, and
+  creates the GitHub Release with auto-generated notes. Hard constraint from the user: **zero local
+  commands** in the release flow (this superseded an earlier lean toward tag-push, which requires
+  local `npm version` + push).
+- **GitVersion — asked about by the user, evaluated, rejected**: no release-notes generation, repo
+  `package.json` degrades to a CI-patched placeholder, adds .NET tooling, and the bump decision
+  still needs `+semver:` commit tokens (more obscure than a dropdown). **release-please rejected**:
+  conventional commits conflict with the repo's verb-first convention (direct pushes to main would
+  be invisible to it).
+- **First release = 1.0.0** via bump `major` from the current 0.0.1 (user's stated target).
+- **CI triggers: manual-only + `/run ci` PR comment.** User explicitly requires that fork-PR
+  authors can NOT trigger CI ("I don't want any people can run the command into the PRs") — guard
+  is `author_association` ∈ {OWNER, MEMBER, COLLABORATOR} (explicitly invited people only); the
+  post-merge `CONTRIBUTOR` label is deliberately NOT trusted. Defense-in-depth: publish secrets
+  live only in `release.yml`, which is never comment-triggerable.
+- **smoke-x64: dropped.** User confirmed after impact analysis: removal affects *verification*
+  only, not x64 *support* — shipped artifacts are arch-independent (JS + JVM jar); each user's
+  machine downloads the correct native layoutlib classifier (`mac` vs `mac-arm`) at first run.
+  Intel Macs documented as best-effort (AD-004 amendment note).
+- **Runners: `macos-26` (arm64) everywhere** — GA since 2026-02-26; `macos-latest` migrated to it
+  June–July 2026; user asked for the latest ARM images, pinned explicitly.
+- **Canary stays on its daily schedule** (R7 tripwire, ~2 min/run, free on a public repo) — agent
+  recommendation surfaced to the user, no objection.
+- **Open VSX: optional, secret-gated** — the v1 spec assumption lists "Marketplace + Open VSX";
+  publish step runs only when `OVSX_TOKEN` exists so the missing account never blocks a release.
+- **Publisher account cannot be automated** — Microsoft/Azure DevOps/Marketplace steps are a
+  documented runbook (REL-05); user updates `publisher` in `extension/package.json` after creating
+  it (currently the `"inflate"` placeholder).
+
+### Deferred Ideas
+
+- Pre-release channel (`vsce publish --pre-release`) if a beta track is ever wanted.
+- Branch protection on `main` once outside collaborators join (would also let the release
+  workflow's push use a PR instead of a direct push).
+- Windows/Linux CI legs when AD-004 expands beyond macOS.
+- A `/run corpus`-style comment command for partial gates, if `/run ci` proves useful.

@@ -2215,3 +2215,120 @@ No task depends on a later phase; arrows point backward/within phase only.
 No `Tests: none` entries; no deferrals — every task verifies the code it changes (T62's `main.ts`
 glue is exercised by the existing config-flow integration suites that already drive the toolbar path,
 and its logic lives in unit-tested `toolbar.ts` builders).
+
+## Release & Publish Automation Tasks (Amendment — 2026-07-26)
+
+> Pre-release automation for the delivered v1 (NOT a new feature). The **Execution Protocol at the
+> top of this file applies unchanged** (tlc-spec-driven Execute flow, per-task gate, atomic
+> verb-first commit per task, always-on Verifier). Task numbering continues the feature's sequence:
+> **T71–T76**, **phases 15–17**. Verifier output is **appended to `validation.md` as a dated
+> release-automation section** — prior PASS records are never rewritten.
+
+**Spec**: the "Release & Publish Automation" amendment section in `spec.md` (REL-01..05)
+**Context**: the "Release & Publish Automation Context" amendment section in `context.md`
+**Status**: Approved — user directed immediate execution (2026-07-26)
+
+### Test Coverage Matrix (release-automation)
+
+> Honest scoping: GitHub workflow YAML has no locally executable runtime — triggers, guards, and
+> the publish path only run on GitHub's side after push. The local gate therefore proves **syntax
+> validity + declared invariants** (parse + grep assertions pinned to the spec ACs), packaging
+> proves the Marketplace listing, and the runbook's first-release steps double as the live
+> verification pass. The discrimination sensor applies only to sensor-testable layers (none here —
+> precedent: T69/T70 `main.ts` glue, AD-018).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Workflow YAML (`.github/workflows/*.yml`) | static validation | every file parses; each spec AC's structural invariant asserted (triggers, guard expression, runner labels, secret references, permissions) | `.github/workflows/*.yml` | `ruby -ryaml` parse + per-task grep assertions |
+| Marketplace listing (`extension/README.md`, `extension/CHANGELOG.md`) | packaging validation | both files listed by `vsce ls`; package build exits 0 | `extension/*.md` | `cd extension && npm run package && npx vsce ls` |
+| Docs (`docs/release-checklist.md`, `CONTRIBUTING.md`, `docs/limitations.md`) | content presence | REL-05 ACs' required topics present | `docs/*.md`, `CONTRIBUTING.md` | grep assertions |
+| Extension/host code | none — untouched by this amendment | — | — | final Build gate runs `cd extension && npm test` as a no-regression sanity only |
+
+### Gate Check Commands (release-automation)
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | workflow/docs tasks | `ruby -ryaml -e 'YAML.load_file(ARGV[0])' <changed .yml files>` + the task's grep assertions |
+| Full | packaging task (T71) | `cd extension && npm run package` (exit 0) + `npx vsce ls` listing assertions |
+| Build | final task (T76) | Quick + `cd extension && npm test` (no-regression sanity) |
+
+### Execution Plan (release-automation)
+
+6 tasks → single batch, executed inline (no sub-agents).
+
+**Phase 15: Marketplace listing content**
+
+```
+T71
+```
+
+**Phase 16: CI & release pipelines**
+
+```
+T72 → T73 → T74
+```
+
+**Phase 17: Runbook & bookkeeping**
+
+```
+T75 → T76
+```
+
+### Task Breakdown (release-automation)
+
+#### T71 — Create the Marketplace listing content
+
+- **Files**: `extension/README.md`, `extension/CHANGELOG.md`
+- **Requirements**: REL-01
+- **Done when**: REL-01 AC1–AC3 hold (`vsce ls` lists both files; `npm run package` exits 0;
+  README covers purpose, features, requirements, quickstart, settings, links; CHANGELOG has a
+  `1.0.0` section)
+- **Tests**: packaging validation — **Gate**: Full
+- **Status**: [ ] pending
+
+#### T72 — Make CI manual-only on macos-26 and drop smoke-x64
+
+- **Files**: `.github/workflows/ci.yml`, `.github/workflows/canary.yml`
+- **Requirements**: REL-02
+- **Done when**: REL-02 AC1–AC4 hold (triggers exactly `workflow_dispatch`+`workflow_call` with
+  optional `ref` input wired into every checkout; `smoke-x64` gone; `macos-26` runners; canary
+  keeps schedule)
+- **Tests**: static validation — **Gate**: Quick
+- **Status**: [ ] pending
+
+#### T73 — Add the guarded /run ci PR comment command
+
+- **Files**: `.github/workflows/run-ci-comment.yml`
+- **Requirements**: REL-03
+- **Done when**: REL-03 AC1–AC5 hold (issue_comment trigger; OWNER/MEMBER/COLLABORATOR guard;
+  reuses ci.yml at `refs/pull/N/merge`; ack comment; no publish secrets reachable)
+- **Tests**: static validation — **Gate**: Quick
+- **Status**: [ ] pending
+
+#### T74 — Create the one-click release pipeline
+
+- **Files**: `.github/workflows/release.yml`
+- **Requirements**: REL-04
+- **Done when**: REL-04 AC1–AC5 hold (dispatch-only with bump choice; gate→bump→build→publish→
+  commit+tag+Release order; secret-gated Open VSX; `concurrency: release`; `contents: write` only)
+- **Tests**: static validation — **Gate**: Quick
+- **Status**: [ ] pending
+
+#### T75 — Write the publisher runbook and CI-policy docs
+
+- **Files**: `docs/release-checklist.md`, `CONTRIBUTING.md`, `docs/limitations.md`
+- **Requirements**: REL-05
+- **Done when**: REL-05 AC1–AC3 hold (publisher-setup runbook incl. PAT-retirement note and
+  first-release=major; CONTRIBUTING documents manual CI + `/run ci`; limitations notes Intel
+  best-effort)
+- **Tests**: content presence — **Gate**: Quick
+- **Status**: [ ] pending
+
+#### T76 — Record AD-019 and close out the amendment
+
+- **Files**: `.specs/STATE.md`
+- **Requirements**: bookkeeping for REL-01..05
+- **Done when**: AD-019 + AD-004 amendment note in STATE.md Decisions; Handoff updated; final
+  Build gate green
+- **Tests**: none — **Gate**: Build
+- **Status**: [ ] pending
