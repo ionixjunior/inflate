@@ -285,3 +285,75 @@ Gap #1 (the sole Major/blocking finding from iteration 1) is genuinely fixed: `e
 
 **Gate**: build ✅ · unit 193/193 ✅ · integration 20/25 (5 chaos failures, environment-only, non-regression) — same shape as iteration 1's own recorded chaos flakiness.
 **Sensor**: 1 mutation injected, 0 killed, 1 survived (documented residual, not treated as a blocking finding per the task's explicit instruction).
+
+## Drag-Resize Defect Fix Verification (2026-07-26)
+
+**Diff range**: `144975d..bf6d24b` (T69–T70, phase 15, "Drag-Resize Defect Fix Tasks" amendment — DF-1, requirement POLISH-09).
+**Verifier**: independent sub-agent (author ≠ verifier).
+
+### Task Completion Check
+
+| Task | Done-when item | Evidence | Status |
+| ---- | --------------- | -------- | ------ |
+| T69 | `draggable="false"` on `#preview` | `extension/src/webview.ts:131` | ✅ |
+| T69 | `#preview` rule has `-webkit-user-drag: none` + `user-select: none` | `extension/src/webview.ts:91-92` | ✅ |
+| T69 | `#stage` rule has `user-select: none` | `extension/src/webview.ts:89-90` | ✅ |
+| T69 | No other shell markup/CSS changed | `git show ea1aa8e --stat` — only `webview.ts` (+8/-3) and `webview.test.ts` (+20) touched; prior POLISH-01/05/08 tests still pass (see gate below) | ✅ |
+| T69 | Quick gate passes | `npm run build && npm test` — ✅ (see Gate table) | ✅ |
+| T70 | `pointerdown` calls `preventDefault()` + `setPointerCapture` (resize and pan both, since the call precedes the zone branch) | `extension/webview-ui/main.ts:371-372` | ✅ |
+| T70 | Capture released on pointerup/pointercancel | `extension/webview-ui/main.ts:437` (pointerup), `:464` (pointercancel) | ✅ |
+| T70 | `dragstart` suppressed document-wide | `extension/webview-ui/main.ts:366-368` | ✅ |
+| T70 | Esc/pointercancel abort semantics unchanged | pointercancel handler (`main.ts:462-468`) still clears `resizeDrag`/`hideGhost`/`dragStart` with no postMessage, identical to pre-fix FP-3 AC7 logic — only the capture-release line was added | ✅ |
+| T70 | Full gate passes | `npm run build && npm test && npm run test:integration` — ✅ (see Gate table) | ✅ |
+| T70 | Interactive UAT (AD-018, mandatory) | Recorded in `bf6d24b`'s commit body: corner/edge drags show dashed ghost only (no native ghost/badge), release-outside-panel completes, Esc aborts, center-drag pans, drawable corner-drag re-renders. Code inspection supports every claimed mechanism (see AC table below); the artifact itself (video) is unavailable to this Verifier, so this line is evidence-as-recorded, not independently re-witnessed | ✅ (recorded; not independently re-observed — see caveat below) |
+
+**Caveat on the UAT line**: per AD-018, native-drag hijack is structurally invisible to jsdom/string-level tests — this Verifier has no way to re-run a real Chromium drag either, so the interactive-UAT claim is accepted as evidence per the task's own design (commit-body record + code-level plausibility check), not re-derived from raw video. This mirrors the same trust boundary the fix-pack's own T68 UAT used.
+
+### Spec-Anchored Acceptance Criteria (POLISH-09)
+
+| # | Criterion | Check | Result |
+| - | --------- | ----- | ------ |
+| AC1 | Preview image not natively draggable; no text/image selection inside the stage | `webview.ts:131` (`draggable="false"`), `:91-92` (`-webkit-user-drag: none; user-select: none` on `#preview`), `:89-90` (`user-select: none` on `#stage`); asserted by 3 new tests in `webview.test.ts:89-107`, all passing | ✅ PASS |
+| AC2 | Pointerdown starting resize/pan calls `preventDefault()` + `setPointerCapture`; `dragstart` suppressed document-wide | `main.ts:371-372` (unconditional, before the zone branch, so both resize and pan paths are covered), `:366-368` (document-level `dragstart` listener) | ✅ PASS |
+| AC3 | Release outside panel completes normally (no stuck ghost); Esc/pointercancel abort unchanged | `pointerup` (`main.ts:435-458`) and `pointercancel` (`main.ts:462-468`) logic paths unchanged apart from the added capture-release line; window-level listeners (not stage-scoped) already fire regardless of pointer position, and `setPointerCapture` guarantees continued delivery outside the element bounds — this is exactly what capture is for. Confirmed live in the recorded UAT (release-outside-panel case named explicitly in the commit body) | ✅ PASS |
+| AC4 | Fix verified by string-level shell invariants AND mandatory interactive UAT, evidence in the closing commit | `webview.test.ts` invariants present and green; `bf6d24b` commit body contains the UAT narrative | ✅ PASS |
+
+**4/4 criteria PASS.**
+
+### Gate (run by this Verifier, not inferred)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Build | `cd extension && npm run build` | ✅ `dist/extension.js` 315.2kb, `dist/webview.js` 20.5kb — no errors |
+| Unit | `cd extension && npm test` | ✅ **196 passed**, 0 failed (15 files) |
+| Integration | `cd extension && npm run test:integration` | ✅ **25 passed**, 0 failed — includes the two edge-drag config-flow suites (`fix-pack POLISH-07, FP-3 AC5`/`AC4`) and all `chaos.test.ts` (T58) tests; this checkout has a populated `host/.engine-cache`, unlike the prior fix-pack re-verification's worktree |
+
+Full gate green end-to-end — no environment caveats this time.
+
+### Discrimination Sensor (scratch-only; tree left clean)
+
+| # | File:line | Mutation | Test run | Result |
+| - | --------- | -------- | -------- | ------ |
+| 1 | `extension/src/webview.ts:131` | `draggable="false"` → `draggable="true"` | `npm test -- src/webview.test.ts` | ✅ **Killed** — "marks the preview image non-draggable" fails |
+| 2 | `extension/src/webview.ts:92` | Removed `-webkit-user-drag: none; ` from the `#preview` rule | same run | ✅ **Killed** — "suppresses the native drag ghost and text/image selection on #preview" fails |
+
+Both mutations applied together via one `sed` pass, run, then reverted (`mv src/webview.ts.orig src/webview.ts`); `git diff` confirmed empty and `npm test -- src/webview.test.ts` re-run green (14/14) after restore. **2/2 killed.**
+
+Per AD-018 and the task brief, the `main.ts` pointer-glue mutations (AC2/AC3) are **not** sensor-tested here — this is the same structurally-untestable-by-jsdom gap the fix itself exists to work around, already documented in AD-018 and `tasks.md`'s Test Coverage Matrix (real-browser behavior only observable via interactive UAT). No fake DOM test was invented to paper over this.
+
+### Independent dp-math sanity check (not a POLISH-09 requirement — informational, per the implementer's request)
+
+Read `extension/webview-ui/viewport.ts:180-198` (`dragSizeToDp`) and `extension/webview-ui/main.ts:390-397` (`draggedGhostSize`) directly, tracing the zone='right' and zone='bottom' cases by hand:
+
+- `draggedGhostSize`: for `zone==='right'`, `h` is hard-set to `drag.anchor.height` (the drag-start display height) — never `+ dy`; for `zone==='bottom'`, `w` is hard-set to `drag.anchor.width`. So exactly one axis moves with the pointer at the displayed-px level, per zone — correct.
+- `dragSizeToDp`: `scaleH = startDp.h / startDisplayPx.h` where `startDisplayPx` is the same `anchor` rect. For `zone==='right'`, `draggedDisplayPx.h === anchor.height` (unchanged from start), so `h_new = round(anchor.height * (startDp.h / anchor.height)) = round(startDp.h)` — the fixed axis's dp value round-trips to itself (identity, modulo rounding), not skewed by the other axis's drag delta. Symmetric argument holds for `zone==='bottom'` and `w`.
+
+**Conclusion: no dp-axis coupling bug.** The fixed axis is genuinely held constant at both the displayed-px and dp levels. This independently corroborates the implementer's diagnosis: the on-screen box appearing to change on an unexpected axis after some edge-drags is consistent with `applyZoom`/`computeFitPercent` (T52, `viewport.ts`/`main.ts`) recomputing the fit-to-window scale from the new PNG's raw pixel dimensions after each render — a **display-layer rescale artifact**, not a resize-math defect. This is out of POLISH-09's scope and is not a gap in this fix; recorded here only as the requested sanity check. No lesson is filed for it (not a grounded gap in the code under test), but it is proposed as a tracked non-blocking follow-up in `STATE.md` (see Handoff addition below, applied by the orchestrator).
+
+### Verdict: ✅ PASS
+
+Both tasks' Done-when criteria are met with direct file:line evidence. All 4 POLISH-09 acceptance criteria pass. Full gate is green (196 unit + 25 integration, 0 failures) — the first fully clean full-gate run recorded in this file's history (no chaos-test environment caveats). The 2 targeted mutations against the one sensor-testable layer (AC1's shell markup/CSS) were both killed. The `main.ts` pointer-glue (AC2/AC3) remains — as AD-018 itself documents — outside what any automated sensor in this stack can exercise; its correctness rests on code inspection plus the recorded interactive UAT, exactly as the task was designed to be verified. No new defect found. The dp-math sanity check requested alongside this verification independently confirms `dragSizeToDp`/`draggedGhostSize` hold the correct axis fixed — the fit-zoom rescale interaction the implementer flagged is a real but out-of-scope UX follow-up, not a POLISH-09 gap.
+
+**Gate**: build ✅ · unit 196/196 ✅ · integration 25/25 ✅ — fully clean, no environment caveats.
+**Sensor**: 2 mutations injected against the sensor-testable layer, 2 killed, 0 survived. `main.ts` pointer-glue changes are out of sensor reach per AD-018 (expected, not a gap).
+**Informational**: dp-axis sanity check on `dragSizeToDp`/`draggedGhostSize` — no bug found; fit-zoom rescale UX interaction confirmed as the more likely explanation, tracked as a non-blocking follow-up, not a POLISH-09 defect.
