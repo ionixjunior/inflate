@@ -58,8 +58,11 @@ jobs:
       # AD-011: engine cache keyed by the generated manifest hash — a pin bump (T38-style) changes
       # extension/engine-manifest.json's contents and therefore this key, so a version bump always
       # re-downloads while an unchanged pin restores the ~170 MB download-free (R8, NFR-01 cold start).
-      - name: Cache engine artifacts
-        uses: actions/cache@v4
+      # Restore/save are split (Verifier hardening, 2026-07-26): /run ci gates execute untrusted
+      # PR code on the default-branch ref, so they must never WRITE the branch-shared cache that
+      # release.yml's gate later restores (cache-poisoning chain). PR-merge refs restore only.
+      - name: Restore engine artifact cache
+        uses: actions/cache/restore@v4
         with:
           path: host/.engine-cache
           key: engine-cache-${{ hashFiles('extension/engine-manifest.json') }}
@@ -83,6 +86,13 @@ jobs:
       - name: Fetch engine artifacts (skipped if cache restored)
         working-directory: host
         run: ./gradlew fetchEngine --console=plain
+
+      - name: Save engine artifact cache (trusted refs only — never from a PR-merge gate)
+        if: ${{ !startsWith(inputs.ref, 'refs/pull/') }}
+        uses: actions/cache/save@v4
+        with:
+          path: host/.engine-cache
+          key: engine-cache-${{ hashFiles('extension/engine-manifest.json') }}
 
       - name: Host build + unit tests
         working-directory: host

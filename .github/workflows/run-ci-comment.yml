@@ -18,13 +18,18 @@ on:
   issue_comment:
     types: [created]
 
+# Base token permissions; each job narrows further below (Verifier hardening, 2026-07-26: the
+# gate job must NOT inherit issues:write — it builds untrusted PR code).
 permissions:
   contents: read
-  issues: write # the ack comment (PR conversation comments use the issues API)
 
-# One gate per PR at a time; a newer /run ci supersedes a still-running older one.
+# One gate per PR at a time; a newer /run ci supersedes a still-running older one. The group is a
+# ternary on the SAME guard the jobs use: only guard-matching comments join the per-PR group —
+# every other comment run gets a unique throwaway group (its own run id), so ordinary PR
+# conversation can never cancel an in-progress gate (Verifier finding #1, 2026-07-26; the guards
+# below skip jobs but do not stop a run from entering a workflow-level concurrency group).
 concurrency:
-  group: run-ci-comment-pr-${{ github.event.issue.number }}
+  group: run-ci-comment-${{ (github.event.issue.pull_request && startsWith(github.event.comment.body, '/run ci') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) && format('pr-{0}', github.event.issue.number) || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -34,6 +39,8 @@ jobs:
       startsWith(github.event.comment.body, '/run ci') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest # posting a comment does not need a macOS runner
+    permissions:
+      issues: write # the ack comment (PR conversation comments use the issues API)
     steps:
       - name: Acknowledge on the PR with a link to this run
         env:
@@ -49,6 +56,10 @@ jobs:
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run ci') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    # The called gate builds/tests UNTRUSTED PR code: give it a read-only token and nothing else
+    # (Verifier finding #3 — without this it would inherit broader workflow permissions).
+    permissions:
+      contents: read
     uses: ./.github/workflows/ci.yml
     with:
       ref: refs/pull/${{ github.event.issue.number }}/merge
