@@ -765,3 +765,46 @@ reopen — unchanged.
       field and Backdrop button are gone; Orientation reads as a dropdown defaulting to Portrait.
 - [ ] Extension unit + integration gates green; host and corpus untouched; the v1 sections of this
       file and the v1 `validation.md` PASS record unmodified.
+
+### Defect Amendment (2026-07-26): DF-1 — edge-drag resize never completes (native image drag hijack)
+
+> Found in the first interactive use after fix-pack verification — exactly the real-webview smoke
+> test T68's commit recommended (no display was available in the implementation sandbox). Video
+> evidence (user recording, 2026-07-26): the resize cursor appears over the edges, then on drag a
+> translucent copy of the whole preview follows the pointer with the macOS green "+" copy badge, and
+> no re-render ever happens. Fix tasks: **T69–T70 (phase 15)** in `tasks.md`; requirement
+> **POLISH-09** below; platform discovery recorded as **AD-018** in `.specs/STATE.md`.
+
+**Root cause (code-verified):** `<img id="preview">` in `panelShellHtml`
+(`extension/src/webview.ts:129`) is natively draggable — the HTML default for images; the shell sets
+neither `draggable="false"` nor `-webkit-user-drag: none` — and the `#stage` `pointerdown` handler
+(`extension/webview-ui/main.ts:363`) never calls `preventDefault()`. On press-and-move Chromium
+starts a native HTML5 image drag: that is the translucent full-image ghost in the video. Starting a
+native drag cancels the pointer stream (`pointercancel`), and the webview's FP-3 AC7 abort path —
+added by T68 and working exactly as specified — hides the resize ghost and discards the gesture. So
+the hover cursor works (FP-3 AC2 needs no button press), but a drag can never reach `pointerup`: no
+`configChanged` is ever posted. Pan-drag started inside the image dies the same way (masked
+day-to-day by wheel-pan). Every automated gate passed because none runs a real Chromium drag
+pipeline — jsdom/string-level tests cannot observe browser-native default behaviors (the exact known
+gap recorded in STATE.md Handoff "Known accepted gaps" item (3) and T68's commit body).
+
+#### POLISH-09: Native-drag suppression on the gesture surface (restores POLISH-07 end-to-end)
+
+1. The preview image SHALL NOT be natively draggable: `draggable="false"` on `#preview` plus a
+   `-webkit-user-drag: none` CSS rule; gestures inside the stage SHALL NOT start text/image
+   selection (`user-select: none` on `#stage` and `#preview`). (T69)
+2. WHEN a pointerdown starts an edge-drag or a pan-drag THEN the handler SHALL call
+   `preventDefault()` and capture the pointer on the stage (`setPointerCapture`), and the page SHALL
+   suppress `dragstart` document-wide (`preventDefault()`, belt-and-braces) — so
+   `pointermove`/`pointerup` keep flowing for the whole gesture, including outside the webview
+   bounds. (T70)
+3. WHEN the pointer is released outside the panel mid-drag THEN the edge-drag SHALL complete
+   normally (exactly one re-render, ghost cleared — no stuck ghost); Esc/`pointercancel` abort
+   semantics (FP-3 AC7) SHALL be unchanged. (T70)
+4. Because this defect class is invisible to jsdom/string gates, the fix SHALL be verified by
+   string-level shell invariants (suppression attribute + rules present) AND a mandatory interactive
+   UAT in a real VS Code webview exercising FP-3's Independent Test, with the evidence recorded in
+   the closing commit body. (T69+T70)
+
+**Unchanged:** FP-3's ACs stand as written — this amendment adds the platform preconditions they
+implicitly assumed. No wire, host, config-store, or gesture-math change.

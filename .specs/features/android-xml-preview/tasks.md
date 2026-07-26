@@ -2056,6 +2056,121 @@ outcome check + discrimination sensor → results **appended to `validation.md`*
 Polish Fix-Pack Verification" section; gaps become fix tasks (bounded 3 iterations). The v1 PASS
 record in `validation.md` is never modified.
 
+## Drag-Resize Defect Fix Tasks (Amendment — 2026-07-26)
+
+> Defect fix to the UI Polish fix-pack (DF-1: Chromium's native image drag hijacks the edge-drag
+> gesture — see the "Defect Amendment (2026-07-26): DF-1" section in `spec.md`, requirement
+> **POLISH-09**, and **AD-018** in `.specs/STATE.md`). The **Execution Protocol at the top of this
+> file applies unchanged**. Task numbering continues the feature's sequence: **T69–T70**, **phase
+> 15**. Verifier output is appended to `validation.md` as a dated section — prior records are never
+> rewritten.
+
+**Spec**: the "Defect Amendment (2026-07-26): DF-1" section in `spec.md` (POLISH-09)
+**Context**: none needed — no gray areas; the fix is forced by the code-verified root cause (design
+phase skipped: both tasks follow existing component patterns)
+**Status**: Draft (awaiting user approval)
+
+### Test Coverage Matrix (defect fix)
+
+> Inherited unchanged from the fix-pack matrix above (same layers, same commands); the two touched
+> layers repeated for reference. One tightening per AD-018: for browser-native behavior the
+> automated gates are structurally blind, so interactive UAT in a real VS Code webview is a
+> REQUIRED verification step for gesture code, not an optional note.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| `shellHtml` markup/CSS (`webview.ts`) | unit (string-level structural invariants) | Suppression attribute + CSS rules asserted present (POLISH-09 AC1); existing POLISH-01/05 invariants stay green | `extension/src/webview.test.ts` | `cd extension && npm test` |
+| `main.ts` DOM glue | existing unit + integration stay green; behavior additionally verified by MANDATORY interactive UAT (AD-018) | Gesture completes end-to-end in a real webview (FP-3 Independent Test + POLISH-09 AC2/AC3) | integration suites + manual UAT | `cd extension && npm run test:integration` |
+
+### Gate Check Commands (defect fix)
+
+Unchanged from the fix-pack table above: **Quick** = `cd extension && npm run build && npm test`;
+**Full** = `cd extension && npm run build && npm test && npm run test:integration`.
+
+### Execution Plan (defect fix)
+
+**Phase 15: Native-drag suppression**
+
+```
+T69 → T70
+```
+
+### Task Breakdown (defect fix)
+
+#### T69: Make the preview image non-draggable in the shell
+
+**What**: Suppress Chromium's native image drag at the markup/CSS level: `draggable="false"` on the
+preview `<img>`, `-webkit-user-drag: none` + `user-select: none` on `#preview`, `user-select: none`
+on `#stage`.
+**Where**: `extension/src/webview.ts` (`panelShellHtml`: the `<img id="preview">` element at :129,
+the `#preview` rule at :90, the `#stage` rule at :87) + string-level invariants in
+`extension/src/webview.test.ts` (new POLISH-09 describe block).
+**Depends on**: None
+**Reuses**: the `panelShellHtml` string-invariant pattern (`webview.test.ts:51-58`, resizeGhost
+regex-on-rule block)
+**Requirement**: POLISH-09 (AC1)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `panelShellHtml` output has `draggable="false"` on `#preview`; the `#preview` rule contains
+      `-webkit-user-drag: none` and `user-select: none`; the `#stage` rule contains
+      `user-select: none` — all asserted as string-level unit invariants
+- [ ] No other shell markup/CSS changed (existing POLISH-01/05/08 invariants untouched and green)
+- [ ] Gate check passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit (string invariants)
+**Gate**: quick
+
+---
+
+#### T70: Guard the gesture glue and verify the drag interactively
+
+**What**: Belt-and-braces in the pointer glue — document-level `dragstart` suppression,
+`preventDefault()` + `setPointerCapture` on gesture pointerdown (both the resize and the pan
+branches), capture released on pointerup/pointercancel — then the mandatory real-webview UAT this
+defect class requires.
+**Where**: `extension/webview-ui/main.ts` (stage `pointerdown` handler :363-382; window
+`pointerup`/`pointercancel` :426-455; new document-level `dragstart` listener).
+**Depends on**: T69 (the interactive UAT verifies the combined fix, so it must land last)
+**Reuses**: existing FP-3 gesture handlers and cancel semantics (unchanged); T66 math in
+`viewport.ts` untouched
+**Requirement**: POLISH-09 (AC2/AC3) — restores POLISH-07 (FP-3 AC3–AC7) end-to-end
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `pointerdown` starting a resize or pan calls `e.preventDefault()` and captures the pointer on
+      the stage; capture is released on pointerup/pointercancel; `dragstart` is suppressed
+      document-wide; Esc/pointercancel abort behavior unchanged (glue stays thin per project
+      convention — no gesture math added)
+- [ ] Full gate passes: `cd extension && npm run build && npm test && npm run test:integration`
+      (config-flow routing suites unchanged; no test weakened or deleted)
+- [ ] **Interactive UAT in a real VS Code webview (MANDATORY, AD-018 — evidence recorded in the
+      commit body)**: on a real layout — corner drag shows the thin dashed ghost outline tracking
+      the pointer (NOT a translucent image copy with a green "+" badge), exactly one re-render at
+      the new size, Device shows "Custom (W×H dp)"; right-edge and bottom-edge drags resize one
+      axis; a drag released outside the panel completes without a stuck ghost; Esc aborts with no
+      render; a drag from the image center pans. On a drawable — corner drag re-renders at the new
+      `sizeDp`
+
+**Tests**: existing unit + integration green + mandatory interactive UAT
+**Gate**: full
+
+### Phase Execution Map (defect fix)
+
+```
+Phase 15:  T69 ──→ T70
+```
+
+Execution is strictly sequential — 2 tasks → **single batch, inline** (no sub-agent offer). After
+T70's commit, the always-on **Verifier** runs (author ≠ verifier): spec-anchored outcome check +
+discrimination sensor → results **appended to `validation.md`** as a dated "Drag-Resize Defect Fix
+Verification" section; the interactive-UAT evidence is part of what it checks (AD-018). The Verifier
+also distills the jsdom-blindness-to-native-browser-behavior lesson via `scripts/lessons.py`.
+
 ### Task Granularity Check (fix-pack)
 
 | Task | Scope | Status |
