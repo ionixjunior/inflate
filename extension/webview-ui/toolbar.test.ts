@@ -5,7 +5,6 @@ import {
   DRAWABLE_STATES,
   ThemeOption,
   ToolbarState,
-  backdropCss,
   buildConfigChanged,
   buildDensityChanged,
   buildDeviceChanged,
@@ -19,7 +18,6 @@ import {
   parseSizeOverride,
   pickerVisible,
   statesForSelection,
-  toggleBackdrop,
   toggleOrientation,
 } from './toolbar';
 
@@ -83,13 +81,6 @@ describe('drawable toolbar logic (T49, DRW-07/08, P1-C/P1-D)', () => {
     expect(matchedLabel(undefined)).toBe('');
   });
 
-  it('toggles the backdrop as a CSS-only change (no render request, P1-C AC1)', () => {
-    expect(toggleBackdrop('checkerboard')).toBe('solid');
-    expect(toggleBackdrop('solid')).toBe('checkerboard');
-    // The two backdrops produce distinct CSS and toggling never yields a configChanged message.
-    expect(backdropCss('checkerboard')).not.toEqual(backdropCss('solid'));
-    expect(backdropCss('checkerboard')).toContain('gradient');
-  });
 });
 
 describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () => {
@@ -147,8 +138,8 @@ describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () =>
     ]);
   });
 
-  it('hydrates the toolbar config fields from a stored config, leaving drawable/backdrop untouched', () => {
-    const state: ToolbarState = { ...initialToolbarState, selectedState: 'pressed', backdrop: 'solid' };
+  it('hydrates the toolbar config fields from a stored config, leaving the drawable state untouched', () => {
+    const state: ToolbarState = { ...initialToolbarState, selectedState: 'pressed' };
     const hydrated = hydrateToolbarState(state, {
       night: true,
       deviceId: 'tablet10',
@@ -163,9 +154,8 @@ describe('configuration toolbar controls (T51, CFG-01..04, P1-E AC1-AC4)', () =>
     expect(hydrated.density).toBe('xxxhdpi');
     expect(hydrated.themeName).toBe('Theme.MyApp');
     expect(hydrated.isProjectTheme).toBe(true);
-    // Drawable-only / CSS-only fields are untouched by config hydration.
+    // Drawable-only fields are untouched by config hydration.
     expect(hydrated.selectedState).toBe('pressed');
-    expect(hydrated.backdrop).toBe('solid');
   });
 
   it('still builds the drawable configChanged patch without the new config fields present', () => {

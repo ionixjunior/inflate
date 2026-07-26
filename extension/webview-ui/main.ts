@@ -15,7 +15,6 @@ import {
   warningCountsByKind,
 } from './viewmodel';
 import {
-  Backdrop,
   DENSITIES,
   DEVICE_PRESETS,
   DRAWABLE_STATES,
@@ -24,7 +23,6 @@ import {
   Orientation,
   ThemeOption,
   ToolbarState,
-  backdropCss,
   buildConfigChanged,
   buildDensityChanged,
   buildDeviceChanged,
@@ -36,7 +34,6 @@ import {
   matchedLabel,
   orderThemesForPicker,
   pickerVisible,
-  toggleBackdrop,
   toggleOrientation,
 } from './toolbar';
 import {
@@ -136,9 +133,6 @@ function paintToolbar(): void {
     matched.textContent = label;
     matched.style.display = label ? '' : 'none';
   }
-
-  const stage = $('stage');
-  if (stage) stage.style.background = backdropCss(toolbar.backdrop);
 
   // Config controls (T51, CFG-01..04): populate the static option lists once, then sync values.
   const nightToggle = $('nightToggle') as HTMLInputElement | null;
@@ -247,7 +241,6 @@ window.addEventListener('message', (event: MessageEvent) => {
       deviceId: string;
       orientation: Orientation;
       density: Density;
-      backdrop: Backdrop;
       zoom: ZoomState['zoom'];
     };
   };
@@ -261,7 +254,6 @@ window.addEventListener('message', (event: MessageEvent) => {
   }
   if (data.type === 'setConfig') {
     toolbar = hydrateToolbarState(toolbar, data.config);
-    toolbar = { ...toolbar, backdrop: data.config.backdrop };
     paintToolbar();
     applyZoom(data.config.zoom);
     return;
@@ -329,11 +321,6 @@ document.addEventListener('click', (e) => {
   }
   if (target && target.id === 'refreshButton') {
     vscode.postMessage({ type: 'refresh' });
-  }
-  if (target && target.id === 'backdropToggle') {
-    // Backdrop is a CSS-only swap — never a re-render (P1-C AC1).
-    toolbar = { ...toolbar, backdrop: toggleBackdrop(toolbar.backdrop) as Backdrop };
-    paintToolbar();
   }
   if (target && target.id === 'orientationToggle') {
     toolbar = { ...toolbar, orientation: toggleOrientation(toolbar.orientation) };

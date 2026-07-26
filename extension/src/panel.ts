@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { RenderResponse, Warning } from './protocol';
+import { panelShellHtml } from './webview';
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
@@ -80,7 +81,6 @@ export interface HydratedConfig {
   deviceId: string;
   orientation: string;
   density: string;
-  backdrop: string;
   zoom: ZoomSetting;
 }
 
@@ -305,66 +305,15 @@ export class PreviewPanelManager {
     return path.resolve(docPath);
   }
 
+  // NOTE: the error container is `id="errorPanel"` (not `id="error"`) and an <img> shell element is
+  // always present, so the walking-skeleton assertions (image present, no error state) still hold.
+  // The markup/CSS itself lives in `webview.ts`'s `panelShellHtml` (vscode-free, unit-testable).
   private shellHtml(webview: vscode.Webview): string {
     const nonce = nonceString();
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.js'),
     );
-    // NOTE: the error container is `id="errorPanel"` (not `id="error"`) and an <img> shell element is
-    // always present, so the walking-skeleton assertions (image present, no error state) still hold.
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
-  <style>
-    body { margin: 0; font-family: sans-serif; color: var(--vscode-foreground); }
-    #toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px;
-               border-bottom: 1px solid var(--vscode-panel-border, #444); font-size: 12px; }
-    #toolbar label { display: inline-flex; align-items: center; gap: 4px; }
-    #badge { background: var(--vscode-badge-background, #666); color: var(--vscode-badge-foreground, #fff);
-             padding: 2px 8px; border-radius: 8px; }
-    #matched { color: var(--vscode-descriptionForeground, #999); }
-    #stage { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
-    #preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
-    #staleChip { position: fixed; top: 8px; right: 8px; background: var(--vscode-badge-background, #666);
-                 color: var(--vscode-badge-foreground, #fff); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
-    #errorPanel { color: var(--vscode-errorForeground, #f14c4c); padding: 1em; white-space: pre-wrap; }
-    #fileGone { color: var(--vscode-descriptionForeground, #999); padding: 1em; }
-    #warnings { border-top: 1px solid var(--vscode-panel-border, #444); padding: 4px 8px; font-size: 12px; }
-    #warningsHeader { cursor: pointer; user-select: none; }
-    #warningsList { margin: 4px 0; padding-left: 1.2em; }
-    #status { padding: 4px 8px; font-size: 12px; color: var(--vscode-descriptionForeground, #999); }
-  </style>
-</head>
-<body>
-  <div id="staleChip" style="display:none">stale</div>
-  <div id="toolbar">
-    <label>Theme <select id="themePicker"></select></label>
-    <label><input id="nightToggle" type="checkbox" /> Night</label>
-    <label>Device <select id="devicePicker"></select></label>
-    <button id="orientationToggle" type="button">Orientation</button>
-    <label>Density <select id="densityPicker"></select></label>
-    <span id="statePickerWrap" style="display:none">
-      <label>State <select id="statePicker"></select></label>
-    </span>
-    <label>Size <input id="sizeInput" type="text" size="8" placeholder="WxH" /></label>
-    <button id="backdropToggle" type="button">Backdrop</button>
-    <span id="badge" style="display:none">static preview</span>
-    <span id="matched" style="display:none"></span>
-  </div>
-  <div id="stage"><img id="preview" alt="Inflate preview" style="display:none" /></div>
-  <div id="errorPanel" style="display:none"></div>
-  <div id="fileGone" style="display:none">The previewed file no longer exists.</div>
-  <div id="status" style="display:none"></div>
-  <div id="warnings" style="display:none">
-    <div id="warningsHeader"></div>
-    <ul id="warningsList" style="display:none"></ul>
-  </div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return panelShellHtml({ scriptUri: scriptUri.toString(), cspSource: webview.cspSource, nonce });
   }
 }
 

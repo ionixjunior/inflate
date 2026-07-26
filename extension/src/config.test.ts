@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { ConfigMemento, ConfigStore, DEVICE_PRESETS } from './config';
 
@@ -25,7 +26,6 @@ describe('ConfigStore (T50, CFG-05, P1-E AC5, design #8 defaults chain)', () => 
     expect(config.preview.orientation).toBe('portrait');
     expect(config.preview.density).toBe('xhdpi');
     expect(config.preview.pixelScale).toBe(1);
-    expect(config.backdrop).toBe('checkerboard');
     expect(config.zoom).toBe('fit');
   });
 
@@ -73,6 +73,35 @@ describe('ConfigStore (T50, CFG-05, P1-E AC5, design #8 defaults chain)', () => 
     const store = new ConfigStore(fakeMemento());
     const config = store.update('/proj/res/layout/main.xml', { deviceId: 'tablet7' });
     expect(config.preview.device).toEqual(DEVICE_PRESETS.find((d) => d.id === 'tablet7'));
+  });
+
+  it('loads a previously persisted entry that still has the v1 backdrop field, ignoring it harmlessly (fix-pack POLISH-01)', () => {
+    const key = path.resolve('/proj/res/layout/main.xml');
+    // A raw stored entry shaped like data ConfigStore wrote before POLISH-01 removed the field.
+    const legacyData: Record<string, unknown> = {
+      [key]: {
+        preview: {
+          themeName: 'Theme.Material3.DayNight',
+          isProjectTheme: false,
+          night: true,
+          device: DEVICE_PRESETS.find((d) => d.id === 'phone'),
+          orientation: 'portrait',
+          density: 'xhdpi',
+          pixelScale: 1,
+        },
+        backdrop: 'solid',
+        zoom: 'fit',
+      },
+    };
+    const memento: ConfigMemento = {
+      get: <T>(k: string) => (k === 'inflate.previewConfig' ? (legacyData as T) : undefined),
+      update: () => Promise.resolve(),
+    };
+    const store = new ConfigStore(memento);
+    const config = store.get('/proj/res/layout/main.xml');
+    expect(config.preview.night).toBe(true);
+    expect(config.preview.themeName).toBe('Theme.Material3.DayNight');
+    expect(config.zoom).toBe('fit');
   });
 
   it('fires a change event with the document path and the resulting config on every update', () => {

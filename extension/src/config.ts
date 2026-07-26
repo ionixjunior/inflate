@@ -1,10 +1,10 @@
 /**
  * ConfigStore (T50, design component #8, CFG-05, P1-E AC5). The single per-file preview
  * configuration store: the wire-level `PreviewConfig` (theme/night/device/orientation/density/
- * pixelScale/drawable — everything a render request needs) plus webview-only UI state (backdrop,
- * zoom) that is still persisted per file but never crosses the render protocol. Normalized by
- * resolved file path in `workspaceState` so the same document reopened under a different path
- * spelling still lands on one entry (CFG-05 "restore it when the preview reopens").
+ * pixelScale/drawable — everything a render request needs) plus webview-only UI state (zoom) that
+ * is still persisted per file but never crosses the render protocol. Normalized by resolved file
+ * path in `workspaceState` so the same document reopened under a different path spelling still
+ * lands on one entry (CFG-05 "restore it when the preview reopens").
  *
  * Replaces the ad-hoc `drawableConfigs` map + `defaultPreviewConfig()` that lived in `activation.ts`
  * before this task — this is now the only source of truth for per-file preview configuration.
@@ -20,14 +20,12 @@ export interface ConfigMemento {
   update(key: string, value: unknown): Thenable<void>;
 }
 
-export type Backdrop = 'checkerboard' | 'solid';
 /** `'fit'` = fit-to-window (default); a number is a persisted manual zoom percent (25-400, UX-03). */
 export type ZoomSetting = 'fit' | number;
 
 /** Per-file stored config: the wire-level `PreviewConfig` plus webview-only UI state (design #8). */
 export interface StoredPreviewConfig {
   preview: PreviewConfig;
-  backdrop: Backdrop;
   zoom: ZoomSetting;
 }
 
@@ -57,7 +55,6 @@ export interface PreviewConfigPatch {
   density?: Density;
   pixelScale?: 1 | 2;
   drawable?: { states: DrawableState[]; sizeDp?: { w: number; h: number } };
-  backdrop?: Backdrop;
   zoom?: ZoomSetting;
 }
 
@@ -66,7 +63,7 @@ function deviceById(id: string): DevicePreset {
 }
 
 /** The defaults chain (design component #8): manifest theme hint (if any) else the bundled
- * DayNight theme; modern phone; xhdpi; portrait; day; checkerboard backdrop; fit zoom. */
+ * DayNight theme; modern phone; xhdpi; portrait; day; fit zoom. */
 function defaults(manifestThemeHint?: string): StoredPreviewConfig {
   return {
     preview: {
@@ -78,7 +75,6 @@ function defaults(manifestThemeHint?: string): StoredPreviewConfig {
       density: DEFAULT_DEVICE.defaultDensity as Density,
       pixelScale: 1,
     },
-    backdrop: 'checkerboard',
     zoom: 'fit',
   };
 }
@@ -121,7 +117,6 @@ export class ConfigStore {
         pixelScale: patch.pixelScale ?? current.preview.pixelScale,
         drawable: patch.drawable ?? current.preview.drawable,
       },
-      backdrop: patch.backdrop ?? current.backdrop,
       zoom: patch.zoom ?? current.zoom,
     };
     all[key] = next;

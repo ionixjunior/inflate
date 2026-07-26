@@ -195,7 +195,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   updateEligibility(vscode.window.activeTextEditor);
 
   /** Push the persisted per-file config to the toolbar/viewport so a reopened preview restores its
-   * theme/device/orientation/density/night/backdrop/zoom exactly as last left (CFG-05, P1-E AC5). */
+   * theme/device/orientation/density/night/zoom exactly as last left (CFG-05, P1-E AC5). */
   function hydratePanelConfig(docPath: string): void {
     const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
     const stored = configStore.get(docPath, manifestTheme);
@@ -206,7 +206,6 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       deviceId: stored.preview.device.id,
       orientation: stored.preview.orientation,
       density: stored.preview.density,
-      backdrop: stored.backdrop,
       zoom: stored.zoom,
     });
   }

@@ -1,13 +1,12 @@
 /**
  * Pure drawable + config toolbar logic (T49/T51, DRW-07/08, P1-C AC1, P1-D AC1/AC3, CFG-01..04,
  * P1-E AC1-AC4). The webview toolbar for a document offers a drawable state picker (hidden when the
- * drawable is not state-sensitive), a backdrop toggle (checkerboard/solid — a CSS-only swap that
- * never triggers a re-render), a size override, and the configuration controls: day/night, a device
- * preset dropdown (5 built-ins), an orientation toggle, a density dropdown (5 buckets), and a theme
- * picker fed by the `listThemes` RPC (project themes first, then bundled). Every config control emits
- * a `configChanged` message the extension plumbs into the next render (unlike the CSS-only backdrop);
- * the static-preview badge and the selector matched-item are displayed from the render response. Kept
- * DOM-free so every rule is unit-testable without jsdom; `main.ts` applies it.
+ * drawable is not state-sensitive), a size override, and the configuration controls: day/night, a
+ * device preset dropdown (5 built-ins), an orientation toggle, a density dropdown (5 buckets), and a
+ * theme picker fed by the `listThemes` RPC (project themes first, then bundled). Every config control
+ * emits a `configChanged` message the extension plumbs into the next render; the static-preview badge
+ * and the selector matched-item are displayed from the render response. Kept DOM-free so every rule
+ * is unit-testable without jsdom; `main.ts` applies it.
  */
 
 export const DRAWABLE_STATES = [
@@ -20,8 +19,6 @@ export const DRAWABLE_STATES = [
   'activated',
 ] as const;
 export type DrawableStateName = (typeof DRAWABLE_STATES)[number];
-
-export type Backdrop = 'checkerboard' | 'solid';
 
 /** Drawable metadata carried by a render response (feeds the toolbar's picker/badge/matched display). */
 export interface DrawableMeta {
@@ -60,12 +57,10 @@ export interface ThemeOption {
   source: ThemeSource;
 }
 
-/** UI-local toolbar state: drawable state/size/backdrop (T49) plus the config controls (T51). Every
- * field except `backdrop` and `sizeText`'s CSS-only siblings flows to the extension via
- * `configChanged` and triggers a re-render. */
+/** UI-local toolbar state: drawable state/size (T49) plus the config controls (T51). Every field
+ * flows to the extension via `configChanged` and triggers a re-render. */
 export interface ToolbarState {
   selectedState: DrawableStateName;
-  backdrop: Backdrop;
   sizeText: string;
   night: boolean;
   deviceId: string;
@@ -77,7 +72,6 @@ export interface ToolbarState {
 
 export const initialToolbarState: ToolbarState = {
   selectedState: 'default',
-  backdrop: 'checkerboard',
   sizeText: '',
   night: false,
   deviceId: 'phone',
@@ -88,8 +82,8 @@ export const initialToolbarState: ToolbarState = {
 };
 
 /** Hydrate the toolbar's config fields from a persisted/stored config (ConfigStore, CFG-05, P1-E
- * AC5) — leaves the drawable-only fields (`selectedState`, `sizeText`) and `backdrop` untouched, since
- * they are addressed by the drawable toolbar's own hydration path. */
+ * AC5) — leaves the drawable-only fields (`selectedState`, `sizeText`) untouched, since they are
+ * addressed by the drawable toolbar's own hydration path. */
 export function hydrateToolbarState(
   state: ToolbarState,
   stored: {
@@ -208,14 +202,3 @@ export function matchedLabel(matched: DrawableMeta['matched']): string {
   return `matched item #${matched.index}, ${attrs}`;
 }
 
-/** Toggle the (CSS-only) backdrop — never emits a render request (P1-C AC1). */
-export function toggleBackdrop(b: Backdrop): Backdrop {
-  return b === 'checkerboard' ? 'solid' : 'checkerboard';
-}
-
-/** CSS `background` value for a backdrop mode (checkerboard vs solid) — applied webview-side only. */
-export function backdropCss(backdrop: Backdrop): string {
-  return backdrop === 'solid'
-    ? 'var(--vscode-editor-background, #1e1e1e)'
-    : 'repeating-conic-gradient(#7f7f7f 0% 25%, #bfbfbf 0% 50%) 50% / 20px 20px';
-}
