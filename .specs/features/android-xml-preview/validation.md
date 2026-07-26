@@ -226,3 +226,62 @@ Under the AD-008 pin (Paparazzi 1.3.5 / layoutlib 14.0.11 / Material 1.12, JDK 1
 **What works**: the entire happy-path surface — framework + androidx/Material render, all drawable types + state picker, config toolbar (day/night/device/density/theme/persistence), hot reload with coalescing + stale-discard, host lifecycle/crash-recovery/FIFO concurrency, setup/download/doctor, NFR-01 latency (wide margin), NFR-07 corpus (33 fixtures/42 combos, 0% diff). Sensor 5/5.
 **Issues**: G1 (comment-unaware preprocessor, correctness), G2 (degradation dead on live path — hard SHALL uncovered), G3 (legacy Xamarin casing unrendered). Plus the Chip/AD-002 user decision.
 **Next steps**: route gaps 1–3 to fix tasks with the discriminating tests above; escalate the Chip/Q5 vs AD-002 decision to the user.
+
+---
+
+## UI Polish Fix-Pack Verification (2026-07-26)
+
+**Diff range**: `6d100e9..94a26b5` (T61–T68, "UI Polish Fix-Pack" amendment — POLISH-01..08, stories FP-1..FP-5).
+**Verifier**: independent sub-agent (author ≠ verifier).
+
+> **Editorial note (added by the iteration-2 re-verifier, 2026-07-26):** `tasks.md` (line ~2055) and `STATE.md` both state this section should already exist here — "results appended to `validation.md` as a dated 'UI Polish Fix-Pack Verification' section." No such section was found in this file when the re-verification pass began (confirmed by grepping the file for `POLISH`, `Fix-Pack`, and every string named in the handoff — zero matches; `git log` on this file shows no commit touching it since `213a948`, the v1 close). The iteration-1 Verifier's FAIL verdict and ranked gap list were relayed faithfully in the re-verification task brief, so they are reconstructed below for continuity, but they were **not independently re-derived from a persisted iteration-1 report** — they are recorded as received. This is itself a process gap (the persisted-report step was skipped or lost) and is flagged, not silently patched over.
+
+### Verdict (iteration 1, as relayed): ❌ FAIL
+
+**Ranked gap list (iteration 1):**
+1. **[Major, real defect]** Busy/loading indicator never cleared if the render-engine download failed after the JDK was found — `activation.ts`'s `ensureRealHostConfigured` failure branch never cleared `entry.busy`. Violated the fix-pack's own edge case ("the in-panel indicator SHALL clear to the error state, not spin forever").
+2. **[Minor]** The literal loading-phase strings ("Preparing render engine…", "Starting render host…", "Rendering…") had zero test evidence — only the generic busy/label mechanism was tested.
+3. **[Minor]** `PendingMessageQueue`'s FIFO ordering was proven, but `PreviewPanelManager`'s actual wiring of it (flushing 2+ queued messages on 'ready') was never exercised.
+4. **[Minor]** Drag-cancel (pointercancel/Esc) and no-image-no-affordance behavior in `main.ts` had no test evidence (code-reviewed correct, but the task's own Done-when overclaimed "unit-covered where pure").
+
+### Re-verification (iteration 2)
+
+**Fix commit**: `7a63834` "Clear the busy indicator when guided host setup fails" (claims to close gap #1, partially addresses gap #2). Gaps #3/#4 deliberately left open — triaged by the orchestrator as residual risk consistent with this codebase's established convention of never mocking `vscode` and never touching real async webview timing / DOM glue with jsdom (no prior task in 68+ has done either). This re-verification treats #3/#4 as accepted/known, not re-litigated, per its brief.
+
+**Gap #1 — re-checked, genuinely fixed:**
+- `extension/src/activation.ts:105-119` — `ensureRealHostConfigured(docPath?, onPhase?)` now takes an optional `docPath`; on `prepareRealHost` failure it calls `panelManager.applyHostError(docPath, new Error(result.guidedMessage))` (line 109) *before* showing the guided warning notification, when a `docPath` is available.
+- `extension/src/panel.ts:282-288` — `applyHostError` sets `entry.busy = false` (line 286) and posts a `setError` message — this is the real clear-to-error-state path the spec's edge case demands, not cosmetic.
+- `openPreviewFor` (`activation.ts:260-274`) is the one real-panel caller and now passes `docPath` (line 267). `inflate.restartHost` (`activation.ts:339-344`) still omits it — correct per its own comment ("no panel to clear"), since a manual restart has no specific document panel in scope.
+- **Coverage reality check**: no test — unit or integration — exercises this exact path. Confirmed by: (a) `grep -rn "applyHostError" src/` finds only the two call sites in `activation.ts` and one comment in `retry.test.ts`; (b) every integration test runs under `INFLATE_TEST_FAKE_HOST` (set in `src/test/integration/runTest.ts:17`), and `ensureRealHostConfigured` short-circuits `if (isFakeHostMode) return true;` (`activation.ts:106`) *before* ever reaching `prepareRealHost` or the new `applyHostError` call — so the fake-host harness structurally cannot reach this line; (c) no `activation.test.ts` exists, and no test anywhere calls `prepareRealHost` or exercises its failure branches (`isGuidedError`/engine-install-catch) directly — this was true before the fix-pack too (this real-JDK-setup path has never had direct test coverage in this project). **Conclusion: pre-existing gap, not worsened by the fix-pack** — the fix is real and correct by code inspection + the discrimination-sensor mutation below, but it remains untested.
+
+**Gap #2 — re-checked, fixed for the literal-string part:**
+- `extension/src/loadingPhases.ts` exports `PHASE_PREPARING_ENGINE = 'Preparing render engine…'`, `PHASE_STARTING_HOST = 'Starting render host…'`, `PHASE_RENDERING = 'Rendering…'`, and `preparingEnginePhase(artifactKey, percent?)`. These match the spec's amendment section verbatim (`spec.md:610-612`: `"Preparing render engine…" with artifact + percent during a download, "Starting render host…", "Rendering…"`).
+- `extension/src/loadingPhases.test.ts` (3 tests, all passing) asserts the exact three strings and both `preparingEnginePhase` forms (no percent / with percent).
+- `activation.ts:21` imports all four; used at lines 174 (`PHASE_RENDERING` via `onDispatch`), 268 (`PHASE_STARTING_HOST`), 409/428 (`PHASE_PREPARING_ENGINE` / `preparingEnginePhase`). Verified no inline literal of any of the three phase strings remains anywhere in `activation.ts`/`panel.ts` outside comments/KDoc (`grep -rn "Preparing render engine…\|Starting render host…\|Rendering…" src/ webview-ui/` — every functional-code hit is a comment or a `panel.test.ts`/`messageQueue.test.ts` fixture literal for the generic busy/label mechanism, not a place that should have imported the constant).
+- Gap #3/#4 (queue-flush wiring, drag-cancel/no-affordance) were, per the brief, deliberately not addressed this iteration — accepted as residual, not re-derived here.
+
+### Gate (re-run by this re-verifier, not inferred)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Build | `cd extension && npm run build` | ✅ `dist/extension.js` 315.1kb, `dist/webview.js` 20.1kb — no errors |
+| Unit | `cd extension && npm test` | ✅ **193 passed**, 0 failed (15 files, incl. `loadingPhases.test.ts` 3/3) |
+| Integration | `cd extension && npm run test:integration` | ⚠️ **20 passed, 5 failed** — all 5 failures are in `chaos.test.ts` ("Inflate chaos and robustness (T58)"), each erroring `initialize failed: .../host/.engine-cache/layoutlib/runtime/build.prop (No such file or directory)`. This worktree has no `host/.engine-cache` (the real layoutlib runtime cache is not present in this isolated checkout) — an environment/fixture-availability issue, not a code defect, and not touched by the fix-pack diff (chaos.test.ts drives a real JVM host unrelated to any POLISH-0x change). Matches the prior pass's note that `chaos.test.ts` failures here are environment-flaky, not a fix-pack regression. The 6th chaos test ("a tiny -Xmx heap crash…") passed since it doesn't depend on the missing cache. |
+
+Note: `node_modules` was not present in this worktree checkout and required `npm install` before any gate command would run (unrelated environment setup, not a code issue). A `--user-data-dir` launch-arg override was needed on the compiled (gitignored) `out/test/integration/runTest.js` to work around a macOS AF_UNIX socket-path-length limit triggered by this worktree's long nested path (`.claude/worktrees/agent-.../.vscode-test/user-data/1.13-main.sock` > 103 chars) — this only touches a gitignored build artifact, never the tracked source, and does not change test behavior or outcomes.
+
+### Discrimination Sensor (scratch-only; tree left clean)
+
+| # | File:line | Mutation | Test run | Result |
+| - | --------- | -------- | -------- | ------ |
+| 1 | `extension/src/activation.ts:109` | Commented out `if (docPath) panelManager.applyHostError(docPath, new Error(result.guidedMessage));` (the entire gap-#1 fix line) | `npm test` + `npm run test:integration` (full gate, both stacks) | ❌ **Survived** — unit: 193/193 still pass (unchanged); integration: still exactly 20 passed / 5 failed (the same 5 pre-existing chaos failures, nothing new). No test anywhere detects the removal. |
+
+**Sensor depth**: 1 targeted mutation against the specific new fix under re-verification (proportionate — this is a re-verify pass on one already-scoped commit, not a fresh feature).
+**Result**: 0/1 killed — **confirms the coverage-reality-check above as an empirical, not just inferred, finding**: this exact line is currently unreachable by any test in the suite (fake-host mode always short-circuits before it), so a regression here would ship silently. This is graded a **residual gap, not a new defect** — the fix itself is correct by inspection (`panelManager.applyHostError` demonstrably sets `entry.busy = false`), and building deterministic coverage for it would require either mocking `vscode` (a testing convention this codebase has never used, across 68+ tasks) or running the integration suite against a real, unconfigured JDK/engine environment (which the fake-host harness exists specifically to avoid). Mutation reverted; `git diff` confirmed empty; `git status` confirmed clean after restore.
+
+### Verdict: ✅ PASS
+
+Gap #1 (the sole Major/blocking finding from iteration 1) is genuinely fixed: `entry.busy` is cleared and the panel is driven to a settled error state on a guided-setup failure, for the one caller (`openPreviewFor`) that has a panel to clear. Gap #2 is fixed for its literal-string claim (now unit-tested, verbatim-matched to spec). Gaps #3/#4 remain intentionally untested, as pre-triaged and accepted by the orchestrator — re-confirmed here as not newly broken, so they do not block PASS per this re-verification's own mandate. No NEW Major defect was found. The one open item is a **known, accepted, and now empirically-confirmed residual gap** (gap-#1's fix line has no direct test — sensor mutation #1 survived) rather than a fresh regression; it is not escalated to a 3rd fix→re-verify iteration because iteration 1's actual blocking defect (the busy indicator never clearing) is resolved and the remaining exposure is coverage-only on code that mirrors this project's long-standing, deliberate real-host-path testing boundary.
+
+**Gate**: build ✅ · unit 193/193 ✅ · integration 20/25 (5 chaos failures, environment-only, non-regression) — same shape as iteration 1's own recorded chaos flakiness.
+**Sensor**: 1 mutation injected, 0 killed, 1 survived (documented residual, not treated as a blocking finding per the task's explicit instruction).
