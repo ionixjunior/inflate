@@ -2,6 +2,7 @@
 host/.gradle/
 host/build/
 host/.engine-cache/
+host/local.properties
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
