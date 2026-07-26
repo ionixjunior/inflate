@@ -149,6 +149,16 @@ export interface DisplaySize {
   h: number;
 }
 
+/** The standard Android density-bucket → dpi mapping (`main.ts` looks up the document's current
+ * bucket here rather than embedding the numbers inline, keeping the gesture glue thin). */
+export const DENSITY_DPI: Record<string, number> = {
+  mdpi: 160,
+  hdpi: 240,
+  xhdpi: 320,
+  xxhdpi: 480,
+  xxxhdpi: 640,
+};
+
 /** The device/pixel-scale context needed to convert a displayed-px drag into dp (FP-3 AC4). */
 export interface DensityContext {
   densityDpi: number;

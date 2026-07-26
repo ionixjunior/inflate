@@ -48,6 +48,20 @@ describe('panelShellHtml — busy overlay (fix-pack POLISH-02)', () => {
   });
 });
 
+describe('panelShellHtml — edge-drag ghost outline (fix-pack POLISH-07, FP-3 AC3)', () => {
+  it('contains a resize ghost element, hidden by default and non-interactive', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(html).toContain('<div id="resizeGhost" style="display:none">');
+    const ghostRule = /#resizeGhost\s*\{[^}]*\}/.exec(html)?.[0] ?? '';
+    expect(ghostRule).toContain('pointer-events: none');
+  });
+
+  it('has no Size text input (POLISH-06 removed it in favor of the drag gesture)', () => {
+    const html = panelShellHtml(SHELL_PARAMS);
+    expect(html).not.toContain('sizeInput');
+  });
+});
+
 describe('panelShellHtml — stage containment (fix-pack POLISH-05)', () => {
   function rule(html: string, selector: string): string {
     const re = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`);

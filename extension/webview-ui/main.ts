@@ -37,9 +37,14 @@ import {
   pickerVisible,
 } from './toolbar';
 import {
+  DENSITY_DPI,
+  DisplayRect,
+  DisplaySize,
   ZoomState,
   applyCanvasCapped,
   clampPan,
+  dragSizeToDp,
+  edgeHitTest,
   initialPanOffset,
   initialZoomState,
   nextZoomState,
@@ -93,6 +98,34 @@ function applyZoom(nextSetting: ZoomState['zoom']): void {
 function paintTransform(): void {
   const img = $('preview') as HTMLImageElement | null;
   if (img) img.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom.percent / 100})`;
+}
+
+/** The displayed image's on-screen bounds (fix-pack POLISH-07) — `undefined` when no image is shown,
+ * so no resize affordance is ever offered without one (FP-3 AC8). */
+function imageDisplayRect(): DisplayRect | undefined {
+  const img = $('preview') as HTMLImageElement | null;
+  if (!img || img.style.display === 'none') return undefined;
+  const r = img.getBoundingClientRect();
+  return { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+
+/** Show/position the edge-drag ghost outline over the stage, anchored at the image's drag-start
+ * position (fix-pack POLISH-07, FP-3 AC3). */
+function paintGhost(anchor: DisplayRect, w: number, h: number): void {
+  const ghost = $('resizeGhost') as HTMLElement | null;
+  const stage = $('stage');
+  if (!ghost || !stage) return;
+  const stageRect = stage.getBoundingClientRect();
+  ghost.style.display = 'block';
+  ghost.style.left = `${anchor.left - stageRect.left}px`;
+  ghost.style.top = `${anchor.top - stageRect.top}px`;
+  ghost.style.width = `${w}px`;
+  ghost.style.height = `${h}px`;
+}
+
+function hideGhost(): void {
+  const ghost = $('resizeGhost') as HTMLElement | null;
+  if (ghost) ghost.style.display = 'none';
 }
 
 function $(id: string): HTMLElement | null {
@@ -313,12 +346,58 @@ $('stage')?.addEventListener(
   { passive: false },
 );
 
-// Drag-to-pan (gesture pan, T52/UX-03).
+// Drag-to-pan (gesture pan, T52/UX-03) and edge-drag resize (fix-pack POLISH-07, FP-3). Resize takes
+// precedence over pan whenever the pointer starts within the 8px inner band of an eligible edge
+// (FP-3 AC2) — the gesture math itself (hit-testing, px-to-dp conversion) lives in viewport.ts;
+// everything here is thin DOM glue.
 let dragStart: { x: number; y: number; pan: PanOffset } | undefined;
+interface ResizeDrag {
+  zone: 'right' | 'bottom' | 'corner';
+  anchor: DisplayRect;
+  startClientX: number;
+  startClientY: number;
+  startDp: DisplaySize;
+}
+let resizeDrag: ResizeDrag | undefined;
+
 $('stage')?.addEventListener('pointerdown', (e: PointerEvent) => {
+  const rect = imageDisplayRect();
+  const zone = rect ? edgeHitTest(e.clientX, e.clientY, rect) : null;
+  if (zone && rect) {
+    const pxPerDp = (DENSITY_DPI[toolbar.density] ?? 160) / 160 * zoom.pixelScale;
+    resizeDrag = {
+      zone,
+      anchor: rect,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startDp: {
+        w: pxPerDp > 0 ? (state.imageWidth ?? 0) / pxPerDp : 0,
+        h: pxPerDp > 0 ? (state.imageHeight ?? 0) / pxPerDp : 0,
+      },
+    };
+    paintGhost(rect, rect.width, rect.height);
+    return; // resize suppresses pan-drag entirely (FP-3 AC2)
+  }
   dragStart = { x: e.clientX, y: e.clientY, pan: { ...pan } };
 });
+
+/** The ghost's dragged displayed-px size for the current pointer position — width tracks the
+ * pointer for 'right'/'corner', height for 'bottom'/'corner'; the other axis stays fixed. */
+function draggedGhostSize(drag: ResizeDrag, clientX: number, clientY: number): DisplaySize {
+  const dx = clientX - drag.startClientX;
+  const dy = clientY - drag.startClientY;
+  return {
+    w: drag.zone === 'bottom' ? drag.anchor.width : Math.max(1, drag.anchor.width + dx),
+    h: drag.zone === 'right' ? drag.anchor.height : Math.max(1, drag.anchor.height + dy),
+  };
+}
+
 window.addEventListener('pointermove', (e: PointerEvent) => {
+  if (resizeDrag) {
+    const size = draggedGhostSize(resizeDrag, e.clientX, e.clientY);
+    paintGhost(resizeDrag.anchor, size.w, size.h);
+    return;
+  }
   if (!dragStart) return;
   const stage = $('stage');
   const rect = stage?.getBoundingClientRect();
@@ -332,8 +411,54 @@ window.addEventListener('pointermove', (e: PointerEvent) => {
   );
   paintTransform();
 });
-window.addEventListener('pointerup', () => {
+
+// Cursor feedback while hovering (not dragging): shows the matching resize cursor over an eligible
+// edge, otherwise the default (FP-3 AC2).
+$('stage')?.addEventListener('pointermove', (e: PointerEvent) => {
+  if (dragStart || resizeDrag) return;
+  const stage = $('stage');
+  if (!stage) return;
+  const rect = imageDisplayRect();
+  const zone = rect ? edgeHitTest(e.clientX, e.clientY, rect) : null;
+  stage.style.cursor = zone === 'right' ? 'ew-resize' : zone === 'bottom' ? 'ns-resize' : zone === 'corner' ? 'nwse-resize' : '';
+});
+
+window.addEventListener('pointerup', (e: PointerEvent) => {
+  if (resizeDrag) {
+    const drag = resizeDrag;
+    const size = draggedGhostSize(drag, e.clientX, e.clientY);
+    const dp = dragSizeToDp(drag.startDp, { w: drag.anchor.width, h: drag.anchor.height }, size, {
+      densityDpi: DENSITY_DPI[toolbar.density] ?? 160,
+      pixelScale: zoom.pixelScale,
+    });
+    resizeDrag = undefined;
+    hideGhost();
+
+    if (docKind === 'drawable') {
+      const msg = buildConfigChanged(toolbar.selectedState) as { type: 'configChanged'; drawable: { states: DrawableStateName[] } };
+      vscode.postMessage({ ...msg, drawable: { ...msg.drawable, sizeDp: dp } });
+    } else {
+      customSize = dp;
+      paintToolbar();
+      vscode.postMessage({ type: 'configChanged', customSize: dp });
+    }
+    return;
+  }
   dragStart = undefined;
+});
+
+window.addEventListener('pointercancel', () => {
+  // Abort with no render request (FP-3 AC7).
+  resizeDrag = undefined;
+  hideGhost();
+  dragStart = undefined;
+});
+
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && resizeDrag) {
+    resizeDrag = undefined;
+    hideGhost();
+  }
 });
 
 document.addEventListener('click', (e) => {

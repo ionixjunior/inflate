@@ -96,6 +96,9 @@ export function panelShellHtml(params: PanelShellParams): string {
     @keyframes inflate-spin { to { transform: rotate(360deg); } }
     #busyLabel { font-size: 12px; color: var(--vscode-foreground);
                  background: var(--vscode-editor-background, #1e1e1e); padding: 2px 8px; border-radius: 4px; }
+    #resizeGhost { position: absolute; display: none; box-sizing: border-box; pointer-events: none;
+                   border: 1px dashed var(--vscode-focusBorder, #007acc);
+                   background: rgba(0, 122, 204, 0.08); }
     #staleChip { position: fixed; top: 8px; right: 8px; background: var(--vscode-badge-background, #666);
                  color: var(--vscode-badge-foreground, #fff); padding: 2px 8px; border-radius: 8px; font-size: 11px; }
     #errorPanel { flex: 0 0 auto; color: var(--vscode-errorForeground, #f14c4c); padding: 1em;
@@ -128,6 +131,7 @@ export function panelShellHtml(params: PanelShellParams): string {
       <div id="busySpinner"></div>
       <div id="busyLabel"></div>
     </div>
+    <div id="resizeGhost" style="display:none"></div>
   </div>
   <div id="errorPanel" style="display:none"></div>
   <div id="fileGone" style="display:none">The previewed file no longer exists.</div>

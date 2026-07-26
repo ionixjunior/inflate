@@ -161,4 +161,41 @@ suite('Inflate config toolbar (T53)', () => {
     // the exposed ConfigStore directly (P1-E AC5's "restore it when the preview reopens").
     assert.strictEqual(a.configStore.get(mainFile).zoom, 150, 'the persisted zoom level must survive reopen');
   });
+
+  test('a layout edge-drag delivers a customSize patch that renders with the custom device (fix-pack POLISH-07, FP-3 AC5)', async () => {
+    const a = await api();
+    await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(mainFile));
+    await waitFor(() => a.panelManager.lastApplied(mainFile)?.status === 'ok');
+    const beforeId = a.panelManager.lastApplied(mainFile)!.responseId!;
+
+    // The webview's edge-drag gesture emits exactly this shape on pointerup for a layout doc.
+    a.panelManager.deliverWebviewMessage(mainFile, { type: 'configChanged', customSize: { w: 411, h: 600 } });
+    await waitFor(() => (a.panelManager.lastApplied(mainFile)?.responseId ?? 0) > beforeId);
+
+    const notice = configNotice(a, mainFile);
+    assert.match(notice, /device=custom/, 'the request must carry the transient custom device id');
+    assert.match(notice, /widthDp=411/);
+    assert.match(notice, /heightDp=600/);
+    assert.strictEqual(a.configStore.get(mainFile).preview.device.id, 'custom', 'ConfigStore must persist the custom device');
+  });
+
+  test('a drawable edge-drag delivers a drawable.sizeDp patch that renders at the dragged size (fix-pack POLISH-07, FP-3 AC4)', async () => {
+    const a = await api();
+    await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(mainFile));
+    await waitFor(() => a.panelManager.lastApplied(mainFile)?.status === 'ok');
+    const beforeId = a.panelManager.lastApplied(mainFile)!.responseId!;
+
+    // The webview's edge-drag gesture emits exactly this shape on pointerup for a drawable doc —
+    // proving the extension-side plumbing only; the webview's own docKind-based routing choice
+    // isn't reachable without a live DOM (see main.ts's pointerup handler).
+    a.panelManager.deliverWebviewMessage(mainFile, {
+      type: 'configChanged',
+      drawable: { states: [], sizeDp: { w: 128, h: 256 } },
+    });
+    await waitFor(() => (a.panelManager.lastApplied(mainFile)?.responseId ?? 0) > beforeId);
+
+    // drawable.sizeDp doesn't appear in the fake host's config-notice echo — assert the persisted
+    // (and thus wire-carried, since getConfig() reads straight from ConfigStore) shape directly.
+    assert.deepStrictEqual(a.configStore.get(mainFile).preview.drawable, { states: [], sizeDp: { w: 128, h: 256 } });
+  });
 });
