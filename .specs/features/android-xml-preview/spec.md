@@ -813,7 +813,7 @@ implicitly assumed. No wire, host, config-store, or gesture-math change.
 
 > Final pre-release work on the delivered v1 (NOT a new feature): Marketplace listing content, CI
 > trigger policy, and a fully automated release pipeline. Requirement IDs `REL-01..05` extend the
-> v1 sets without collision; tasks continue the feature numbering as **T71–T76** (phases 15–17) in
+> v1 sets without collision; tasks continue the feature numbering as **T71–T76** (phases 16–18) in
 > `tasks.md`. Verifier output is appended to `validation.md` as a dated release-automation section —
 > prior PASS records are never rewritten.
 

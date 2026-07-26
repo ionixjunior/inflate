@@ -2221,7 +2221,7 @@ and its logic lives in unit-tested `toolbar.ts` builders).
 > Pre-release automation for the delivered v1 (NOT a new feature). The **Execution Protocol at the
 > top of this file applies unchanged** (tlc-spec-driven Execute flow, per-task gate, atomic
 > verb-first commit per task, always-on Verifier). Task numbering continues the feature's sequence:
-> **T71–T76**, **phases 15–17**. Verifier output is **appended to `validation.md` as a dated
+> **T71–T76**, **phases 16–18**. Verifier output is **appended to `validation.md` as a dated
 > release-automation section** — prior PASS records are never rewritten.
 
 **Spec**: the "Release & Publish Automation" amendment section in `spec.md` (REL-01..05)
@@ -2256,19 +2256,19 @@ and its logic lives in unit-tested `toolbar.ts` builders).
 
 6 tasks → single batch, executed inline (no sub-agents).
 
-**Phase 15: Marketplace listing content**
+**Phase 16: Marketplace listing content**
 
 ```
 T71
 ```
 
-**Phase 16: CI & release pipelines**
+**Phase 17: CI & release pipelines**
 
 ```
 T72 → T73 → T74
 ```
 
-**Phase 17: Runbook & bookkeeping**
+**Phase 18: Runbook & bookkeeping**
 
 ```
 T75 → T76
