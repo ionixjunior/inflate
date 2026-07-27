@@ -79,10 +79,10 @@ jobs:
         working-directory: extension
         run: npm test
 
-      - name: Extension integration tests
-        working-directory: extension
-        run: npm run test:integration
-
+      # Must run BEFORE the extension integration tests: the chaos suite (T58) drives the REAL JVM
+      # host, whose initialize needs the populated engine cache (host/.engine-cache) — running it
+      # against an empty cache fails with "build.prop (No such file or directory)" (first live CI
+      # run, 2026-07-27).
       - name: Fetch engine artifacts (skipped if cache restored)
         working-directory: host
         run: ./gradlew fetchEngine --console=plain
@@ -93,6 +93,10 @@ jobs:
         with:
           path: host/.engine-cache
           key: engine-cache-${{ hashFiles('extension/engine-manifest.json') }}
+
+      - name: Extension integration tests
+        working-directory: extension
+        run: npm run test:integration
 
       - name: Host build + unit tests
         working-directory: host
