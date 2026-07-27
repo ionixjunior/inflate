@@ -3,6 +3,16 @@
 Notable changes to the Inflate extension. Per-release notes (with merged PRs) are also published on
 the [GitHub Releases page](https://github.com/ionixjunior/inflate/releases).
 
+## 1.0.1
+
+Bug fixes — no new capability.
+
+- Fixed: the very first preview could hang permanently if a render was triggered (e.g. an
+  auto-save) while the one-time engine download was still running. The render host now recovers
+  automatically instead of getting stuck; the same preview completes once the download finishes.
+- Fixed: `Inflate: Doctor` no longer lists code-only androidx libraries (which ship no resources)
+  as "missing" once the engine is installed.
+
 ## 1.0.0
 
 Initial public release.
