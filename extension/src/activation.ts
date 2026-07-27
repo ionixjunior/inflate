@@ -16,6 +16,7 @@ import { ArtifactManager, EngineManifest, HostArch } from './artifacts';
 import { classify, isEligible } from './classifier';
 import { ConfigStore, PreviewConfigPatch } from './config';
 import { assembleDoctorReport, DoctorRenderTimings, formatDoctorReport } from './doctor';
+import { singleFlight } from './gate';
 import { HostManager, HostState, buildJavaCommand } from './host';
 import { GuidedError, isGuidedError, JdkLocator } from './jdk';
 import { PHASE_PREPARING_ENGINE, PHASE_RENDERING, PHASE_STARTING_HOST, preparingEnginePhase } from './loadingPhases';
@@ -94,17 +95,27 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   const isFakeHostMode = Boolean(process.env.INFLATE_TEST_FAKE_HOST);
   let lastRenderTimings: DoctorRenderTimings | undefined;
 
-  /** Runs {@link prepareRealHost} (no-op under the fake-host test harness) and, on failure, shows
-   * the guided JDK setup message with download/re-check actions (P1-H AC2/AC3) instead of
+  // T79 (HOST-04 AC4): every real-host configuration attempt — whichever caller triggers it first
+  // (openPreview, a scheduler retry, restartHost) — funnels through this ONE single-flight gate, so
+  // a render landing mid-download joins the running install instead of racing a second one. A
+  // settled (including failed) attempt is never memoized — the next call always re-runs setup, so a
+  // no-JDK/offline failure retries on the next request rather than sticking forever.
+  const configureRealHostGated = singleFlight((onPhase?: (label: string) => void) =>
+    prepareRealHost(context, output, hostManager, jdkLocator, onPhase),
+  );
+
+  /** Runs {@link prepareRealHost} (gated, no-op under the fake-host test harness) and, on failure,
+   * shows the guided JDK setup message with download/re-check actions (P1-H AC2/AC3) instead of
    * attempting a render. Returns whether the caller may proceed to `ensureReady()`. `onPhase` (fix-
    * pack POLISH-02) mirrors the "Preparing render engine…" loading phase — including download
-   * artifact/percent — into the panel's busy indicator. `docPath`, when supplied, clears that busy
-   * indicator into a settled error on failure (fix-pack POLISH-02/03 edge case: "the in-panel
-   * indicator SHALL clear to the error state, not spin forever") — omitted by callers with no
-   * specific panel (e.g. `inflate.restartHost`). */
+   * artifact/percent — into the panel's busy indicator (only the FIRST concurrent caller's `onPhase`
+   * actually drives it, per the shared gate). `docPath`, when supplied, clears that busy indicator
+   * into a settled error on failure (fix-pack POLISH-02/03 edge case: "the in-panel indicator SHALL
+   * clear to the error state, not spin forever") — omitted by callers with no specific panel (e.g.
+   * `inflate.restartHost`). */
   async function ensureRealHostConfigured(docPath?: string, onPhase?: (label: string) => void): Promise<boolean> {
     if (isFakeHostMode) return true;
-    const result = await prepareRealHost(context, output, hostManager, jdkLocator, onPhase);
+    const result = await configureRealHostGated(onPhase);
     if (result.ok) return true;
     if (docPath) panelManager.applyHostError(docPath, new Error(result.guidedMessage));
     const actions = result.downloadUrl ? ['Open Download Page', 'Re-check'] : ['Re-check'];
@@ -143,7 +154,15 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       invalidate: (paths) => hostManager.invalidate({ paths }),
       // Awaited before the scheduler's one automatic retry (fix-pack POLISH-03) — HostManager's own
       // ensureReady() immediately (re)spawns a crashed host rather than waiting out its backoff timer.
-      ensureReady: () => hostManager.ensureReady(),
+      // T79/HOST-04 AC4: configuration must complete FIRST — a retry landing mid-download must never
+      // boot the still-configured placeholder; a configuration failure rejects here, which the
+      // scheduler already treats like any other retry failure (render() then fails against the
+      // unconfigured/placeholder host, surfacing as a host error — no infinite spin, no crash loop).
+      ensureReady: async () => {
+        const configured = await ensureRealHostConfigured();
+        if (!configured) throw new Error('Inflate: render engine not configured');
+        await hostManager.ensureReady();
+      },
     },
     resolveRoots: (docPath) => {
       const info = rootsResolver.resolve(docPath);
