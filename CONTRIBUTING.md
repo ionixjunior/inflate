@@ -71,7 +71,7 @@ gate concludes — visible in the PR's checks area, no need to open the Actions 
 `full-gate` required-check ruleset is live (see `docs/release-checklist.md`), every PR needs a
 passing `/run ci` on its latest commit before it can merge. Releases never depend on someone
 remembering to run CI: the release pipeline (`.github/workflows/release.yml`) always runs this
-same full gate before publishing. A daily canary (`.github/workflows/canary.yml`) fetches the
+same full gate before publishing. A weekly canary (`.github/workflows/canary.yml`) fetches the
 pinned engine artifacts from a cold cache to catch a broken/moved Google Maven artifact quickly.
 
 ## The golden-image corpus

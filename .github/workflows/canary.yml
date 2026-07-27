@@ -17,7 +17,7 @@ on:
 jobs:
   fetch-pinned-engine:
     # macos-26 (arm64) since the release-automation amendment (REL-02, AD-019) — same runner
-    # generation as ci.yml. The daily schedule is deliberate and stays (R7 tripwire), unlike the
+    # generation as ci.yml. The weekly schedule is deliberate and stays (R7 tripwire), unlike the
     # manual-only main CI.
     runs-on: macos-26
     steps:
