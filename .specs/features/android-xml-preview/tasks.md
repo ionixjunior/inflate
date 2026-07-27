@@ -2604,3 +2604,298 @@ hides placeholder/config races; state must be asserted after failure paths, not 
 | T80 | ArtifactManager | unit | unit | ✅ OK |
 | T81 | none (markdown content) | none — build gate only | none | ✅ OK |
 | T82 | none (UAT + docs) | manual UAT (matrix row 3) | manual UAT | ✅ OK |
+
+## CI Comment Pipeline Fix Tasks (Amendment — 2026-07-27)
+
+> Defect fix DF-3: the first live `/run ci` (PR #1, run 30284080541) 403'd its ack comment — the
+> job holds `issues: write` where a PR conversation comment is permission-checked against the
+> target resource and needs `pull-requests: write` — and left the PR with no visible gate result
+> (`issue_comment` runs attach to the default branch, never the PR head). See the "Defect Amendment
+> (2026-07-27): DF-3" section in `spec.md` (requirement **REL-06**) and "CI Comment Pipeline
+> Context (Amendment — 2026-07-27)" in `context.md`. The **Execution Protocol at the top of this
+> file applies unchanged**. Task numbering continues the feature's sequence: **T83–T88**,
+> **phase 20**; T87 rides along as a user-requested drift fix (2026-07-27) — the stale "daily"
+> canary wording left by AD-019's weekly amendment (no REL-06 AC). **Ships by merging to `main`**
+> — `issue_comment` executes the default-branch
+> workflow definition; the VSIX is untouched, so no version bump and no Marketplace release.
+> Verifier output is appended to `validation.md` as a dated section — prior records are never
+> rewritten.
+
+**Spec**: the "Defect Amendment (2026-07-27): DF-3" section in `spec.md` (REL-06)
+**Context**: the "CI Comment Pipeline Context (Amendment — 2026-07-27)" section in `context.md`
+(user decisions: guard scope unchanged, ruleset-required check with bypass list, statuses-only
+feedback; job topology and the cancelled-run rule are agent discretion, logged in the spec's
+assumptions table)
+**Status**: Approved (user, 2026-07-27) — execution NOT started
+
+### Test Coverage Matrix (DF-3)
+
+> Honest scoping, inherited from the release-automation amendment: workflow YAML has no locally
+> executable runtime — the local gate proves **syntax validity + declared invariants** (parse +
+> grep assertions pinned to the REL-06 ACs). The live ACs (ack posts without 403, `pending`
+> appears in the PR checks area, final status matches the gate) are verified **post-merge on the
+> next PR** per the spec's ordered rollout — a documented runbook step (T86), exactly like the
+> release-automation first-run. On the PR carrying THIS fix the old workflow still governs
+> `/run ci` (spec edge case) — a 403'd ack there is expected, not a failure. The discrimination
+> sensor applies only to sensor-testable layers (none here — REL/T69-T70 precedent).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| Workflow YAML (`run-ci-comment.yml`) | static validation | file parses; every REL-06 AC's structural invariant asserted (per-job permissions, guard triple on every job, single SHA resolve + output threading, `full-gate` context/state/`target_url`, explicit result mapping with no cancelled/skipped write branch, no checkout in any status/comment job) | `.github/workflows/run-ci-comment.yml` | `ruby -ryaml -e 'YAML.load_file(ARGV[0])'` + per-task grep assertions |
+| `ci.yml` (REL-06 AC5: SHALL NOT change) | static validation | byte-identical throughout the amendment | `.github/workflows/ci.yml` | `git diff --exit-code HEAD -- .github/workflows/ci.yml` |
+| `canary.yml` (T87: comment wording only) | static validation | parses; the stale "daily schedule" claim gone; `schedule:` cron byte-identical | `.github/workflows/canary.yml` | `ruby -ryaml` parse + grep |
+| Docs (`docs/release-checklist.md`, `CONTRIBUTING.md`) | content presence | AC6 topics present: exact ruleset clicks, both bypass entries, strict up-to-date OFF, the four ordered rollout steps, the PAT fallback + its trigger condition, the required-check consequence for contributors | `docs/release-checklist.md`, `CONTRIBUTING.md` | grep assertions |
+| Extension/host code | none — untouched by this amendment | — | — | final Build gate runs `cd extension && npm test` as no-regression sanity only (T76 precedent) |
+
+### Gate Check Commands (DF-3)
+
+| Gate Level | When to Use | Command |
+| ---------- | ----------- | ------- |
+| Quick | workflow/docs tasks (T83–T87) | `ruby -ryaml -e 'YAML.load_file(ARGV[0])' <the task's changed .yml>` + the task's grep assertions + `git diff --exit-code HEAD -- .github/workflows/ci.yml` |
+| Build | final task (T88) | Quick across all four workflow files + the full T83–T87 assertion set + docs greps + `cd extension && npm test` (no-regression sanity) |
+
+Full: not applicable — no packaged file and no extension/host code changes in this amendment.
+
+### Execution Plan (DF-3)
+
+**Phase 20: CI comment pipeline fix**
+
+```
+T83 → T84 → T85 → T86 → T87 → T88
+```
+
+6 tasks → single batch, executed inline (no sub-agent offer).
+
+### Task Breakdown (DF-3)
+
+#### T83: Fix the ack permission for PR conversation comments
+
+**What**: Swap the ack job's `issues: write` for `pull-requests: write` and correct its inline
+comment — the endpoint IS the issues REST API, but GitHub permission-checks the **target
+resource**, and this job posts only to PRs by guard construction. Fixes the live 403 (REL-03 AC4's
+first real failure).
+**Where**: `.github/workflows/run-ci-comment.yml:42-43` (job `permissions:` block + its comment).
+**Depends on**: None
+**Reuses**: the job/guard/concurrency structure unchanged — this is a permission-line fix only
+**Requirement**: REL-06 (AC1; AC5 invariants preserved)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] The ack job's `permissions:` carries `pull-requests: write` and NOT `issues: write`
+      (replacement, not addition — grep both directions)
+- [ ] The inline comment states the target-resource rule (no longer implies `issues: write`
+      suffices for a PR comment)
+- [ ] Untouched (grep-asserted): the guard triple on both jobs, the concurrency ternary, the gate
+      job's `contents: read` + `uses: ./.github/workflows/ci.yml`
+- [ ] Quick gate passes: file parses + `ci.yml` diff clean
+
+**Tests**: static validation — **Gate**: Quick
+
+---
+
+#### T84: Set a pending full-gate status on the PR head at accept
+
+**What**: Grow the ack job into the **accept** job (rename): a first step resolves the PR head SHA
+**once** via the pulls API into a job output (`head_sha`); a second step POSTs commit status
+context **`full-gate`**, state `pending`, on that SHA with `target_url` = this run's URL; the ack
+comment step moves LAST, so an ack-comment failure can never skip the SHA capture or the pending
+status (REL-06 AC3's independence, accept side; the spec's accept-API-failure edge case is the
+default step-skip behavior: no SHA output → downstream writes nothing).
+**Where**: `.github/workflows/run-ci-comment.yml` (the T83-fixed job: rename, `outputs:`, two new
+steps, `statuses: write` added).
+**Depends on**: T83
+**Reuses**: the guard triple verbatim; `gh api` invocation style from the existing ack step
+**Requirement**: REL-06 (AC2; AC5)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Exactly one step resolves `.head.sha` from `repos/{repo}/pulls/{n}` and exposes job output
+      `head_sha`; no other step re-resolves it (single-resolve invariant, AC2)
+- [ ] A step POSTs `statuses/<captured sha>` with context `full-gate`, state `pending`, and
+      `target_url` pointing at this run
+- [ ] Step order within the job: resolve SHA → set pending → post ack comment
+- [ ] Accept job `permissions:` is exactly `pull-requests: write` + `statuses: write`; the job has
+      no checkout step and runs no PR code (AC5)
+- [ ] Guard triple intact on the job; Quick gate passes (parse + `ci.yml` diff clean)
+
+**Tests**: static validation — **Gate**: Quick
+
+---
+
+#### T85: Report the gate result as the final full-gate status
+
+**What**: A new **report** job — `needs: [accept, gate]`, `if:` combining `always()`, the full
+guard triple (AC5: the triple stays on EVERY job), and a non-empty `needs.accept.outputs.head_sha`
+(covers accept-API-failure → no statuses, and ack-failure-after-capture → still reports) — that
+writes the SAME context `full-gate` on the SAME captured SHA: `success` only when
+`needs.gate.result == 'success'`, `failure` only when `needs.gate.result == 'failure'` (a
+conflicted-PR merge-ref checkout failure lands here as gate failure, no special-casing). Explicit
+mapping means `cancelled`/`skipped` results write NOTHING — AC4's no-final-status rule holds
+deterministically regardless of how GitHub schedules `always()` jobs on cancellation; a
+superseding `/run ci` re-sets `pending` via its own accept job.
+**Where**: `.github/workflows/run-ci-comment.yml` (new final job).
+**Depends on**: T84 (threads its `head_sha` output)
+**Reuses**: the status-POST invocation shape from T84's pending step
+**Requirement**: REL-06 (AC3, AC4; AC5)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Report job declares `needs: [accept, gate]` and its `if:` contains `always()`, the guard
+      triple, and the non-empty `head_sha` check
+- [ ] Status mapping: `success`/`failure` written ONLY for those two `needs.gate.result` values —
+      no write branch exists for `cancelled` or `skipped` (grep-assert the absence)
+- [ ] Report job `permissions:` is exactly `statuses: write`; no checkout; no PR code (AC5)
+- [ ] The gate job and `ci.yml` are untouched (grep + `git diff --exit-code`)
+- [ ] Quick gate passes: parse + full-file assertion set green
+
+**Tests**: static validation — **Gate**: Quick
+
+---
+
+#### T86: Document the full-gate ruleset rollout in the runbook
+
+**What**: Append a dated subsection to `docs/release-checklist.md`'s "Publishing & release
+automation" section with (a) the exact ruleset clicks — Settings → Rules → Rulesets → New branch
+ruleset targeting `main`: require status checks to pass, add **`full-gate`**, strict "up to date"
+**OFF**, bypass list = **GitHub Actions app** + **Repository admin**; (b) the four ordered rollout
+steps from the spec (merge first — the old workflow governs this PR's own `/run ci`, its 403 is
+expected; live-verify ack + pending + final status on the NEXT PR; only then create the ruleset,
+the context now being selectable; the next release proves the bypass); (c) the fallback if the
+GitHub Actions app is absent from the bypass picker (flagged uncertain in the spec): keep
+Repository-admin bypass and switch `release.yml`'s push to an owner fine-grained PAT (new secret) —
+applied only if needed; (d) a note that the repo-level **Workflow permissions** toggle is kept at
+the restrictive default ("Read repository contents and packages permissions") — verified
+2026-07-27 (user question): every workflow that needs write scopes declares them explicitly
+(`release.yml` `contents: write`; the accept/report jobs' job-level writes), `ci.yml`/`canary.yml`
+declare none and need only reads, and the permissive setting never affected the 403 anyway
+(explicit `permissions:` replaces the repo default entirely, per the spec's root cause). Update
+`CONTRIBUTING.md`'s CI paragraph: the gate result now lands as a `full-gate` commit status on the
+PR head and, once the ruleset is live, every PR needs a passing `/run ci` on its latest commit to
+merge.
+**Where**: `docs/release-checklist.md` (new subsection in the amendment section, after "If a
+release run fails"); `CONTRIBUTING.md:63-72` (CI paragraph).
+**Depends on**: T85 (documents landed behavior, not intentions — T81 precedent)
+**Reuses**: the runbook's existing amendment-section tone; CONTRIBUTING's existing `/run ci`
+paragraph
+**Requirement**: REL-06 (AC6 + the spec's rollout steps 1–4)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Runbook subsection present: ruleset clicks with `full-gate`, BOTH bypass entries, strict-OFF,
+      and the four ordered rollout steps (each grep-asserted)
+- [ ] Runbook documents the PAT fallback with its trigger condition ("only if the Actions app is
+      missing from the bypass picker")
+- [ ] Runbook notes the restrictive Workflow-permissions toggle and why it is sufficient
+- [ ] CONTRIBUTING states the status-based result + the required-check merge consequence
+- [ ] No other runbook sections touched; Quick gate passes (docs greps + `ci.yml` diff clean)
+
+**Tests**: content presence — **Gate**: Quick
+
+---
+
+#### T87: Fix the stale daily-canary wording
+
+**What**: Sweep the two stale "daily" cadence claims left behind by AD-019's weekly-cadence
+amendment (user request, 2026-07-27): `canary.yml`'s step comment still reads "The daily schedule
+is deliberate and stays" — contradicting the file's own header (line 8 correctly records the
+weekly supersession) and the `0 20 * * 5` cron — and CONTRIBUTING's CI paragraph still says "A
+daily canary". Comment/prose only; the `schedule:` cron and workflow behavior are untouched.
+**Where**: `.github/workflows/canary.yml:20` (comment only); `CONTRIBUTING.md:70`.
+**Depends on**: T86 (edits the same CONTRIBUTING paragraph — sequenced so the edits compose
+cleanly)
+**Reuses**: `canary.yml:8`'s correct supersession wording as the reference phrasing
+**Requirement**: AD-019 amendment (weekly canary) — documentation-drift fix; no REL-06 AC
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] No stale "daily" cadence claim remains in `canary.yml` comments or `CONTRIBUTING.md` (grep;
+      `canary.yml:8`'s historical "superseding the original daily cadence" note stays — it is
+      correct)
+- [ ] `canary.yml`'s `schedule:` cron byte-identical (`git diff` shows a comment-only change)
+- [ ] Quick gate passes: `canary.yml` parses + `ci.yml` diff clean
+
+**Tests**: static validation + content presence — **Gate**: Quick
+
+---
+
+#### T88: Record AD-021 and close out the amendment
+
+**What**: Record the DF-3 decision as **AD-021** in `.specs/STATE.md` Decisions (root cause pair —
+target-resource permission check + default-branch attachment of `issue_comment` runs; statuses over
+check runs; ruleset + bypass list per user decisions; restrictive repo Workflow-permissions toggle
+confirmed sufficient), update Handoff (execution record, commits, live-verification steps 2–4
+pending post-merge), and flip the spec's REL-06 traceability row from "Pending (tasks T83+,
+phase 20)" to implemented-pending-live-verification.
+**Where**: `.specs/STATE.md`; `.specs/features/android-xml-preview/spec.md` (traceability row
+only).
+**Depends on**: T87
+**Reuses**: AD-019/AD-020 entry format; the DF-2 close-out pattern (T82)
+**Requirement**: bookkeeping for REL-06
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] AD-021 in Decisions (decision/reason/trade-off/scope/date/status); Handoff updated with the
+      T83–T87 commits and the pending live steps
+- [ ] Spec traceability row updated — AC text untouched
+- [ ] Build gate green: all four workflow files parse, full T83–T87 assertion set + docs greps
+      pass, `ci.yml` diff clean, `cd extension && npm test` green (no-regression sanity)
+
+**Tests**: none — **Gate**: Build
+
+### Phase Execution Map (DF-3)
+
+```
+Phase 20:  T83 ──→ T84 ──→ T85 ──→ T86 ──→ T87 ──→ T88
+```
+
+Strictly sequential, 6 tasks → **single batch, inline** (no sub-agent offer). One atomic verb-first
+commit per task. After T88's commit, the always-on **Verifier** runs (author ≠ verifier):
+spec-anchored outcome check + discrimination sensor (structural layer only — no sensor-testable
+runtime layer, REL precedent) → appended to `validation.md` as a dated "CI Comment Pipeline Fix
+Verification" section. The Verifier also checks the live ACs are recorded as **pending post-merge
+rollout**, never silently marked verified.
+
+### Task Granularity Check (DF-3)
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T83: Ack permission fix | 1 permission block in 1 file | ✅ Granular |
+| T84: Accept-time pending status | 1 job reshaped (2 steps + outputs) in the same file | ✅ Granular (cohesive — one accept-time behavior) |
+| T85: Report job | 1 new job | ✅ Granular |
+| T86: Runbook + CONTRIBUTING docs | 1 doc subsection + 1 paragraph | ✅ Granular (one documentation deliverable, AC6) |
+| T87: Daily-canary wording sweep | 2 comment/prose lines | ✅ Granular (one drift-correction deliverable) |
+| T88: Bookkeeping close-out | no code | ✅ Granular |
+
+### Diagram-Definition Cross-Check (DF-3)
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T83 | None | start of chain | ✅ Match |
+| T84 | T83 | T83 → T84 | ✅ Match |
+| T85 | T84 | T84 → T85 | ✅ Match |
+| T86 | T85 | T85 → T86 | ✅ Match |
+| T87 | T86 | T86 → T87 | ✅ Match |
+| T88 | T87 | T87 → T88 | ✅ Match |
+
+### Test Co-location Validation (DF-3)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T83 | Workflow YAML | static validation | static validation | ✅ OK |
+| T84 | Workflow YAML | static validation | static validation | ✅ OK |
+| T85 | Workflow YAML | static validation | static validation | ✅ OK |
+| T86 | Docs | content presence | content presence | ✅ OK |
+| T87 | Workflow YAML comment + docs | static validation + content presence | static + content presence | ✅ OK |
+| T88 | none (bookkeeping) | none — Build gate only | none | ✅ OK |

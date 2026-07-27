@@ -38,6 +38,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: extension/src/panel.ts:208 (pre-fix) (extension/webview)
 - last seen: 2026-07-21T00:10:30Z
 
+### L-005 — When a spec AC names a job's needs: list, include every upstream job whose output the job reads (not just the 'primary' dependency) — e.g. a reporting job needs both the gate job AND the accept job if it reads accept's captured head_sha output.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `.specs/features/*/spec.md` · harmful: 0
+- features: android-xml-preview
+- evidence: REL-06 AC3 (.specs/features/*/spec.md)
+- last seen: 2026-07-27T22:32:38Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

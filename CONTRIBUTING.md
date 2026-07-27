@@ -65,10 +65,14 @@ only** — there are no automatic push/PR runs (AD-019; hosted-runner usage stay
 Maintainers start it from the Actions tab ("Run workflow"), with `gh workflow run ci.yml`, or by
 commenting **`/run ci`** on a pull request — comment-triggering is restricted to the owner and
 explicitly invited collaborators, and the gate then tests that PR's merge result
-(`refs/pull/<N>/merge`). Releases never depend on someone remembering to run CI: the release
-pipeline (`.github/workflows/release.yml`) always runs this same full gate before publishing. A
-daily canary (`.github/workflows/canary.yml`) fetches the pinned engine artifacts from a cold cache
-to catch a broken/moved Google Maven artifact quickly.
+(`refs/pull/<N>/merge`). The result lands on the PR itself as a **`full-gate`** commit status on
+the PR's head commit: `pending` when the comment is accepted, then `success`/`failure` once the
+gate concludes — visible in the PR's checks area, no need to open the Actions tab. Once the
+`full-gate` required-check ruleset is live (see `docs/release-checklist.md`), every PR needs a
+passing `/run ci` on its latest commit before it can merge. Releases never depend on someone
+remembering to run CI: the release pipeline (`.github/workflows/release.yml`) always runs this
+same full gate before publishing. A weekly canary (`.github/workflows/canary.yml`) fetches the
+pinned engine artifacts from a cold cache to catch a broken/moved Google Maven artifact quickly.
 
 ## The golden-image corpus
 

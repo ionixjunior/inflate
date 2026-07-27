@@ -604,3 +604,96 @@ None recorded — the policy's qualifying signals (failed/uncovered AC, survivin
 ### Lessons
 
 None recorded. Signal walk: 0 failed/uncovered ACs, 0 surviving mutants (3/3 killed), 0 spec-precision gaps, 0 `// SPEC_DEVIATION` markers, gate green. A clean PASS with no qualifying signal writes nothing, per `lessons.md` — this is correct, not a miss. (The harness-blindness observation above is a restatement of the already-confirmed AD-018/AD-020 lesson, not a new one — re-recording it would be a duplicate, not a fresh distillation.)
+
+---
+
+## CI Comment Pipeline Fix Verification (2026-07-27)
+
+**Date**: 2026-07-27
+**Spec**: `.specs/features/android-xml-preview/spec.md` — "Defect Amendment (2026-07-27): DF-3" / requirement **REL-06**
+**Diff range**: `89e512b..HEAD` (`dbda52a` through `c170dd3`)
+**Verifier**: independent sub-agent (author ≠ verifier)
+
+### Task Completion
+
+| Task | Status | Notes |
+| ---- | ------ | ----- |
+| T83: Ack permission fix | ✅ Done | `run-ci-comment.yml:47` carries `pull-requests: write`; `issues: write` removed from the job (only surviving mentions are explanatory prose at lines 22/45); inline comment states the target-resource rule |
+| T84: Accept-time pending status | ✅ Done | Job renamed `ack` → `accept` (line 36); single resolve step (line 55, id `resolve`) → job output `head_sha` (line 50); pending POST (lines 65-72) with context `full-gate`, `target_url`; ack comment moved last (line 76); step order resolve→pending→ack confirmed |
+| T85: Report job | ✅ Done | New `report` job (line 98), `needs: [accept, gate]`, `if:` combines `always()` + guard triple + `needs.accept.outputs.head_sha != ''` (lines 99-108); explicit `case` mapping success/failure only, default branch writes nothing (lines 122-129); `permissions:` is exactly `statuses: write` (line 111) |
+| T86: Runbook + CONTRIBUTING docs | ✅ Done | New subsection in `docs/release-checklist.md` (lines 212-246) with exact ruleset clicks, both bypass entries, strict-OFF, 4 ordered rollout steps, PAT fallback + trigger condition, Workflow-permissions rationale; `CONTRIBUTING.md:63-75` updated with status-based result + required-check merge consequence |
+| T87: Stale daily-canary wording | ✅ Done | `canary.yml:20` and `CONTRIBUTING.md:74` now read "weekly"; `canary.yml:8`'s historical "superseding the original daily cadence" note untouched (correct, by design); `schedule:` cron (`0 20 * * 5`) byte-identical per `git diff` (comment-only hunk) |
+| T88: AD-021 + Handoff + traceability | ✅ Done | `.specs/STATE.md` AD-021 entry present (decision/reason/trade-off/scope/date/status, lines 143-149); Handoff updated with execution-complete record + pending live-verification steps (lines 153-177); `spec.md`'s REL-06 traceability row changed from "Pending (tasks T83+, phase 20)" to "Implemented (T83–T87, phase 20) — pending live verification (rollout steps 2–4, post-merge)"; AC text above the row untouched |
+
+**Status**: ✅ All 6 tasks done, no partials.
+
+### Spec-Anchored Acceptance Criteria (REL-06)
+
+| Criterion (WHEN X THEN Y) | Spec-defined outcome | `file:line` + assertion | Result |
+| -------------------------- | --------------------- | ------------------------ | ------ |
+| AC1: accepted `/run ci` → ack posts, token carries `pull-requests: write` replacing `issues: write` | Job permission is exactly `pull-requests: write`, no `issues: write` | `.github/workflows/run-ci-comment.yml:47` — `pull-requests: write` present; line 42-48 permissions block has no `issues: write` key | ✅ PASS |
+| AC2: accepted run → resolve PR head SHA once at accept time, set `full-gate` to `pending` on that SHA with `target_url` = run URL | One resolve step, one pending POST with context/state/target_url | `.github/workflows/run-ci-comment.yml:55-61` (resolve, single occurrence, output `head_sha`); `:65-72` (POST `state=pending`, `context=full-gate`, `target_url=...actions/runs/${{ github.run_id }}`) | ✅ PASS |
+| AC3: gate concludes → reporting job (`needs: gate`, `if: always()`) sets same context/SHA to `success`/`failure`; ack/accept failures never block gate or final status | Reporting job depends on gate, runs via `always()`, writes success/failure on the captured SHA | `.github/workflows/run-ci-comment.yml:98-108` (`needs: [accept, gate]`, `if: always() && ...`); `:122-133` (case-mapped POST to `needs.accept.outputs.head_sha`) | ⚠️ Spec-precision gap — spec text literally says `needs: gate`; the implementation (and `tasks.md` T85's own "Done when") requires `needs: [accept, gate]` so the job can thread `needs.accept.outputs.head_sha`. Functionally necessary and consistent with AC2's single-resolve invariant, but the spec's AC3 sentence itself was not updated to say so — a wording gap in `spec.md`, not a code defect |
+| AC4: run cancelled → no final status written; superseding run re-pends, manual cancel self-heals | No write branch for `cancelled`/`skipped` | `.github/workflows/run-ci-comment.yml:122-129` — `case` statement matches only `success`/`failure`; `*)` branch echoes and `exit 0` with no `gh api` call | ✅ PASS |
+| AC5: security invariants — guard triple on every job; write-holding jobs have no checkout/no PR code; gate keeps `contents: read` only; `ci.yml` unchanged | All five invariants hold literally | Guard triple: `:40` (accept), `:89` (gate), `:106-107` (report). No `checkout` step anywhere in the file (`grep checkout` matches only a comment at `:16`). Gate job: `:93` `contents: read`, `:94` `uses: ./.github/workflows/ci.yml` unchanged. `ci.yml`: `git diff 89e512b..HEAD -- .github/workflows/ci.yml` empty | ✅ PASS |
+| AC6: `full-gate` required status check on `main` via ruleset, bypass = GitHub Actions app + Repository admin, strict up-to-date OFF, manual UI steps documented | Runbook documents the exact clicks + both bypass entries + strict-OFF + 4 ordered rollout steps | `docs/release-checklist.md:212-246` — "New branch ruleset" / "Require status checks to pass" / `full-gate` / both bypass entries / "up to date... OFF" / 4 numbered rollout steps / PAT fallback with trigger condition | ✅ PASS |
+
+**Status**: 5/6 ACs matched precisely; 1 spec-precision gap (AC3's `needs:` wording), which is a documentation-precision issue in `spec.md` itself, not an implementation defect — the implementation is the functionally-correct and necessary form.
+
+### Discrimination Sensor
+
+**Not applicable** — this amendment has zero executable code (GitHub Actions YAML + docs only). Per the Test Coverage Matrix (DF-3) in `tasks.md`, "the discrimination sensor applies only to sensor-testable layers (none here — REL/T69-T70 precedent)." Verification is scoped to static validation: YAML parses, and every REL-06 AC's structural invariant is present via grep-style assertions (performed above and in the Gate Check section below). No sensor mutations were run; this is a scoping decision inherited from the prior release-automation amendment, not a skipped step.
+
+### Edge Cases (spec.md DF-3 section)
+
+- [x] Commit pushed between comment and accept: the single resolve step captures the SHA once at accept time (`:55-61`); no later step re-resolves it, so a newer head commit receives no status — matches spec ("protection keys on the latest head")
+- [x] Accept step's API calls fail: steps run in default fail-fast order (resolve → pending → ack); a failure at any step halts the job without executing later steps, so no SHA/no statuses are produced; `report`'s guard (`needs.accept.outputs.head_sha != ''`) then also writes nothing — matches "no infinite spin, gate still runs, failure visible in Actions log"
+- [x] `/run ci` commented on the PR carrying this fix: unavoidable and explicitly documented (rollout step 1 in `docs/release-checklist.md:220-224` and `CONTRIBUTING.md`) — `issue_comment` always executes the default-branch workflow definition, so no code change can address this; correctly left as a documented, expected limitation rather than "fixed"
+
+### Gate Check
+
+- **Gate command**: Build level per Gate Check Commands (DF-3) — YAML parse × 4 files, full T83–T87 grep assertion set, `git diff --exit-code` on `ci.yml`, `cd extension && npm test`
+- **YAML parse**: `ci.yml`, `canary.yml`, `release.yml`, `run-ci-comment.yml` — all 4 parse via `ruby -ryaml -e 'YAML.load_file(ARGV[0])'`, all OK
+- **`ci.yml` diff**: `git diff --exit-code 89e512b..HEAD -- .github/workflows/ci.yml` and `git diff --exit-code HEAD -- .github/workflows/ci.yml` both clean (byte-identical, no uncommitted drift)
+- **Grep assertion set (T83-T87)**: all re-derived assertions passed (permission swap, guard triple ×3 jobs, single-resolve invariant, pending POST shape, report job needs/if/mapping, no-checkout, gate job untouched, docs topics present, stale "daily" wording gone except the one correct historical mention)
+- **`cd extension && npm test`**: 206/206 passed, 16/16 test files, 0 failed, 0 skipped — matches the pre-existing 1.0.1 baseline (no regression)
+- **Result**: **PASS** — 0 failed, 0 skipped
+
+### Code Quality
+
+| Principle | Status |
+| --------- | ------ |
+| No features beyond what was asked | ✅ |
+| No abstractions for single-use code | ✅ |
+| No unnecessary "flexibility" added | ✅ |
+| Only touched files required for task | ✅ — `git diff 89e512b..HEAD --stat` shows exactly 6 files: `run-ci-comment.yml`, `canary.yml`, `STATE.md`, `spec.md`, `CONTRIBUTING.md`, `docs/release-checklist.md` — matches the 6 tasks' stated "Where" fields exactly, no extras |
+| Didn't "improve" unrelated code | ✅ — `docs/release-checklist.md` change is purely additive (new subsection); no other runbook sections touched |
+| Matches existing patterns/style | ✅ — reuses the existing guard triple, `gh api` invocation style, amendment-section tone in docs, AD-019/AD-020 Decisions entry format |
+| Spec-anchored outcome check (asserted values match spec) | ⚠️ — 5/6 exact; AC3's `needs:` wording gap noted above |
+| Per-layer Coverage Expectation met | N/A — no domain-logic/route layers in scope; static-validation posture per the Test Coverage Matrix |
+| Every check in scope maps to a spec AC, listed edge case, or Done-when criterion — no unclaimed checks | ✅ |
+| Documented project quality/testing guidelines followed | Test Coverage Matrix (DF-3) and Gate Check Commands (DF-3) in `tasks.md`, followed as written |
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| REL-06 | Pending (tasks T83+, phase 20) | ✅ Implemented (T83–T87) — **pending live verification** (rollout steps 2–4 execute post-merge; correctly NOT marked fully Verified, since the live ACs — ack posts without 403, pending appears in the PR checks area, final status matches the gate — cannot be exercised without a real GitHub PR event) |
+
+### Summary
+
+**Overall**: ✅ Ready — merge and proceed with the documented post-merge rollout.
+
+**Spec-anchored check**: 5/6 ACs matched exactly; 1 spec-precision gap (AC3's spec sentence says `needs: gate`, implementation correctly and necessarily uses `needs: [accept, gate]` to thread the captured SHA — a spec-wording gap, not an implementation defect).
+**Sensor**: not applicable (static-validation-only amendment, no sensor-testable runtime layer — matches the Test Coverage Matrix's explicit scoping).
+**Gate**: all 4 workflow YAML files parse; full T83–T87 grep assertion set green; `ci.yml` byte-identical; `cd extension && npm test` 206/206 passed, 0 failed, 0 skipped.
+
+**What works**: the permission swap (T83), the accept-time single-resolve + pending status (T84), the report job's explicit success/failure/no-write mapping (T85), the runbook + CONTRIBUTING docs (T86), the daily→weekly wording sweep with cron left byte-identical (T87), and the AD-021/Handoff/traceability bookkeeping (T88) are all precisely implemented and match the task breakdown's "Done when" checklists line for line.
+
+**Issues found**: 1 non-blocking spec-precision gap — `spec.md`'s REL-06 AC3 sentence ("needs: gate") does not literally match the necessary and correct `needs: [accept, gate]` implementation. Recommended fix: a one-line edit to AC3's wording in `spec.md` to say `needs: [accept, gate]` (documentation-only; no code change required).
+
+**Next steps**: merge to `main`; execute the documented post-merge live-verification rollout (comment `/run ci` on the next PR and confirm ack posts without a 403, `full-gate` pending appears, final status matches the gate result; then create the ruleset; then let the next release prove the bypass). Optionally fix the AC3 wording gap in `spec.md` as a trivial follow-up.
+
+### Lessons
+
+One grounded spec-precision gap recorded: AC3's literal `needs: gate` wording in `spec.md` does not match the necessary `needs: [accept, gate]` job dependency (needed to thread the captured head SHA per AC2's single-resolve invariant) — a reusable lesson about writing `needs:` lists in spec ACs to already reflect cross-job output dependencies, not just the "primary" upstream job, is warranted; record via `scripts/lessons.py` if the project's lessons workflow is run as a follow-up to this report.

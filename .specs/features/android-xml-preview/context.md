@@ -192,4 +192,38 @@ workflow uses GitHub-documented primitives (`workflow_dispatch`, `workflow_call`
 - Branch protection on `main` once outside collaborators join (would also let the release
   workflow's push use a PR instead of a direct push).
 - Windows/Linux CI legs when AD-004 expands beyond macOS.
+
+## CI Comment Pipeline Context (Amendment — 2026-07-27)
+
+Design phase skipped again (same rationale as the release-automation amendment: GitHub-documented
+primitives only — token permissions, commit statuses, rulesets). Spec: "Defect Amendment
+(2026-07-27): DF-3" / requirement **REL-06** in `spec.md`.
+
+### User Decisions (captured from the 2026-07-27 discussion)
+
+- **Trigger scope: keep OWNER/MEMBER/COLLABORATOR** — the AD-019 guard stands unchanged. Today only
+  the owner qualifies; anyone later invited as a collaborator could also trigger (accepted: they
+  can already push code). Fork-PR authors stay excluded either way.
+- **Merge gating: `full-gate` becomes a REQUIRED status check on `main`** — via a repository
+  ruleset with a bypass list (GitHub Actions app for `release.yml`'s direct `Release <v>` push +
+  Repository admin for the maintainer's direct pushes). This consciously activates, early and in
+  narrower form, the idea previously deferred above ("Branch protection on `main` once outside
+  collaborators join"). Strict "up to date before merging" stays OFF — every base move would
+  otherwise demand a fresh paid macOS run. Consequence accepted by the user: every PR needs a
+  passing `/run ci` on its latest commit before it can merge.
+- **Result feedback: status only** — the ack comment at accept time stays (its 403 is fixed by this
+  amendment); the gate result is reported exclusively by the commit status flipping to
+  success/failure with the run as `target_url`. No completion comment per run.
+
+### Agent's Discretion
+
+- Status context string (`full-gate`), status descriptions, exact job topology (accept/report job
+  split, output threading of the captured head SHA), and the cancelled-run no-final-status rule —
+  all logged as assumptions in the spec amendment's table.
+
+### Deferred Ideas
+
+- Per-job status contexts if `ci.yml` ever splits its single gate job.
+- Automating the ruleset creation (`gh api`) — AD-019's "no repo-settings automation" non-goal
+  keeps it manual UI steps for now.
 - A `/run corpus`-style comment command for partial gates, if `/run ci` proves useful.

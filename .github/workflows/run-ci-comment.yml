@@ -33,15 +33,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ack:
+  accept:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run ci') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest # posting a comment does not need a macOS runner
+    runs-on: ubuntu-latest # posting a comment/status does not need a macOS runner
     permissions:
-      issues: write # the ack comment (PR conversation comments use the issues API)
+      # The ack comment is posted via the issues REST API, but GitHub permission-checks the
+      # TARGET RESOURCE, not the endpoint name — this job posts only to PRs (guard construction),
+      # so it needs pull-requests: write, not issues: write (DF-3, 2026-07-27: issues: write 403'd
+      # the first live ack).
+      pull-requests: write
+      statuses: write # the pending full-gate status on the PR head SHA (DF-3, REL-06 AC2)
+    outputs:
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
     steps:
+      # Resolve the PR head SHA once, here, at accept time — the report job (needs: accept) reuses
+      # this output rather than re-resolving, so both statuses land on the exact same commit
+      # (REL-06 AC2's single-resolve invariant).
+      - name: Resolve the PR head SHA
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" --jq .head.sha)
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # issue_comment runs attach to the default branch, so the PR checks area shows nothing
+      # unless we post a commit status on the PR head ourselves (DF-3 root cause #2).
+      - name: Set full-gate to pending on the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${{ steps.resolve.outputs.head_sha }}" \
+            -f state=pending \
+            -f context=full-gate \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Posted last: an ack-comment failure must never skip the SHA capture or the pending status
+      # above (REL-06 AC3's job-independence extends to steps within this job).
       - name: Acknowledge on the PR with a link to this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,8 +81,8 @@ jobs:
             -f body="/run ci accepted from @${{ github.event.comment.user.login }} — running the full gate on this PR's merge result: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   gate:
-    # Same guard as ack (duplicated on purpose: the jobs are independent, so an ack failure can
-    # never block the actual gate).
+    # Same guard as accept (duplicated on purpose: the jobs are independent, so an accept-side
+    # failure can never block the actual gate).
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run ci') &&
@@ -63,3 +94,40 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       ref: refs/pull/${{ github.event.issue.number }}/merge
+
+  report:
+    needs: [accept, gate]
+    # always() so this job still runs when `gate` fails/is skipped; re-checks the guard (accept
+    # may have been skipped by the same condition) plus a non-empty head_sha (covers an
+    # accept-API failure, which leaves no SHA to report against — REL-06 AC3's edge case).
+    if: >-
+      always() &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run ci') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      needs.accept.outputs.head_sha != ''
+    runs-on: ubuntu-latest # posting a status does not need a macOS runner
+    permissions:
+      statuses: write # the final full-gate status on the PR head SHA (REL-06 AC3)
+    steps:
+      # Explicit mapping, not a passthrough of needs.gate.result: success/failure are written for
+      # exactly those two gate outcomes. cancelled/skipped fall through and write NOTHING — a
+      # superseding /run ci re-sets pending via its own accept job, a manual cancel with no
+      # successor leaves pending until the next comment (REL-06 AC4, deterministic regardless of
+      # how GitHub schedules always() jobs on cancellation).
+      - name: Report the gate result as the final full-gate status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ needs.gate.result }}" in
+            success) state=success ;;
+            failure) state=failure ;;
+            *)
+              echo "gate result '${{ needs.gate.result }}' is neither success nor failure — writing no status (REL-06 AC4)"
+              exit 0
+              ;;
+          esac
+          gh api "repos/${{ github.repository }}/statuses/${{ needs.accept.outputs.head_sha }}" \
+            -f state="$state" \
+            -f context=full-gate \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
