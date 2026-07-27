@@ -33,19 +33,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ack:
+  accept:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run ci') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest # posting a comment does not need a macOS runner
+    runs-on: ubuntu-latest # posting a comment/status does not need a macOS runner
     permissions:
       # The ack comment is posted via the issues REST API, but GitHub permission-checks the
       # TARGET RESOURCE, not the endpoint name — this job posts only to PRs (guard construction),
       # so it needs pull-requests: write, not issues: write (DF-3, 2026-07-27: issues: write 403'd
       # the first live ack).
       pull-requests: write
+      statuses: write # the pending full-gate status on the PR head SHA (DF-3, REL-06 AC2)
+    outputs:
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
     steps:
+      # Resolve the PR head SHA once, here, at accept time — the report job (needs: accept) reuses
+      # this output rather than re-resolving, so both statuses land on the exact same commit
+      # (REL-06 AC2's single-resolve invariant).
+      - name: Resolve the PR head SHA
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}" --jq .head.sha)
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # issue_comment runs attach to the default branch, so the PR checks area shows nothing
+      # unless we post a commit status on the PR head ourselves (DF-3 root cause #2).
+      - name: Set full-gate to pending on the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${{ steps.resolve.outputs.head_sha }}" \
+            -f state=pending \
+            -f context=full-gate \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Posted last: an ack-comment failure must never skip the SHA capture or the pending status
+      # above (REL-06 AC3's job-independence extends to steps within this job).
       - name: Acknowledge on the PR with a link to this run
         env:
           GH_TOKEN: ${{ github.token }}
