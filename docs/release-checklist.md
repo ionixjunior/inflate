@@ -185,6 +185,8 @@ fixtures) — see `docs/limitations.md` and `.specs/STATE.md` for full detail:
 ### Before the FIRST release, additionally
 
 - Replace `extension/media/icon.png` with real brand artwork (see the Icon note above).
+- Optionally record the quickstart GIF (`openPreview` → edit → save → day/night toggle) for the
+  README/Marketplace listing — nice-to-have, not blocking.
 - Push the repo to https://github.com/ionixjunior/inflate (the `origin` remote is already
   configured locally) and confirm the Actions tab lists the CI / Release / Engine pin canary /
   "Run CI from a PR comment" workflows.

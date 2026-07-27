@@ -44,10 +44,8 @@ If Inflate can't find a compatible JDK, it shows a guided setup message with a d
 2. Click the preview icon in the editor title bar (or right-click → **Inflate: Open Preview**).
 3. Edit and save — the preview updates in place, without stealing focus from your editor.
 4. Use the toolbar to flip day/night, change device/density/orientation, or (for drawables) pick a
-   state (pressed, checked, disabled, …) and inspect it against a checkerboard or solid backdrop.
-
-<!-- Quickstart GIF placeholder: record `openPreview` -> edit -> save -> day/night toggle for the
-     Marketplace listing before release. -->
+   state (pressed, checked, disabled, …) and inspect it against the checkerboard stage — or drag
+   the preview's edges to try arbitrary sizes.
 
 ## Commands
 
