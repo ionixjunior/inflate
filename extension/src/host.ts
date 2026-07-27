@@ -224,6 +224,10 @@ export class HostManager {
     this.child = child;
     this.stderrLines = [];
     child.stderr?.on('data', (buf: Buffer) => this.appendStderr(buf.toString()));
+    // A JSON-RPC write can race the child's death and hit a closed pipe (EPIPE). The 'exit'
+    // handler below owns that lifecycle transition — a stdin stream error adds no signal, but
+    // without a listener it becomes an unhandled 'error' event.
+    child.stdin?.on('error', () => {});
 
     let starting = true;
     let rejectStartup: ((err: Error) => void) | undefined;
@@ -257,13 +261,16 @@ export class HostManager {
       rejectStartup = reject;
     });
 
-    await Promise.race([
-      (async () => {
-        await connection.sendRequest('initialize', this.opts.initializeParams ?? {});
-        await connection.sendRequest('warmup', {});
-      })(),
-      startupFailure,
-    ]);
+    const startupSequence = (async () => {
+      await connection.sendRequest('initialize', this.opts.initializeParams ?? {});
+      await connection.sendRequest('warmup', {});
+    })();
+    // When the child dies mid-startup the race settles via startupFailure, but this arm is still
+    // in flight — its late rejection (e.g. EPIPE writing 'warmup' to the dead stdin) has no
+    // awaiter left and would surface as an unhandled rejection.
+    startupSequence.catch(() => {});
+
+    await Promise.race([startupSequence, startupFailure]);
 
     starting = false;
     this.setState('ready');
