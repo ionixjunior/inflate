@@ -39,7 +39,7 @@ after that previews keep working fully offline.
 
 1. Open any file under `res/layout/`, `res/drawable/`, `Resources/layout/`, or
    `Resources/drawable/` (`.xml` or `.axml`).
-2. Click the preview icon in the editor title bar (or right-click → **Inflate: Open Preview**).
+2. Right-click → **Inflate: Open Preview** (or `Cmd+P` → **Inflate: Open Preview**).
 3. Edit and save — the preview updates in place, without stealing focus from your editor.
 4. Use the toolbar to flip day/night, change device/density/orientation, pick a drawable state —
    or drag the preview's edges to resize the render canvas.
