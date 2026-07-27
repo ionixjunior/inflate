@@ -3,7 +3,7 @@
   "displayName": "Inflate",
   "description": "Faithful Android layout & drawable XML previews in VS Code, powered by layoutlib. No Android Studio required.",
   "version": "0.0.1",
-  "publisher": "inflate",
+  "publisher": "ionixjunior",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
   "repository": {
