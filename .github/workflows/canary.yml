@@ -6,12 +6,12 @@ name: Engine pin canary
 # time someone happens to touch host/build.gradle.kts — that failure would otherwise hit a brand-new
 # user's first-run download first.
 # Cadence: weekly (user decision 2026-07-26, superseding the original daily cadence — detection
-# window becomes ≤7 days, acceptable for a manual-release project). Friday ~17:17 America/Sao_Paulo
-# (UTC-3 year-round, Brazil has no DST) = 20:17 UTC; the :17 offset is deliberate — GitHub delays or
-# drops schedules pinned to the top of the hour under load.
+# window becomes ≤7 days, acceptable for a manual-release project). Friday 17:00 America/Sao_Paulo
+# (UTC-3 year-round, Brazil has no DST) = 20:00 UTC. Note: GitHub may delay top-of-the-hour crons
+# under load — harmless for a weekly canary.
 on:
   schedule:
-    - cron: '17 20 * * 5' # weekly: Friday 20:17 UTC ≈ 17:17 America/Sao_Paulo
+    - cron: '0 20 * * 5' # weekly: Friday 20:00 UTC = 17:00 America/Sao_Paulo
   workflow_dispatch:
 
 jobs:
