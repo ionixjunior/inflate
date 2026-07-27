@@ -849,3 +849,101 @@ a placeholder), generates no release notes, adds .NET tooling, and still needs h
 
 Decisions recorded in `STATE.md` as **AD-019** (release automation model) plus an **AD-004
 amendment note** (Intel = best-effort, untested in CI).
+
+## Defect Amendment (2026-07-27): DF-2 — host wedges in 'starting' when startup fails during the first-run engine download
+
+> Found in the first real Marketplace install (v1.0.0, 2026-07-27 ~01:25): the first preview never
+> rendered; exthost.log shows `Error: host exited (code=1, signal=null) during startup` twice, and
+> the "Inflate" channel shows the placeholder host's stderr (`no render engine configured yet…`)
+> looping with `[host] state -> starting`, every render failing
+> `cannot render while host state is 'starting'`. Reproduced independently the same day in a
+> Devin-driven first-run test with the identical channel signature. A reinstall "fixed" it only
+> because the engine cache in `globalStorage` survives uninstall — the second run has no download
+> window. Fix tasks: **T77–T82 (phase 19)** in `tasks.md`; requirement **HOST-04** below; discovery
+> recorded as **AD-020** in `.specs/STATE.md`. Ships as **patch release 1.0.1** (SemVer: bug fixes
+> only — no new capability; release via the REL-04 pipeline with bump `patch`).
+
+**Root cause (code-verified, three layers):**
+
+1. **Stuck state machine (`extension/src/host.ts:263-271`).** When the child dies during startup,
+   the `exit` handler rejects the startup promise and `return`s — it never transitions the state
+   out of `'starting'` (the `'error'` path at :272-279 has the same gap). The documented state
+   machine (host.ts:6-7) has no failure edge out of `starting`. From then on the manager is
+   wedged: `pendingReady` is cleared, so every `ensureReady()` falls through the guard and
+   re-spawns with **no backoff and no crash accounting**, and every `render()` rejects with
+   `cannot render while host state is 'starting'`.
+2. **Reconfigure can never land (`extension/src/host.ts:161`).** `reconfigure()` no-ops unless
+   state is exactly `'stopped'` — so once wedged (or even merely crashed), the real `java` command
+   assembled by `prepareRealHost` is silently discarded forever; the manager keeps the activation
+   placeholder (`activation.ts:353-362`: `node -e 'stderr; exit(1)'` — the `code=1` in exthost.log).
+3. **The race that arms it (`extension/src/activation.ts:140-181, 394-468`).** During the one-time
+   ~170 MB engine download inside `prepareRealHost`, any render trigger (file save/auto-save →
+   `notifyFileSaved`; panel refresh; toolbar config change) reaches the scheduler, whose retry path
+   calls `hostManager.ensureReady()` directly (`activation.ts:146`) — booting the still-configured
+   placeholder mid-download. The placeholder exits 1 → layer 1 wedges the state → layer 2 blocks
+   recovery. On a warm cache the configuration window is ~milliseconds, which is why the defect
+   only manifests on a true first run.
+
+**Why every gate passed:** `host.test.ts` asserts `ensureReady()` *rejects* on `crash-on-start` but
+never asserts the manager's **state after** a failed startup; integration suites run under
+`INFLATE_TEST_FAKE_HOST`, which short-circuits `ensureRealHostConfigured` — the placeholder command
+and the configuration race are structurally invisible to both suites (same blindness class as
+AD-018: the defect lives in a path the harness replaces).
+
+### HOST-04: Startup-failure recovery & first-run configuration gating (restores P1-I resilience on first run)
+
+1. WHEN the host child exits or errors while state is `starting` (startup failure) and the kill was
+   not intentional THEN `HostManager` SHALL reject the pending `ensureReady()` with the existing
+   readable reason AND transition `starting → crashed` with full crash bookkeeping —
+   `getLastCrashReason()` set, crash-window count incremented, backoff auto-restart scheduled. The
+   state SHALL NOT remain `'starting'` after a startup failure. The state-machine doc (host.ts
+   header) SHALL gain the `starting -> crashed` edge. (T77)
+2. WHEN `dispose()`/`restart()` terminates a child mid-startup (intentional kill) THEN no crash
+   SHALL be recorded and no auto-restart scheduled — the caller owns the transition, as today. (T77)
+3. WHEN `reconfigure()` is called while no live child exists (state `'stopped'` OR `'crashed'`)
+   THEN the new command/args/initializeParams/renderTimeoutMs SHALL take effect on the next spawn;
+   WHEN a live child exists (`'starting'`/`'ready'`/`'rendering'`) THEN `reconfigure()` SHALL remain
+   a no-op. Recovery invariant: startup failure on command A, then `reconfigure(B)`, then
+   `ensureReady()` SHALL reach `'ready'` running command B. (T78)
+4. WHEN any render path (scheduler dispatch or retry — save, dep-save, refresh, config change)
+   needs the host before real-host configuration has completed THEN the extension SHALL await the
+   real-host configuration before calling `ensureReady()` — the deferred placeholder command SHALL
+   never be spawned by a render path — AND concurrent configuration requests SHALL join a single
+   in-flight `prepareRealHost` call (never two concurrent engine installs). A settled (failed)
+   configuration attempt SHALL NOT be cached — the next request re-runs it. (T79)
+5. WHEN Doctor reports an installed engine cache THEN code-only AARs (AARs shipping no `res/`)
+   SHALL be reported `installed` — the per-artifact check SHALL key on the extracted AAR directory
+   (its `AndroidManifest.xml`), not on `res/` presence. Cache `ready` remains gated solely by the
+   `.complete` marker (unchanged). (T80)
+6. First-run outcome (end-to-end): WHEN a user on a cold cache opens a preview and triggers a
+   render (e.g. Cmd+S on the layout) while the one-time engine download is still running THEN the
+   first preview SHALL still complete successfully after the download — no session-permanent
+   `cannot render while host state is 'starting'` wedge. Verified by mandatory interactive UAT
+   (clear engine cache → reload window → open preview → save during the download window). (T82)
+
+**Edge cases:**
+
+- WHEN startup fails 4 times within the rolling crash window THEN `manualRestartRequired` SHALL
+  latch exactly as for render-time crashes (existing P1-I AC3 semantics, now correctly applied to
+  startup failures); `inflate.restartHost` recovers.
+- WHEN `prepareRealHost` itself fails (no JDK, offline) THEN the in-flight gate SHALL clear so a
+  later attempt re-runs setup; the scheduler path surfaces the failure as a host error on the
+  panel (no infinite spin, no placeholder spawn).
+
+**Assumptions (logged per closure gate):**
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | -------------- | --------- | ---------- |
+| Startup failure maps to `'crashed'` (not `'stopped'`) | `handleCrash` path | Reuses crash bookkeeping, stderr-tail reason, backoff auto-restart → self-healing once reconfigure lands | yes (2026-07-27) |
+| `reconfigure()` gate | "no live child" (`stopped`/`crashed`) | Original intent was "don't reconfigure a LIVE host"; `crashed` has no child, swap is safe and required for recovery | yes (2026-07-27) |
+| Single-flight scope | joins concurrent calls only; no success/failure memoization | `prepareRealHost` is already documented idempotent-and-cheap once configured; failed attempts must retry | yes (2026-07-27) |
+
+### Requirement Traceability (DF-2)
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| HOST-04 | P1-I: Failure transparency & resilience | Tasks | Pending |
+
+**Unchanged:** HOST-01/02/03 and P1-I's ACs stand as written — this amendment adds the missing
+`starting`-failure edge and the first-run configuration gate they implicitly assumed. No wire
+protocol, host-side (JVM), scheduler, or webview change.
