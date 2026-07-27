@@ -144,13 +144,16 @@ fixtures) — see `docs/limitations.md` and `.specs/STATE.md` for full detail:
      requires this); Expiration: up to 1 year.
    - Scopes: *Custom defined* → show all scopes → **Marketplace → Manage**.
    - Copy the token immediately (it is shown only once).
-   - ⚠ **Azure DevOps retires global PATs on 2026-12-01** and publishing PATs are global-scope.
-     This PAT works today; when rotation comes due, use whatever replacement Azure DevOps offers
-     then — `vsce` ≥3.x already supports Microsoft Entra ID sign-in (`vsce publish
-     --azure-credential`) as the PAT-free alternative for local publishes.
+   - ⚠ **Azure DevOps retires global PATs on 2026-12-01** and publishing PATs are global-scope —
+     see "PAT vs Microsoft Entra ID" below for why the PAT is nevertheless the right choice today
+     and what to re-check before that date.
 4. Create the **publisher**: https://marketplace.visualstudio.com/manage → sign in with the SAME
    Microsoft account → *Create publisher* → pick the public ID (e.g. `ionixjunior`) and display
-   name.
+   name. Only **ID** (permanent, public) and **Name** (public, changeable) are required; every
+   other field is optional — no payment method, no identity documents. The logo is optional too
+   and a personal photo is perfectly fine for an indie publisher (it is public, like a GitHub
+   avatar, and can be swapped later — unlike the ID, which is forever). The "verified publisher"
+   blue check is a separate optional step (DNS TXT record on a domain you own) — skip it.
 5. Update `extension/package.json` → `"publisher"` from the `"inflate"` placeholder to the real ID
    (one line; commit before the first release — `vsce` refuses to publish under a mismatched
    publisher).
@@ -160,6 +163,31 @@ fixtures) — see `docs/limitations.md` and `.specs/STATE.md` for full detail:
    GitHub → create the namespace matching the publisher ID → generate an access token → save it as
    repo secret `OVSX_TOKEN`. While this secret is absent the release pipeline skips the Open VSX
    leg automatically (it is optional by design, REL-04 AC3).
+
+### PAT vs Microsoft Entra ID (status as of 2026-07)
+
+Microsoft's announced direction is Entra ID (workload identity federation + managed identities,
+`vsce publish --azure-credential`) and the official docs push it because global PATs retire on
+**2026-12-01**. It was evaluated for this repo and **deliberately not adopted yet**, because for a
+**personally-owned publisher it does not currently work from CI**:
+
+- The Entra path requires an **organizational Entra tenant + an Azure subscription** (a managed
+  identity is an Azure resource; the federated credential lives on it). A personal Microsoft
+  account publisher has neither.
+- Presenting an org-tenant/service-principal token to a personally-owned publisher passes
+  `verify-pat` but fails the actual publish with **"corporate credentials required"** — reported
+  upstream as `vscode-vsce` issue #1023 and closed *not planned*.
+- The official docs document the Entra flow **for Azure Pipelines only**; there is no documented
+  GitHub Actions flow.
+
+**Decision**: PAT now; **re-evaluation checkpoint before 2026-12-01** — check the official
+publishing docs (https://code.visualstudio.com/api/working-with-extensions/publishing-extension)
+for an individual-publisher migration path. If none ships, the alternatives are: move the
+publisher to an organizational tenant and then wire managed identity + federated credential for
+this repo (`azure/login` with `id-token: write`, swap `-p "$VSCE_PAT"` for `--azure-credential` in
+`release.yml`), or whatever PAT successor Azure DevOps offers then. It is NOT clearly stated
+whether already-issued Marketplace PATs keep working after that date — do not let the token ride
+past it unverified.
 
 ### Releasing — every time, no local commands
 
