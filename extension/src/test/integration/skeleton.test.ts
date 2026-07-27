@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { EXTENSION_ID } from './extensionId';
 import type { InflateApi } from '../../extension';
 
 /**
@@ -30,8 +31,8 @@ suite('Inflate walking skeleton (T18)', () => {
   });
 
   test('openPreview spawns the host, initializes, renders, and shows the image in a panel', async () => {
-    const ext = vscode.extensions.getExtension<InflateApi>('inflate.inflate');
-    assert.ok(ext, 'extension inflate.inflate should be present');
+    const ext = vscode.extensions.getExtension<InflateApi>(EXTENSION_ID);
+    assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
 
     const api = await ext.activate();
     assert.ok(api.activationMs <= 200, `activation took ${api.activationMs}ms (>200)`);
@@ -50,7 +51,7 @@ suite('Inflate walking skeleton (T18)', () => {
   });
 
   test('deactivate() leaves no orphan process', async () => {
-    const ext = vscode.extensions.getExtension<InflateApi>('inflate.inflate');
+    const ext = vscode.extensions.getExtension<InflateApi>(EXTENSION_ID);
     const api = await ext!.activate();
     // Reuses the state from the previous test in this suite (activation happens once per host).
     const pid = api.hostManager.getChildPid();

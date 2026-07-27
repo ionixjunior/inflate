@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { EXTENSION_ID } from './extensionId';
 import type { InflateApi } from '../../extension';
 
 /**
@@ -44,8 +45,8 @@ suite('Inflate config toolbar (T53)', () => {
   });
 
   async function api(): Promise<InflateApi> {
-    const ext = vscode.extensions.getExtension<InflateApi>('inflate.inflate');
-    assert.ok(ext, 'extension inflate.inflate should be present');
+    const ext = vscode.extensions.getExtension<InflateApi>(EXTENSION_ID);
+    assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
     return ext.activate();
   }
 
