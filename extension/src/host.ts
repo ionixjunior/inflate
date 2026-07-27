@@ -17,10 +17,38 @@
 
 import { ChildProcess, SpawnOptions, spawn as nodeSpawn } from 'child_process';
 import * as path from 'path';
+import { Writable } from 'stream';
 import { MessageConnection, StreamMessageReader, StreamMessageWriter, createMessageConnection } from 'vscode-jsonrpc/node';
 import { RenderRequest, RenderResponse } from './protocol';
 
 export type HostState = 'stopped' | 'starting' | 'ready' | 'rendering' | 'crashed';
+
+/**
+ * Wraps the child's stdin so a JSON-RPC write racing the host's death can never surface an error.
+ * vscode-jsonrpc 9's `sendRequest` awaits the write inside an async Promise executor and, on
+ * failure, rejects the response promise AND rethrows — the executor's own promise is discarded by
+ * the Promise constructor, so that second rejection is unhandleable from calling code
+ * (connection.js ~1149; reproduced deterministically, 2026-07-27). Swallowing the write error is
+ * sound: a write to a dead host carries no information — the child 'exit' handler owns the crash
+ * transition, and `handleCrash`/`gracefulKill` dispose the connection, which rejects every pending
+ * request with PendingResponseRejected (verified in vscode-jsonrpc 9.0.1), so callers still fail
+ * fast instead of hanging.
+ */
+class DeadPipeTolerantWritable extends Writable {
+  constructor(private readonly target: NodeJS.WritableStream) {
+    super();
+  }
+
+  override _write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    // Writable normalizes string chunks to Buffers before _write (decodeStrings defaults true),
+    // so the chunk is passed through without re-encoding.
+    try {
+      this.target.write(chunk as Uint8Array, () => callback());
+    } catch {
+      callback();
+    }
+  }
+}
 
 export class IllegalStateError extends Error {
   constructor(message: string) {
@@ -252,7 +280,7 @@ export class HostManager {
 
     const connection = createMessageConnection(
       new StreamMessageReader(child.stdout!),
-      new StreamMessageWriter(child.stdin!),
+      new StreamMessageWriter(new DeadPipeTolerantWritable(child.stdin!)),
     );
     this.connection = connection;
     connection.listen();
