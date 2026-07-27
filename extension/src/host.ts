@@ -149,9 +149,13 @@ export class HostManager {
    * Overwrites the spawn command/args and `initialize` params (T60: real JDK/ArtifactManager
    * resolution happens lazily, on first preview request — P1-H AC1 — not at construction time,
    * since it can involve a one-time ~170 MB download and must not block `activate()`, NFR-02). A
-   * no-op once the host has actually started (state !== 'stopped') — reconfiguring a live/crashed/
-   * restarting host would be incoherent; callers (activation.ts) re-derive the same real config on
-   * every call, so this is safe and idempotent to call repeatedly before the first `ensureReady()`.
+   * no-op while a live child exists (`'starting'`/`'ready'`/`'rendering'`) — reconfiguring a running
+   * host would be incoherent; callers (activation.ts) re-derive the same real config on every call,
+   * so this is safe and idempotent to call repeatedly before the first `ensureReady()`. Takes effect
+   * whenever there is NO live child — `'stopped'` (never started) OR `'crashed'` (T77: including a
+   * startup failure against the deferred placeholder command) — so the real command assembled once
+   * setup finishes always lands on the very next spawn, even if the placeholder already failed once
+   * (HOST-04 AC3).
    */
   reconfigure(next: {
     command: string;
@@ -159,7 +163,7 @@ export class HostManager {
     initializeParams?: Record<string, unknown>;
     renderTimeoutMs?: number;
   }): void {
-    if (this.state !== 'stopped') return;
+    if (this.state !== 'stopped' && this.state !== 'crashed') return;
     this.opts.command = next.command;
     this.opts.args = next.args;
     if (next.initializeParams) this.opts.initializeParams = next.initializeParams;

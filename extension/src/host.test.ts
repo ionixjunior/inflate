@@ -222,6 +222,24 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(manager.getState()).toBe('ready'); // still spawns the ORIGINAL ('normal') command
   });
 
+  it('reconfigure() lands after a startup failure, recovering onto the new command (HOST-04 AC3)', async () => {
+    // T77 recovery invariant: startup failure on command A (crash-on-start), then reconfigure(B),
+    // then ensureReady() must reach 'ready' running command B — reconfigure() must no longer be
+    // stuck refusing a 'crashed' host. reconfigure()+ensureReady() run in the same microtask
+    // continuation as the rejection below, so this can never race the crash's own scheduled
+    // backoff retry (a macrotask, which cannot run until the microtask queue — including this test
+    // function's own continuation — is fully drained).
+    const manager = makeManager('crash-on-start');
+
+    await expect(manager.ensureReady()).rejects.toThrow(/during startup/);
+    expect(manager.getState()).toBe('crashed');
+
+    manager.reconfigure({ command: 'node', args: [FAKE_HOST, 'normal'] });
+    await manager.ensureReady();
+
+    expect(manager.getState()).toBe('ready');
+  });
+
   it('surfaces the last stderr lines from the fake host (crash reporting, P1-I AC5)', async () => {
     const manager = makeManager('normal');
     await manager.ensureReady();
