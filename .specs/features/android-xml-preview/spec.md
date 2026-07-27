@@ -1052,7 +1052,7 @@ protocol, host-side (JVM), scheduler, or webview change.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| REL-06 | REL-03: Maintainer-only `/run ci` on PRs | Spec | Pending (tasks T83+, phase 20) |
+| REL-06 | REL-03: Maintainer-only `/run ci` on PRs | Spec | Implemented (T83–T87, phase 20) — pending live verification (rollout steps 2–4, post-merge) |
 
 **Unchanged:** REL-01..05 stand as written — this amendment fixes REL-03 AC4's live failure and adds
 the PR-side visibility REL-03 never specified. The AD-019 security model is untouched: guard,
