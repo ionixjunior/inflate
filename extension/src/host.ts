@@ -4,6 +4,7 @@
  * the P1-I AC3 lifecycle state machine:
  *
  *   stopped -> starting -> ready -> rendering -> (ready | crashed)
+ *   starting -> crashed (startup failure, e.g. the child exits/errors before reaching ready)
  *   crashed -> starting
  *
  * No render is ever dispatched unless the state is `ready`. A crash triggers an automatic
@@ -264,6 +265,11 @@ export class HostManager {
       const reason = `exited (code=${code}, signal=${signal})`;
       if (starting && rejectStartup) {
         rejectStartup(new Error(`host ${this.describeCrash(reason)} during startup`));
+        // dispose()/restart() intentionally killing a starting child owns the transition itself
+        // (state -> 'stopped'); anything else is a genuine startup failure and must not leave the
+        // manager wedged in 'starting' (HOST-04 AC1) — route it through the same crash bookkeeping
+        // a post-ready crash gets (reason, crash-window count, backoff auto-restart).
+        if (!this.intentionalKill) this.handleCrash(reason);
         return;
       }
       if (this.intentionalKill) return; // dispose()/restart() own this transition
@@ -272,6 +278,7 @@ export class HostManager {
     child.once('error', (err) => {
       if (starting && rejectStartup) {
         rejectStartup(err);
+        if (!this.intentionalKill) this.handleCrash(err.message);
         return;
       }
       if (this.intentionalKill) return;
