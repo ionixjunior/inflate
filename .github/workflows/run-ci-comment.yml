@@ -81,8 +81,8 @@ jobs:
             -f body="/run ci accepted from @${{ github.event.comment.user.login }} — running the full gate on this PR's merge result: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   gate:
-    # Same guard as ack (duplicated on purpose: the jobs are independent, so an ack failure can
-    # never block the actual gate).
+    # Same guard as accept (duplicated on purpose: the jobs are independent, so an accept-side
+    # failure can never block the actual gate).
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run ci') &&
@@ -94,3 +94,40 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       ref: refs/pull/${{ github.event.issue.number }}/merge
+
+  report:
+    needs: [accept, gate]
+    # always() so this job still runs when `gate` fails/is skipped; re-checks the guard (accept
+    # may have been skipped by the same condition) plus a non-empty head_sha (covers an
+    # accept-API failure, which leaves no SHA to report against — REL-06 AC3's edge case).
+    if: >-
+      always() &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run ci') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      needs.accept.outputs.head_sha != ''
+    runs-on: ubuntu-latest # posting a status does not need a macOS runner
+    permissions:
+      statuses: write # the final full-gate status on the PR head SHA (REL-06 AC3)
+    steps:
+      # Explicit mapping, not a passthrough of needs.gate.result: success/failure are written for
+      # exactly those two gate outcomes. cancelled/skipped fall through and write NOTHING — a
+      # superseding /run ci re-sets pending via its own accept job, a manual cancel with no
+      # successor leaves pending until the next comment (REL-06 AC4, deterministic regardless of
+      # how GitHub schedules always() jobs on cancellation).
+      - name: Report the gate result as the final full-gate status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ needs.gate.result }}" in
+            success) state=success ;;
+            failure) state=failure ;;
+            *)
+              echo "gate result '${{ needs.gate.result }}' is neither success nor failure — writing no status (REL-06 AC4)"
+              exit 0
+              ;;
+          esac
+          gh api "repos/${{ github.repository }}/statuses/${{ needs.accept.outputs.head_sha }}" \
+            -f state="$state" \
+            -f context=full-gate \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
