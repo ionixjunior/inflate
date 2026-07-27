@@ -947,3 +947,114 @@ AD-018: the defect lives in a path the harness replaces).
 **Unchanged:** HOST-01/02/03 and P1-I's ACs stand as written — this amendment adds the missing
 `starting`-failure edge and the first-run configuration gate they implicitly assumed. No wire
 protocol, host-side (JVM), scheduler, or webview change.
+
+## Defect Amendment (2026-07-27): DF-3 — `/run ci` ack fails 403 and the gate is invisible on the PR
+
+> Found in the first live `/run ci` use (PR #1, run 30284080541, 2026-07-27): the guard accepted the
+> comment and the gate ran, but the ack job died with `gh: Resource not accessible by integration
+> (HTTP 403)` — a live violation of REL-03 AC4 — and the PR itself showed nothing (no pending, no
+> green/red): the run is only discoverable from the Actions tab. Flipping the repo-level "Read and
+> write permissions" toggle did not (and cannot) fix the 403 — the workflow declares explicit
+> `permissions:`, which replaces the repo default entirely. Fix tasks: **T83+ (phase 20)** in
+> `tasks.md` (created on spec approval); requirement **REL-06** below; user decisions captured in
+> `context.md` ("CI Comment Pipeline Context (Amendment — 2026-07-27)"). **Ships by merging to
+> `main`** — `issue_comment` workflows execute from the default branch; the VSIX is untouched, so no
+> Marketplace release and no version bump are involved (unlike DF-2's 1.0.1).
+
+**Root cause (both symptoms verified against live logs + GitHub docs, 2026-07-27):**
+
+1. **Ack 403 — wrong token permission for a PR conversation comment
+   (`run-ci-comment.yml:42-43`).** The ack job grants `issues: write` only. PR conversation
+   comments are indeed created via the issues REST endpoint
+   (`POST /repos/{owner}/{repo}/issues/{n}/comments`), but GitHub permission-checks the endpoint
+   against the **target resource**: commenting on a PR requires `pull-requests: write`;
+   `issues: write` covers only true issues. The workflow's own inline comment ("PR conversation
+   comments use the issues API") described the endpoint correctly and the permission incorrectly.
+   Evidence: the failing run had `issues: write` in place, and the guard restricts the job to PR
+   comments only — the 403 is fully explained.
+2. **No PR status — `issue_comment` runs attach to the default branch, not the PR.** For
+   `issue_comment` events, `GITHUB_SHA` is the last commit on the default branch, so the run and
+   its checks associate with `main` — nothing links them to the PR head, and the PR checks area
+   stays empty by design. The established pattern for comment-triggered CI is explicit **commit
+   statuses on the PR head SHA** (`POST /repos/{owner}/{repo}/statuses/{sha}`, `statuses: write`):
+   pending when the run is accepted, success/failure when the gate concludes, `target_url` = the
+   run. That is exactly what standard `pull_request`-triggered CI feedback looks like on a PR.
+
+### REL-06: PR-visible gate status & working ack (completes REL-03's PR feedback loop)
+
+1. WHEN a guard-passing `/run ci` comment is accepted THEN the ack comment (REL-03 AC4, unchanged
+   wording) SHALL post successfully — the posting job's token SHALL carry `pull-requests: write`
+   (replacing `issues: write`; the job posts only to PRs by guard construction).
+2. WHEN the run is accepted THEN the workflow SHALL resolve the PR head SHA **once, at accept
+   time**, and set commit status context **`full-gate`** to `pending` on that SHA with
+   `target_url` = this run's URL (`statuses: write`).
+3. WHEN the gate concludes THEN a reporting job (`needs: gate`, `if: always()`) SHALL set the same
+   context on the same captured SHA to `success` (gate success) or `failure` (gate failure,
+   including a merge-ref checkout failure on a conflicted PR). Ack/accept-step failures SHALL never
+   block the gate or the final status (job independence, extending REL-03's ack/gate separation).
+4. WHEN the run is cancelled (manual, or superseded via the existing per-PR concurrency group) THEN
+   that run SHALL NOT write a final status — a superseding run re-sets `pending` on the same
+   context+SHA; a manual cancel with no successor leaves `pending` (documented, self-heals on the
+   next `/run ci`).
+5. Security invariants: the REL-03 guard triple (PR + `/run ci` prefix + author_association ∈
+   {OWNER, MEMBER, COLLABORATOR}) SHALL remain on every job (user decision 2026-07-27: scope
+   unchanged); jobs holding `pull-requests: write`/`statuses: write` SHALL contain no checkout and
+   execute no PR code; the gate job SHALL keep `contents: read` and nothing broader; publish
+   secrets stay unreachable (REL-03 AC5 unchanged); `ci.yml` itself SHALL NOT change (release/canary
+   callers unaffected).
+6. Required check (user decision 2026-07-27): `full-gate` SHALL become a **required status check on
+   `main` via a repository ruleset** whose bypass list carries the **GitHub Actions app** (so
+   `release.yml`'s direct `Release <v>` push keeps working — required checks block direct pushes
+   too) and **Repository admin** (maintainer direct pushes, today's practice). Strict "require
+   branches to be up to date" stays OFF (each base move would demand a fresh paid macOS run).
+   Configured as manual UI steps documented in the runbook — AD-019's "no repo-settings automation"
+   non-goal stands.
+
+**Edge cases:**
+
+- WHEN a commit is pushed between the comment and the accept step THEN statuses land on the SHA
+  captured at accept; the newer head shows no status, and under the required check a stale green on
+  an older SHA can never unlock a merge (protection keys on the latest head).
+- WHEN the accept step's API calls fail THEN that run produces no statuses; the gate still runs and
+  the failure is visible in the Actions log (same posture as an ack failure).
+- WHEN `/run ci` is commented on the PR that carries THIS fix THEN the **old** workflow still
+  governs it (`issue_comment` executes the default-branch definition) — the ack still 403s and no
+  status appears; expected, see rollout below.
+
+**Rollout & live verification (ordered — workflow YAML has no local runtime, AD-019):**
+
+1. Merge this amendment's PR (the old pipeline governs its own `/run ci`; the YAML change is gated
+   by parse/structural checks + review).
+2. On the next PR: comment `/run ci` → verify live: ack posts (no 403), `full-gate` pending appears
+   in the PR checks area, final status matches the gate result. These are REL-06's live ACs.
+3. Only then create the ruleset (the context has now been reported once and is selectable):
+   required status check `full-gate`, bypass = GitHub Actions app + Repository admin, strict
+   up-to-date OFF. Runbook amendment documents the exact clicks.
+4. The next release proves the bypass (recovery for a blocked push is already documented in
+   `release.yml`'s header — publish-before-push). Fallback if the `github-actions` app cannot be
+   added to the bypass list (availability of that picker entry is **flagged uncertain**): keep
+   Repository-admin bypass and switch `release.yml`'s push step to an owner fine-grained PAT
+   (new secret) — documented in the runbook, applied only if needed.
+
+**Assumptions (logged per closure gate):**
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | -------------- | --------- | ---------- |
+| Status mechanism | Commit statuses API, not check runs | Check runs created with the Actions `GITHUB_TOKEN` attach to the creating run's own check suite (known limitation); statuses have none of that and full required-check parity | agent default (2026-07-27) |
+| Status context | Single rollup context `full-gate` | Mirrors `ci.yml`'s single gate job 1:1; the string is what branch protection keys on, so it must stay stable | agent default (2026-07-27) |
+| Ack permission | `pull-requests: write` replaces `issues: write` (not both) | Endpoint is dual-listed (Issues/Pull requests) but the check follows the target resource, always a PR here; step 2 of rollout live-verifies | agent default (2026-07-27) |
+| Status target | PR **head** SHA (gate still tests `refs/pull/<N>/merge`) | The PR checks UI and branch protection key on the head commit — identical to how `pull_request`-triggered CI reports | agent default (2026-07-27) |
+| Trigger scope | Guard unchanged: OWNER/MEMBER/COLLABORATOR | User decision 2026-07-27 — collaborators can already push code, so no added exposure; fork-PR authors remain excluded | user (2026-07-27) |
+| Merge gating | Required check via ruleset + bypass list | User decision 2026-07-27 — "everything flows normally"; bypass keeps AD-019's release push and admin direct pushes alive | user (2026-07-27) |
+| Result feedback | Statuses only; ack stays; no completion comment | User decision 2026-07-27 — the status flip is the result signal, no extra PR noise | user (2026-07-27) |
+
+### Requirement Traceability (DF-3)
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| REL-06 | REL-03: Maintainer-only `/run ci` on PRs | Spec | Pending (tasks T83+, phase 20) |
+
+**Unchanged:** REL-01..05 stand as written — this amendment fixes REL-03 AC4's live failure and adds
+the PR-side visibility REL-03 never specified. The AD-019 security model is untouched: guard,
+default-branch workflow execution, publish-secret isolation, per-PR concurrency group, and the
+gate's read-only token all stay exactly as verified.
