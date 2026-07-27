@@ -306,6 +306,57 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     expect(fs.existsSync(engineDir)).toBe(false);
   });
 
+  it('reports a code-only AAR (no res/) as installed once extracted (HOST-04 AC5)', async () => {
+    // Mirrors the ~15 pinned androidx AARs that ship no resources at all — code-only, like
+    // androidx.annotation:annotation.
+    const codeOnlyAarZip = buildZip({
+      'classes.jar': 'tiny-fake-code-only-classes-jar-bytes',
+      'AndroidManifest.xml': '<manifest package="com.example.codeonly"></manifest>',
+    });
+    const fixture = await startFixtureServer({ '/code-only.aar': codeOnlyAarZip });
+    server = fixture.server;
+    const manifest: EngineManifest = {
+      pinName: 'test-pin',
+      artifacts: [
+        {
+          group: 'androidx.example',
+          name: 'code-only',
+          version: '1.0',
+          kind: 'aar',
+          url: `${fixture.baseUrl}/code-only.aar`,
+          sha256: sha256(codeOnlyAarZip),
+          sizeBytes: codeOnlyAarZip.length,
+        },
+      ],
+    };
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+
+    await manager.ensureInstalled();
+
+    const status = manager.cacheState().artifacts.find((a) => a.key.includes('code-only'));
+    expect(status?.installed).toBe(true);
+  });
+
+  it('reports a res-bearing AAR as installed after extraction, unchanged (regression, HOST-04 AC5)', async () => {
+    const fixture = await startFullFixture();
+    server = fixture.server;
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+
+    await manager.ensureInstalled();
+
+    const status = manager.cacheState().artifacts.find((a) => a.key.includes('material'));
+    expect(status?.installed).toBe(true);
+  });
+
+  it('reports an AAR as not installed before it is ever extracted (HOST-04 AC5)', async () => {
+    const fixture = await startFullFixture();
+    server = fixture.server;
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+
+    const status = manager.cacheState().artifacts.find((a) => a.key.includes('material'));
+    expect(status?.installed).toBe(false);
+  });
+
   it('never reports ready from a half-installed cache (no .complete marker)', () => {
     const manifest: EngineManifest = {
       pinName: 'test-pin',

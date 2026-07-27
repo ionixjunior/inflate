@@ -360,7 +360,11 @@ export class ArtifactManager {
         return fs.existsSync(destDir) && fs.readdirSync(destDir).length > 0;
       }
       case 'aar':
-        return fs.existsSync(path.join(this.aarResDir(artifact.name), 'res'));
+        // Keyed on the AAR's own AndroidManifest.xml (every AAR ships one — finalize() unzips it,
+        // readPackageName() already relies on it), not on `res/` — ~15 of the pinned androidx AARs
+        // ship no resources at all (code-only), and checking `res/` reported those as permanently
+        // "missing" even once fully extracted (T80, HOST-04 AC5).
+        return fs.existsSync(path.join(this.aarResDir(artifact.name), 'AndroidManifest.xml'));
     }
   }
 
