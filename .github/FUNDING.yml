@@ -1,0 +1,4 @@
+# Shows the "Sponsor" button on the GitHub repo page.
+# The link goes live once the GitHub Sponsors profile (github.com/sponsors/ionixjunior) is
+# approved — the button is harmless before that, it just leads to an empty profile page.
+github: [ionixjunior]
