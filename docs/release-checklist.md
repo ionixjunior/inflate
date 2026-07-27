@@ -30,13 +30,12 @@ are applied (the Google-Maven artifacts downloaded separately per-user, Android 
 protobuf schema, and Windows-only JNA bindings — irrelevant on the macOS-only v1, AD-004). See the
 comment above `tasks.shadowJar` in `host/build.gradle.kts` for the full reasoning.
 
-**Icon note:** `extension/media/icon.png` is a simple placeholder generated for this batch (a
-rounded-square glyph), not a commissioned design asset. Replace it with real brand artwork before
-publishing to the Marketplace for real.
+**Icon note (RESOLVED 2026-07-26):** the original placeholder was replaced with real artwork in
+commit `f7f4496`.
 
-**Publisher note:** `package.json`'s `repository`/`bugs` URLs point at the real repository
-(`github.com/ionixjunior/inflate`); `publisher: "inflate"` is still a placeholder pending the real
-Marketplace publisher account — update it at the same time as the icon.
+**Publisher note (RESOLVED 2026-07-26):** `package.json` points at the real repository
+(`github.com/ionixjunior/inflate`) and the real Marketplace publisher (`ionixjunior`, commit
+`abf7b75`).
 
 ## Gate before every release
 
