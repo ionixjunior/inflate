@@ -2402,15 +2402,16 @@ reason. Add the `starting -> crashed` edge to the state-machine doc comment.
 
 **Done when**:
 
-- [ ] After `ensureReady()` rejects on `crash-on-start`, `getState()` is `'crashed'` (not
+- [x] After `ensureReady()` rejects on `crash-on-start`, `getState()` is `'crashed'` (not
       `'starting'`), `crashCount()` is 1, `getLastCrashReason()` contains the exit reason
-- [ ] Backoff auto-restart fires after a startup failure (state re-enters `'starting'` without a
+- [x] Backoff auto-restart fires after a startup failure (state re-enters `'starting'` without a
       manual call); a 4th startup failure in the window latches `needsManualRestart()`
-- [ ] `dispose()` during `'starting'` records NO crash and ends `'stopped'` (intentional-kill edge)
-- [ ] The spawn-`error` path (nonexistent command) gets the same treatment as `exit`
-- [ ] Existing 14 host tests untouched and green; gate passes: `cd extension && npm run build && npm test`
+- [x] `dispose()` during `'starting'` records NO crash and ends `'stopped'` (intentional-kill edge)
+- [x] The spawn-`error` path (nonexistent command) gets the same treatment as `exit`
+- [x] Existing 14 host tests untouched and green; gate passes: `cd extension && npm run build && npm test`
 
 **Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `3e4b7ea`)
 
 ---
 
@@ -2430,13 +2431,14 @@ stays green as-is
 
 **Done when**:
 
-- [ ] DF-2 recovery test: `crash-on-start` startup failure → `reconfigure('normal')` →
+- [x] DF-2 recovery test: `crash-on-start` startup failure → `reconfigure('normal')` →
       `ensureReady()` reaches `'ready'` running the NEW command
-- [ ] Live-host no-op preserved: reconfigure while `'ready'` still ignored (existing test green,
+- [x] Live-host no-op preserved: reconfigure while `'ready'` still ignored (existing test green,
       unmodified)
-- [ ] Gate passes: `cd extension && npm run build && npm test`
+- [x] Gate passes: `cd extension && npm run build && npm test`
 
 **Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `ccb3a10`)
 
 ---
 
@@ -2460,16 +2462,17 @@ once configured (activation.ts:389-392)
 
 **Done when**:
 
-- [ ] `gate.test.ts`: two concurrent calls run `fn` once and share the result; a rejected run
+- [x] `gate.test.ts`: two concurrent calls run `fn` once and share the result; a rejected run
       clears the in-flight slot (next call re-runs); a resolved run is not memoized (next call
       re-runs)
-- [ ] `activation.ts`: scheduler `ensureReady` dep awaits the configuration gate first (fake-host
+- [x] `activation.ts`: scheduler `ensureReady` dep awaits the configuration gate first (fake-host
       mode still returns immediately — integration harness unaffected); openPreview/restartHost use
       the same shared gate (no duplicate concurrent `prepareRealHost`)
-- [ ] Full gate passes: `cd extension && npm run build && npm test && npm run test:integration`
+- [x] Full gate passes: `cd extension && npm run build && npm test && npm run test:integration`
       (no test weakened or deleted)
 
 **Tests**: unit (gate) + existing integration green — **Gate**: full
+**Status**: [x] complete (commit `ed607ba`)
 
 ---
 
@@ -2490,11 +2493,12 @@ re-downloading them).
 
 **Done when**:
 
-- [ ] Unit tests: res-less AAR → `installed: true`; res-bearing AAR → unchanged `true`; never-
+- [x] Unit tests: res-less AAR → `installed: true`; res-bearing AAR → unchanged `true`; never-
       extracted AAR → `false`; `ready` still keyed solely on `.complete`
-- [ ] Gate passes: `cd extension && npm run build && npm test`
+- [x] Gate passes: `cd extension && npm run build && npm test`
 
 **Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `df8dc66`)
 
 ---
 
@@ -2514,11 +2518,12 @@ mislabels code-only androidx AARs as `missing`.
 
 **Done when**:
 
-- [ ] `## 1.0.1` section present above `## 1.0.0`, covering the first-run wedge fix and the Doctor
+- [x] `## 1.0.1` section present above `## 1.0.0`, covering the first-run wedge fix and the Doctor
       AAR-report fix — no other sections touched
-- [ ] Gate passes: `cd extension && npm run build && npm test`
+- [x] Gate passes: `cd extension && npm run build && npm test`
 
 **Tests**: none (docs — matrix has no layer for markdown content) — **Gate**: quick
+**Status**: [x] complete (commit `c9a4e80`)
 
 ---
 
@@ -2537,17 +2542,20 @@ Decisions, update Handoff, mark HOST-04 traceability.
 
 **Done when**:
 
-- [ ] **Interactive UAT (MANDATORY — evidence recorded in the commit body)**: `Inflate: Clear
-      Engine Cache` → reload window → open preview on a real layout → press Cmd+S while the
-      "preparing render engine (~170 MB)" notification is visible → the download completes and the
-      SAME session renders the preview (no `cannot render while host state is 'starting'` wedge;
-      channel shows the real java host reaching `ready`). Repeat once passively (no save) to
-      confirm the plain path still works
-- [ ] AD-020 recorded in STATE.md Decisions; Handoff updated; spec traceability HOST-04 → Verified
+- [x] **Interactive UAT (MANDATORY — evidence recorded in the commit body)**: performed 2026-07-27
+      by the user via Devin against a packaged `inflate-1.0.0.vsix` (`npm run package` at repo
+      root), fresh install, `fixtures/gradle-sample/app/src/main/res/layout/main.xml`: opened the
+      preview (triggering the live one-time engine download), pressed Cmd+S while the "preparing
+      render engine (~170 MB)" notification was visible → the download completed and the SAME
+      session's preview rendered successfully (no `cannot render while host state is 'starting'`
+      wedge). Repeated passively (no save) — plain path unaffected. User-confirmed: "It works."
+- [x] AD-020 recorded in STATE.md Decisions; Handoff updated; spec traceability HOST-04 → Verified
       pending Verifier
-- [ ] Full gate green at close: `cd extension && npm run build && npm test && npm run test:integration`
+- [x] Full gate green at close: `cd extension && npm run build && npm test && npm run test:integration`
+      (unit 206/206, integration 25/25)
 
 **Tests**: manual UAT + full suite green — **Gate**: full
+**Status**: [x] complete (UAT confirmed 2026-07-27; bookkeeping this commit)
 
 ### Phase Execution Map (DF-2)
 

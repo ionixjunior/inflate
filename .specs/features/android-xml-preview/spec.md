@@ -942,7 +942,7 @@ AD-018: the defect lives in a path the harness replaces).
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HOST-04 | P1-I: Failure transparency & resilience | Tasks | Pending |
+| HOST-04 | P1-I: Failure transparency & resilience | Tasks | Verified — AC1-AC5 via automated gates (T77-T80), AC6 via interactive UAT (T82, 2026-07-27, Devin-driven install of `inflate-1.0.0.vsix` against `fixtures/gradle-sample`: save during the live engine download, host recovered and rendered in the same session); pending the closing Verifier pass |
 
 **Unchanged:** HOST-01/02/03 and P1-I's ACs stand as written — this amendment adds the missing
 `starting`-failure edge and the first-run configuration gate they implicitly assumed. No wire
