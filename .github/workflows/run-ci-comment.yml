@@ -40,7 +40,11 @@ jobs:
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest # posting a comment does not need a macOS runner
     permissions:
-      issues: write # the ack comment (PR conversation comments use the issues API)
+      # The ack comment is posted via the issues REST API, but GitHub permission-checks the
+      # TARGET RESOURCE, not the endpoint name — this job posts only to PRs (guard construction),
+      # so it needs pull-requests: write, not issues: write (DF-3, 2026-07-27: issues: write 403'd
+      # the first live ack).
+      pull-requests: write
     steps:
       - name: Acknowledge on the PR with a link to this run
         env:
