@@ -988,7 +988,8 @@ protocol, host-side (JVM), scheduler, or webview change.
 2. WHEN the run is accepted THEN the workflow SHALL resolve the PR head SHA **once, at accept
    time**, and set commit status context **`full-gate`** to `pending` on that SHA with
    `target_url` = this run's URL (`statuses: write`).
-3. WHEN the gate concludes THEN a reporting job (`needs: gate`, `if: always()`) SHALL set the same
+3. WHEN the gate concludes THEN a reporting job (`needs: [accept, gate]` — accept is a dependency
+   too, so the job can read its captured `head_sha` output; `if: always()`) SHALL set the same
    context on the same captured SHA to `success` (gate success) or `failure` (gate failure,
    including a merge-ref checkout failure on a conflicted PR). Ack/accept-step failures SHALL never
    block the gate or the final status (job independence, extending REL-03's ack/gate separation).
