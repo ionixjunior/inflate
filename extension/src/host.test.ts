@@ -222,6 +222,24 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(manager.getState()).toBe('ready'); // still spawns the ORIGINAL ('normal') command
   });
 
+  it('reconfigure() lands after a startup failure, recovering onto the new command (HOST-04 AC3)', async () => {
+    // T77 recovery invariant: startup failure on command A (crash-on-start), then reconfigure(B),
+    // then ensureReady() must reach 'ready' running command B — reconfigure() must no longer be
+    // stuck refusing a 'crashed' host. reconfigure()+ensureReady() run in the same microtask
+    // continuation as the rejection below, so this can never race the crash's own scheduled
+    // backoff retry (a macrotask, which cannot run until the microtask queue — including this test
+    // function's own continuation — is fully drained).
+    const manager = makeManager('crash-on-start');
+
+    await expect(manager.ensureReady()).rejects.toThrow(/during startup/);
+    expect(manager.getState()).toBe('crashed');
+
+    manager.reconfigure({ command: 'node', args: [FAKE_HOST, 'normal'] });
+    await manager.ensureReady();
+
+    expect(manager.getState()).toBe('ready');
+  });
+
   it('surfaces the last stderr lines from the fake host (crash reporting, P1-I AC5)', async () => {
     const manager = makeManager('normal');
     await manager.ensureReady();
@@ -254,6 +272,54 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     expect(crashReason).toBeDefined();
     expect(crashReason).toContain('inflate.hostMaxHeap');
     expect(crashReason).toContain('OutOfMemoryError');
+  });
+
+  it('transitions starting -> crashed on a startup failure, with crash bookkeeping and backoff self-heal (HOST-04 AC1/AC2)', async () => {
+    const manager = makeManager('crash-on-start', { backoffMs: [5, 5, 5] });
+    const seen: string[] = [];
+    manager.onStateChange((s) => seen.push(s));
+
+    await expect(manager.ensureReady()).rejects.toThrow(/during startup/);
+
+    expect(manager.getState()).toBe('crashed'); // never left wedged in 'starting'
+    expect(manager.crashCount()).toBe(1);
+    expect(manager.getLastCrashReason()).toContain('exited (code=1');
+
+    // Backoff auto-restart re-enters 'starting' with no manual call — and since crash-on-start
+    // always fails, retries climb the crash count until the 4th latches manual restart (the
+    // existing P1-I AC3 crash-budget semantics, now correctly reached from a startup failure too).
+    await waitUntil(() => manager.crashCount() >= 4, 5000);
+    expect(manager.needsManualRestart()).toBe(true);
+    expect(seen.filter((s) => s === 'starting').length).toBeGreaterThanOrEqual(2);
+  }, 15000);
+
+  it('records no crash and ends stopped when dispose() kills the child mid-startup (intentional-kill edge, HOST-04 AC2)', async () => {
+    const manager = makeManager('normal');
+    // Attached in the same tick ensureReady() returns: connection.dispose() (inside gracefulKill,
+    // below) force-rejects this immediately, and the rejection must have a handler from the start
+    // — attaching it only after `await manager.dispose()` resolves leaves a window wide enough
+    // (dispose() awaits the real child's 'exit' event) for Node to flag it unhandled first.
+    const readyPromise = manager.ensureReady();
+    readyPromise.catch(() => undefined);
+    expect(manager.getState()).toBe('starting');
+
+    await manager.dispose();
+
+    expect(manager.getState()).toBe('stopped');
+    expect(manager.crashCount()).toBe(0);
+    expect(manager.needsManualRestart()).toBe(false);
+  });
+
+  it('treats a spawn error (nonexistent command) during startup the same as an exit (HOST-04 AC1)', async () => {
+    const manager = makeManager('unused', {
+      command: path.join(__dirname, 'no-such-inflate-host-binary'),
+      args: [],
+    });
+
+    await expect(manager.ensureReady()).rejects.toThrow();
+
+    expect(manager.getState()).toBe('crashed');
+    expect(manager.crashCount()).toBe(1);
   });
 });
 

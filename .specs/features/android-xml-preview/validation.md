@@ -505,3 +505,102 @@ None recorded — the policy's qualifying signals (failed/uncovered AC, survivin
 **Gate**: delta suite 17/17 · original suite 44/44 · YAML parse OK. `git status` after restore: `validation.md` is the only modified file.
 
 **Lessons**: none recorded for this iteration — no qualifying signal (no failed AC, 2/2 delta mutants killed, no spec-precision gap); the findings themselves were beyond-AC recommendations, now closed.
+
+---
+
+## First-Run Host Wedge Fix Verification (2026-07-27)
+
+**Spec**: "Defect Amendment (2026-07-27): DF-2" section in `spec.md`, requirement **HOST-04**
+**Diff range**: `29e353a..d7c4d13` (T77–T82, phase 19; 6 commits)
+**Verifier**: independent sub-agent (author ≠ verifier; evidence-or-zero, re-derived; read-only over the real tree — sensor mutations run in-place and reverted via `git checkout`, confirmed clean before and after each)
+
+### Task Completion
+
+| Task | Status  | Notes |
+| ---- | ------- | ----- |
+| T77  | ✅ Done | `3e4b7ea` — `starting -> crashed` edge added |
+| T78  | ✅ Done | `ccb3a10` — reconfigure guard widened to "no live child" |
+| T79  | ✅ Done | `ed607ba` — `gate.ts` single-flight + activation wiring |
+| T80  | ✅ Done | `df8dc66` — code-only AAR installed-check |
+| T81  | ✅ Done | `c9a4e80` — 1.0.1 changelog entry |
+| T82  | ✅ Done | `d7c4d13` — AD-020 + Handoff + traceability bookkeeping; UAT performed by the user (not by this Verifier — no GUI available; see AC6 row) |
+
+### Spec-Anchored Acceptance Criteria (HOST-04)
+
+| Criterion (WHEN X THEN Y) | Spec-defined outcome | `file:line` + assertion expression | Result |
+| -------------------------- | --------------------- | ----------------------------------- | ------ |
+| AC1: child exits/errors while `starting` (unintentional) → reject pending `ensureReady()` + `starting → crashed` with full crash bookkeeping; state SHALL NOT remain `'starting'` | `getState()==='crashed'`, `crashCount()===1`, `getLastCrashReason()` set to the exit reason, backoff auto-restart scheduled | `extension/src/host.test.ts:284` — `expect(manager.getState()).toBe('crashed')`; `:285` — `expect(manager.crashCount()).toBe(1)`; `:286` — `expect(manager.getLastCrashReason()).toContain('exited (code=1')`; spawn-`error` path: `:321` — `expect(manager.getState()).toBe('crashed')`, `:322` — `expect(manager.crashCount()).toBe(1)` | ✅ PASS |
+| AC2: `dispose()`/`restart()` intentional kill mid-`starting` → no crash recorded, no auto-restart, caller owns transition | `crashCount()===0`, `needsManualRestart()===false`, state ends `'stopped'` | `extension/src/host.test.ts:308` — `expect(manager.getState()).toBe('stopped')`; `:309` — `expect(manager.crashCount()).toBe(0)`; `:310` — `expect(manager.needsManualRestart()).toBe(false)` | ✅ PASS |
+| AC3: `reconfigure()` while no live child (`stopped`/`crashed`) takes effect on next spawn; recovery invariant (failure on A → reconfigure(B) → `ensureReady()` reaches `ready` running B) | crashed → reconfigure → `ensureReady()` resolves to `'ready'`; live-host case stays a no-op | `extension/src/host.test.ts:235` — `expect(manager.getState()).toBe('crashed')`; `:240` — `expect(manager.getState()).toBe('ready')` (after `reconfigure` to the working fake-host mode); live-no-op regression preserved unmodified at `host.test.ts:213-223` | ✅ PASS |
+| AC4: render paths await real-host config before `ensureReady()`; placeholder never spawned by a render path; concurrent configuration joins one in-flight `prepareRealHost`; a settled failure is not cached | `singleFlight` joins concurrent callers to one call; a rejected call clears the in-flight slot (next call re-runs); a resolved call is also not memoized | `extension/src/gate.test.ts:13-17` — `expect(calls).toBe(1)` for two concurrent callers; `:28-30` — `expect(gated()).rejects...` then `expect(gated()).resolves.toBe('ok')`, `expect(calls).toBe(2)`; `:40-42` — resolved-not-memoized, `expect(calls).toBe(2)` | ✅ PASS (helper semantics); **the activation.ts wiring itself** (`activation.ts:103-105,118,162,286,361`) that routes `openPreview`/scheduler-retry/`restartHost` through this one gate is verified only by code inspection + the existing integration suite staying green + the human UAT (AC6) — `INFLATE_TEST_FAKE_HOST` structurally bypasses this exact path (AD-018/AD-020, pre-accepted, not a new gap) |
+| AC5: code-only AARs (no `res/`) reported `installed`; keyed on the AAR's own `AndroidManifest.xml`; res-bearing AAR unchanged; cache `ready` still gated solely by `.complete` | `installed===true` for a code-only AAR once extracted; `installed===true` unchanged for a res-bearing AAR; `installed===false` before extraction; `.complete`-gating unaffected | `extension/src/artifacts.test.ts:337` — `expect(status?.installed).toBe(true)` (code-only); `:348` — `expect(status?.installed).toBe(true)` (res-bearing, regression); `:357` — `expect(status?.installed).toBe(false)` (never-extracted); `.complete` gating preserved, unmodified test at `artifacts.test.ts:360-383` | ✅ PASS |
+| AC6: first-run end-to-end — cold cache, open preview, render trigger (Cmd+S) during the live download → the same-session preview SHALL still complete; no permanent `'starting'` wedge | Preview renders successfully in the same session once the download completes | Interactive UAT (human-performed, 2026-07-27, via Devin against a packaged `inflate-1.0.0.vsix`, `fixtures/gradle-sample`): Cmd+S during the live "preparing render engine (~170 MB)" notification → download completed → same-session preview rendered; passive (no-save) path unaffected. Recorded in `tasks.md` T82 and `STATE.md` AD-020/Handoff. Not independently re-run by this Verifier (no GUI in this environment, per the task's explicit scope) | ✅ PASS (human-confirmed UAT) — internally consistent: `activation.ts:162`'s scheduler `ensureReady` dep awaits `ensureRealHostConfigured()` (the same `configureRealHostGated` singleton `openPreview` is already running against), so a Cmd+S mid-download joins the in-flight install instead of booting the placeholder, and `prepareRealHost`'s success path (`activation.ts:468-471`) calls `hostManager.reconfigure()` with the real command before returning — matching the described recovery |
+
+**Status**: ✅ All 6 ACs covered; 0 spec-precision gaps (every AC in the amendment specifies a precise, machine-checkable outcome except AC6, which is explicitly UAT-scoped by the spec itself).
+
+### Edge Cases
+
+- [x] **4th startup failure within the rolling crash window latches `manualRestartRequired`** (existing P1-I AC3 semantics, now reached from a startup failure): `extension/src/host.test.ts:291-292` — `await waitUntil(() => manager.crashCount() >= 4, 5000); expect(manager.needsManualRestart()).toBe(true)`. ✅ Handled correctly.
+- [x] **`prepareRealHost` itself fails (no JDK, offline) → gate clears for the next attempt**: proven at the `singleFlight` unit level (the exact function wrapping `prepareRealHost` in production) — `extension/src/gate.test.ts:20-31` — a rejected call is followed by a resolving call reusing the same gate (`calls` increments to 2, i.e., `fn` re-ran). The scheduler-surfaces-as-host-error / no-infinite-spin / no-placeholder-spawn half of this edge case is covered the same way as AC4's wiring: code inspection + integration-green + UAT, not a dedicated unit test (same accepted AD-018/AD-020 blindness). ✅ Handled correctly; no automated test gap beyond the pre-accepted limitation.
+
+### Discrimination Sensor
+
+| # | File:line | Mutation | Killed? |
+| - | --------- | -------- | ------- |
+| 1 | `extension/src/host.ts:166` | Reverted T78's reconfigure guard: `if (this.state !== 'stopped' && this.state !== 'crashed') return;` → `if (this.state !== 'stopped') return;` | ✅ Killed — `host.test.ts` "reconfigure() lands after a startup failure..." fails: `Error: host exited (code=1, signal=null) during startup` (the crashed host was never reconfigured off command A) |
+| 2 | `extension/src/host.ts:271-277` | Removed the `if (!this.intentionalKill) this.handleCrash(reason);` call from the `exit` handler's startup-failure branch (neutralizes the T77 `starting -> crashed` edge) | ✅ Killed — 2 tests fail: "transitions starting -> crashed..." (`expected 'starting' to be 'crashed'`) and "reconfigure() lands after a startup failure..." (same reason) |
+| 3 | `extension/src/gate.ts:14-16` | Changed `singleFlight`'s `.finally(() => { inFlight = undefined })` to `.then((v) => { inFlight = undefined; return v; })` — clears the in-flight slot only on success, so a rejected call stays memoized forever | ✅ Killed — `gate.test.ts` "clears the in-flight slot on rejection..." fails: `promise rejected "Error: first attempt fails" instead of resolving` |
+
+**Sensor depth**: lightweight (3 targeted behavior-level mutations on the three highest-risk transitions: crash-path edge, reconfigure guard, single-flight reject-doesn't-memoize)
+**Result**: 3/3 killed — ✅ PASS
+**Tree state**: `git status --short` empty and `git diff --stat` empty before, between, and after all three mutations (each reverted via `git checkout` immediately after its test run, confirmed clean before the next injection).
+
+### Gate Check
+
+- **Gate command (full)**: `cd extension && npm run build && npm test && npm run test:integration`
+- **Unit result**: 206/206 passed, 16 files, 0 failed, 0 skipped, no unhandled-rejection warnings in output
+- **Integration result**: 25/25 passed, exit code 0, no orphaned process warnings
+- **Test count before amendment**: 196 vitest tests / 15 files (per the DF-2 Test Coverage Matrix baseline)
+- **Test count after amendment**: 206 vitest tests / 16 files (+10 new: 3 host.test.ts, 3 gate.test.ts [new file], 3 artifacts.test.ts, net +1 not double-counted — see note)
+
+  Note: raw new-test count across the diffs is 3 (T77) + 1 (T78) + 3 (T79, new file) + 3 (T80) = 10; 196 + 10 = 206, reconciles exactly.
+- **Skipped tests**: none
+- **Failures**: none
+
+### Code Quality
+
+| Principle | Status |
+| --------- | ------ |
+| No features beyond what was asked | ✅ |
+| No abstractions for single-use code (`singleFlight` is a 10-line generic helper, its only consumer is `configureRealHostGated`, no speculative options) | ✅ |
+| No unnecessary "flexibility" added | ✅ |
+| Only touched files required for task | ✅ — `host.ts`/`host.test.ts`, `gate.ts`/`gate.test.ts` (new), `activation.ts`, `artifacts.ts`/`artifacts.test.ts`, `CHANGELOG.md`, `.specs/*` bookkeeping only |
+| Didn't "improve" unrelated code | ✅ |
+| Matches existing patterns/style | ✅ — reuses `handleCrash`, `makeManager`/`waitUntil`/fake-host harness, existing test fixture helpers |
+| Spec-anchored outcome check (asserted values match spec) | ✅ — see table above |
+| Per-layer Coverage Expectation met | ✅ — `HostManager` 1:1 to AC1-AC3 + edge case 1; `gate.ts` all 3 branches; `ArtifactManager` 1:1 to AC5 |
+| Every test in scope maps to a spec AC or edge case — no unclaimed tests | ✅ |
+| Documented guidelines followed | AD-018/AD-020 (fake-host harness blindness class) explicitly acknowledged and respected — no attempt made to force this defect class through the integration harness |
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| HOST-04     | Verified — AC1-AC5 via automated gates, AC6 via UAT; pending Verifier | ✅ Verified (Verifier pass complete) |
+
+### Summary
+
+**Overall**: ✅ PASS — Ready to ship as patch 1.0.1.
+**Spec-anchored check**: 6/6 ACs matched the spec-defined outcome (AC6 is UAT-scoped by the spec's own design); 0 spec-precision gaps.
+**Sensor**: 3/3 mutations killed.
+**Gate**: unit 206/206, integration 25/25, both exit 0.
+
+**What works**: the `starting -> crashed` failure edge, the widened `reconfigure()` guard, the single-flight configuration gate, and the code-only-AAR installed check are all precisely asserted and mutation-tested; the human-confirmed UAT is internally consistent with the code's actual recovery chain (`activation.ts:162` scheduler gate → `activation.ts:468-471` `reconfigure()` on success).
+
+**Issues found**: none blocking. One pre-existing, explicitly-accepted structural limitation reaffirmed (not new): AC4's activation.ts wiring and the `prepareRealHost`-failure edge case's "no infinite spin / surfaces as host error" half are provable only via code inspection + integration-green + interactive UAT, because `INFLATE_TEST_FAKE_HOST` bypasses `ensureRealHostConfigured` entirely (AD-018/AD-020). This is documented project policy for this defect class, not a gap introduced by this amendment.
+
+**Next steps**: none required. DF-2 closes as COMPLETE & VERIFIED; ship 1.0.1 via the REL-04 pipeline whenever the next release is triggered.
+
+### Lessons
+
+None recorded. Signal walk: 0 failed/uncovered ACs, 0 surviving mutants (3/3 killed), 0 spec-precision gaps, 0 `// SPEC_DEVIATION` markers, gate green. A clean PASS with no qualifying signal writes nothing, per `lessons.md` — this is correct, not a miss. (The harness-blindness observation above is a restatement of the already-confirmed AD-018/AD-020 lesson, not a new one — re-recording it would be a duplicate, not a fresh distillation.)

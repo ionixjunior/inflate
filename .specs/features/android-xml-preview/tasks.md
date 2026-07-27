@@ -2332,3 +2332,275 @@ T75 → T76
   Build gate green
 - **Tests**: none — **Gate**: Build
 - **Status**: [x] complete (STATE.md close-out commit)
+
+## First-Run Host Wedge Fix Tasks (Amendment — 2026-07-27)
+
+> Defect fix DF-2: a startup failure during the first-run engine download wedges the HostManager in
+> `'starting'` forever and blocks `reconfigure()` — see the "Defect Amendment (2026-07-27): DF-2"
+> section in `spec.md`, requirement **HOST-04**, and **AD-020** in `.specs/STATE.md`. The
+> **Execution Protocol at the top of this file applies unchanged**. Task numbering continues the
+> feature's sequence: **T77–T82**, **phase 19**. Ships as **patch release 1.0.1** (REL-04 pipeline,
+> bump `patch`). Verifier output is appended to `validation.md` as a dated section — prior records
+> are never rewritten.
+
+**Spec**: the "Defect Amendment (2026-07-27): DF-2" section in `spec.md` (HOST-04)
+**Context**: none needed — no gray areas; the fix is forced by the code-verified root cause (design
+phase skipped: all tasks follow existing component patterns; the three assumptions are logged in the
+spec amendment)
+**Status**: Approved (user, 2026-07-27) — execution NOT started
+
+### Test Coverage Matrix (DF-2)
+
+> Inherited from the feature matrix (same layers, same commands). One tightening per AD-018/AD-020:
+> the configuration race lives in a path the integration harness replaces (`INFLATE_TEST_FAKE_HOST`
+> bypasses `ensureRealHostConfigured`), so interactive first-run UAT is a REQUIRED verification step
+> for this defect class, not an optional note. Baseline at amendment time: **196 vitest tests / 15
+> files** — counts only grow.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| `HostManager` (`host.ts`) | unit (real fake-host child, existing harness) | 1:1 to HOST-04 AC1–AC3 + both spec edge cases; existing 14 host tests stay green | `extension/src/host.test.ts` | `cd extension && npm test` |
+| Single-flight gate (new `gate.ts`) | unit | All branches: concurrent join, sequential re-run, failure clears in-flight (AC4 gate semantics) | `extension/src/gate.test.ts` | `cd extension && npm test` |
+| `activation.ts` wiring | existing integration stays green + MANDATORY interactive first-run UAT (AC6) | Cold-cache race completes end-to-end in a real window | integration suites + manual UAT | `cd extension && npm run test:integration` |
+| `ArtifactManager` (`artifacts.ts`) | unit | AC5: code-only AAR (no `res/`) reported installed; res-bearing AAR unchanged; missing dir still missing | `extension/src/artifacts.test.ts` | `cd extension && npm test` |
+
+### Gate Check Commands (DF-2)
+
+Unchanged from the feature tables: **Quick** = `cd extension && npm run build && npm test`;
+**Full** = `cd extension && npm run build && npm test && npm run test:integration`. Host (JVM) side
+untouched — no gradle gate needed.
+
+### Execution Plan (DF-2)
+
+**Phase 19: First-run host wedge fix**
+
+```
+T77 → T78 → T79 → T81 → T82
+T80 ──────────────↗
+```
+
+6 tasks → single batch, executed inline (no sub-agent offer). T80 is independent but sequenced
+after T79 in batch order; T81 (changelog) documents the fixes so it needs T77–T80 committed; T82
+closes the amendment.
+
+### Task Breakdown (DF-2)
+
+#### T77: Route startup failure through the crash path
+
+**What**: A child that exits or errors while `starting` (and not intentionally killed) transitions
+`starting → crashed` via `handleCrash` — crash bookkeeping, stderr-enriched `lastCrashReason`,
+backoff auto-restart — while still rejecting the pending startup promise with the existing readable
+reason. Add the `starting -> crashed` edge to the state-machine doc comment.
+**Where**: `extension/src/host.ts` (`spawnAndInitialize` exit handler :263-271 and error handler
+:272-279; header state-machine doc :4-7) + new tests in `extension/src/host.test.ts`.
+**Depends on**: None
+**Reuses**: existing `makeManager`/`waitUntil`/fake-host harness (`host.test.ts:29-57`) and the
+`crash-on-start` fake-host mode (`test/fake-host.js:40`); `handleCrash` (:426) unchanged in shape
+**Requirement**: HOST-04 (AC1, AC2 + crash-budget edge case)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] After `ensureReady()` rejects on `crash-on-start`, `getState()` is `'crashed'` (not
+      `'starting'`), `crashCount()` is 1, `getLastCrashReason()` contains the exit reason
+- [x] Backoff auto-restart fires after a startup failure (state re-enters `'starting'` without a
+      manual call); a 4th startup failure in the window latches `needsManualRestart()`
+- [x] `dispose()` during `'starting'` records NO crash and ends `'stopped'` (intentional-kill edge)
+- [x] The spawn-`error` path (nonexistent command) gets the same treatment as `exit`
+- [x] Existing 14 host tests untouched and green; gate passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `3e4b7ea`)
+
+---
+
+#### T78: Allow reconfigure whenever no live child exists
+
+**What**: Change `reconfigure()`'s guard from `state !== 'stopped'` to "a live child exists"
+(`'starting'`/`'ready'`/`'rendering'` no-op; `'stopped'`/`'crashed'` apply), so the real java
+command can land after a placeholder startup failure.
+**Where**: `extension/src/host.ts` (`reconfigure` :155-166 + its doc comment) + tests in
+`extension/src/host.test.ts`.
+**Depends on**: T77 (the recovery test needs the `'crashed'` post-failure state)
+**Reuses**: the existing T60 reconfigure tests (`host.test.ts:201-223`) — the live-host no-op test
+stays green as-is
+**Requirement**: HOST-04 (AC3)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] DF-2 recovery test: `crash-on-start` startup failure → `reconfigure('normal')` →
+      `ensureReady()` reaches `'ready'` running the NEW command
+- [x] Live-host no-op preserved: reconfigure while `'ready'` still ignored (existing test green,
+      unmodified)
+- [x] Gate passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `ccb3a10`)
+
+---
+
+#### T79: Gate render-path host boots behind single-flight configuration
+
+**What**: A tiny `singleFlight(fn)` helper (concurrent callers join one in-flight promise; settled
+runs are not cached) wrapping `prepareRealHost`, and the scheduler's `ensureReady` dep awaits
+`ensureRealHostConfigured()` before `hostManager.ensureReady()` — so no render path can ever boot
+the placeholder, and a save landing mid-download joins the running install instead of starting a
+second one.
+**Where**: new `extension/src/gate.ts` + `extension/src/gate.test.ts`;
+`extension/src/activation.ts` (scheduler host dep :140-147; `ensureRealHostConfigured` :105-119
+routes through the shared gate).
+**Depends on**: T78 (recovery semantics complete underneath, so a pre-gate crash still self-heals)
+**Reuses**: `scheduler.ts` needs NO change — its retry already awaits the injected `ensureReady`
+and handles its rejection (`scheduler.ts:198-207`); `prepareRealHost` already idempotent-and-cheap
+once configured (activation.ts:389-392)
+**Requirement**: HOST-04 (AC4 + prepareRealHost-failure edge case)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] `gate.test.ts`: two concurrent calls run `fn` once and share the result; a rejected run
+      clears the in-flight slot (next call re-runs); a resolved run is not memoized (next call
+      re-runs)
+- [x] `activation.ts`: scheduler `ensureReady` dep awaits the configuration gate first (fake-host
+      mode still returns immediately — integration harness unaffected); openPreview/restartHost use
+      the same shared gate (no duplicate concurrent `prepareRealHost`)
+- [x] Full gate passes: `cd extension && npm run build && npm test && npm run test:integration`
+      (no test weakened or deleted)
+
+**Tests**: unit (gate) + existing integration green — **Gate**: full
+**Status**: [x] complete (commit `ed607ba`)
+
+---
+
+#### T80: Report code-only AARs as installed
+
+**What**: `isArtifactInstalled` for kind `'aar'` keys on the extracted AAR directory
+(`aar-res/<name>/AndroidManifest.xml`) instead of `res/` presence, so Doctor stops reporting the
+~15 code-only androidx AARs as `missing` (side benefit: interrupted-install resume stops
+re-downloading them).
+**Where**: `extension/src/artifacts.ts` (`isArtifactInstalled` :354-365) + tests in
+`extension/src/artifacts.test.ts`.
+**Depends on**: None (independent; sequenced after T79 in batch order only)
+**Reuses**: existing artifacts test fixtures/zip helpers in `artifacts.test.ts`; every AAR ships
+`AndroidManifest.xml` (finalize unzips it — :412-422, `readPackageName` :426-432 already relies on it)
+**Requirement**: HOST-04 (AC5)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] Unit tests: res-less AAR → `installed: true`; res-bearing AAR → unchanged `true`; never-
+      extracted AAR → `false`; `ready` still keyed solely on `.complete`
+- [x] Gate passes: `cd extension && npm run build && npm test`
+
+**Tests**: unit — **Gate**: quick
+**Status**: [x] complete (commit `df8dc66`)
+
+---
+
+#### T81: Add the 1.0.1 changelog entry
+
+**What**: A `## 1.0.1` section at the top of the extension changelog documenting the DF-2 fixes in
+user-facing language: first preview no longer hangs permanently when a render lands during the
+one-time engine download (host now recovers automatically), and `Inflate: Doctor` no longer
+mislabels code-only androidx AARs as `missing`.
+**Where**: `extension/CHANGELOG.md` (new section above `## 1.0.0`).
+**Depends on**: T77, T78, T79, T80 (the entry documents landed fixes, not intentions)
+**Reuses**: the existing 1.0.0 section's tone/format; REL-01 AC2 already gates that
+`CHANGELOG.md` is packaged (`vsce ls`)
+**Requirement**: REL-01 (AC2 pattern — per-release section) in service of HOST-04
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] `## 1.0.1` section present above `## 1.0.0`, covering the first-run wedge fix and the Doctor
+      AAR-report fix — no other sections touched
+- [x] Gate passes: `cd extension && npm run build && npm test`
+
+**Tests**: none (docs — matrix has no layer for markdown content) — **Gate**: quick
+**Status**: [x] complete (commit `c9a4e80`)
+
+---
+
+#### T82: Run the first-run race UAT and close out
+
+**What**: The mandatory interactive first-run UAT this defect class requires (AD-018/AD-020:
+automated gates are structurally blind here), then bookkeeping: record AD-020 in `.specs/STATE.md`
+Decisions, update Handoff, mark HOST-04 traceability.
+**Where**: manual UAT in a real VS Code window; `.specs/STATE.md`;
+`.specs/features/android-xml-preview/spec.md` (traceability status only).
+**Depends on**: T81 (and transitively T77–T80)
+**Reuses**: repro recipe from the DF-2 spec section; `inflate.clearEngineCache` command
+**Requirement**: HOST-04 (AC6)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] **Interactive UAT (MANDATORY — evidence recorded in the commit body)**: performed 2026-07-27
+      by the user via Devin against a packaged `inflate-1.0.0.vsix` (`npm run package` at repo
+      root), fresh install, `fixtures/gradle-sample/app/src/main/res/layout/main.xml`: opened the
+      preview (triggering the live one-time engine download), pressed Cmd+S while the "preparing
+      render engine (~170 MB)" notification was visible → the download completed and the SAME
+      session's preview rendered successfully (no `cannot render while host state is 'starting'`
+      wedge). Repeated passively (no save) — plain path unaffected. User-confirmed: "It works."
+- [x] AD-020 recorded in STATE.md Decisions; Handoff updated; spec traceability HOST-04 → Verified
+      pending Verifier
+- [x] Full gate green at close: `cd extension && npm run build && npm test && npm run test:integration`
+      (unit 206/206, integration 25/25)
+
+**Tests**: manual UAT + full suite green — **Gate**: full
+**Status**: [x] complete (UAT confirmed 2026-07-27; bookkeeping this commit)
+
+### Phase Execution Map (DF-2)
+
+```
+Phase 19:  T77 ──→ T78 ──→ T79 ──→ T81 ──→ T82
+           T80 ─────────────────────↗
+```
+
+Execution is strictly sequential in batch order T77, T78, T79, T80, T81, T82 — 6 tasks → **single
+batch, inline** (no sub-agent offer). After T82's commit, the always-on **Verifier** runs (author ≠
+verifier): spec-anchored outcome check + discrimination sensor → results **appended to
+`validation.md`** as a dated "First-Run Host Wedge Fix Verification" section; the UAT evidence is
+part of what it checks. The Verifier also distills the harness-blindness lesson (fake-host bypass
+hides placeholder/config races; state must be asserted after failure paths, not just rejection) via
+`scripts/lessons.py`.
+
+### Task Granularity Check (DF-2)
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T77: Startup failure → crash path | 1 behavior in 1 file (+ its tests) | ✅ Granular |
+| T78: Reconfigure guard | 1 guard in 1 function (+ its tests) | ✅ Granular |
+| T79: Single-flight gate | 1 new helper + 1 wiring site | ✅ Granular (cohesive — the wiring is the helper's only consumer) |
+| T80: AAR installed-check | 1 function branch (+ its tests) | ✅ Granular |
+| T81: 1.0.1 changelog entry | 1 doc section | ✅ Granular |
+| T82: UAT + bookkeeping | no code | ✅ Granular |
+
+### Diagram-Definition Cross-Check (DF-2)
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T77 | None | start of chain | ✅ Match |
+| T78 | T77 | T77 → T78 | ✅ Match |
+| T79 | T78 | T78 → T79 | ✅ Match |
+| T80 | None | own lane → T81 | ✅ Match |
+| T81 | T77, T78, T79, T80 | T79 → T81 and T80 → T81 (T77/T78 transitively via T79) | ✅ Match |
+| T82 | T81 (transitively T77–T80) | T81 → T82 | ✅ Match |
+
+### Test Co-location Validation (DF-2)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T77 | HostManager | unit | unit | ✅ OK |
+| T78 | HostManager | unit | unit | ✅ OK |
+| T79 | gate.ts + activation wiring | unit + integration-green | unit + integration | ✅ OK |
+| T80 | ArtifactManager | unit | unit | ✅ OK |
+| T81 | none (markdown content) | none — build gate only | none | ✅ OK |
+| T82 | none (UAT + docs) | manual UAT (matrix row 3) | manual UAT | ✅ OK |
