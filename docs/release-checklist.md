@@ -209,6 +209,47 @@ past it unverified.
   bump again. Recover manually per the header comment in `release.yml`: land the bump commit, tag
   it `v<version>`, and create the GitHub Release for that tag.
 
+### CI Comment Pipeline Fix rollout — `full-gate` required check (Amendment — 2026-07-27, DF-3/REL-06)
+
+`run-ci-comment.yml`'s `accept`/`gate`/`report` jobs now post a commit status context
+**`full-gate`** on the PR head SHA (`pending` at accept, `success`/`failure` when the gate
+concludes) — fixing the first live `/run ci`'s 403'd ack and invisible result. Roll this out in
+order; each step depends on the previous one having actually happened, not just been merged
+(workflow YAML has no local runtime, AD-019):
+
+1. **Merge this fix's PR first.** `issue_comment` workflows always execute the default-branch
+   definition, so the OLD pipeline still governs this PR's own `/run ci` — its ack still 403s and
+   no status appears. Expected, not a regression.
+2. **Live-verify on the next PR**: comment `/run ci` and confirm all three: the ack comment posts
+   without a 403, a `full-gate` **pending** check appears in that PR's checks area, and the final
+   check flips to success/failure matching the gate's actual result.
+3. **Only then create the ruleset** (the `full-gate` context must have reported at least once to
+   be selectable in the picker):
+   - Settings → Rules → Rulesets → **New branch ruleset**, target `main`.
+   - Require status checks to pass → add status check **`full-gate`**.
+   - **Bypass list**: add both **GitHub Actions app** (so `release.yml`'s direct `Release <v>`
+     push isn't blocked — required checks also block direct pushes) and **Repository admin**
+     (today's maintainer direct-push practice).
+   - Leave "require branches to be up to date" **OFF** — each base-branch move would otherwise
+     demand a fresh paid macOS run just to re-satisfy the check.
+4. **The next release proves the bypass** — confirm `release.yml`'s `Release <v>` push lands
+   despite the new required check. Recovery for a blocked push is already documented above
+   ("Publish succeeded but the later push/tag failed").
+
+**Fallback if "GitHub Actions app" is not offered in the bypass picker** (flagged uncertain in the
+spec — availability varies by plan/UI): keep only Repository-admin bypass and switch
+`release.yml`'s push step to an owner fine-grained PAT (a new repo secret) instead of the default
+`GITHUB_TOKEN`. Apply this only if step 3's picker genuinely lacks the Actions-app entry — don't
+pre-emptively add the PAT.
+
+**Repo-level Workflow permissions toggle**: left at the restrictive default ("Read repository
+contents and packages permissions") — verified 2026-07-27 that this is sufficient and was never
+the cause of the 403. Every workflow that needs a write scope declares it explicitly in its own
+`permissions:` block (`release.yml`'s `contents: write`; `run-ci-comment.yml`'s `accept`/`report`
+job-level `pull-requests: write`/`statuses: write`); `ci.yml` and `canary.yml` declare no writes
+and need only reads. An explicit `permissions:` block always replaces the repo default entirely,
+so raising the repo toggle would have changed nothing.
+
 ### Before the FIRST release, additionally
 
 - Replace `extension/media/icon.png` with real brand artwork (see the Icon note above).
