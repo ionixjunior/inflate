@@ -3,9 +3,10 @@ package preprocess
 /**
  * T29 (LAY-04 tools: half): honors the core design-time `tools:` attribute set — `tools:text`,
  * `tools:src`, `tools:visibility`, `tools:background`, `tools:layout` (the last read by [Structural]
- * on `<fragment>`/`<include>`, T31) — by copying each into the `android:` namespace on the SAME tag
- * (overriding an existing `android:` value, or adding one), then stripping every `tools:` attribute
- * (core and non-core alike) plus the `xmlns:tools` namespace declaration.
+ * on `<fragment>`/`<include>`, T31), `tools:layout_height` (LAY-08 edge case, T90: a root's design-time
+ * height override) — by copying each into the `android:` namespace on the SAME tag (overriding an
+ * existing `android:` value, or adding one), then stripping every `tools:` attribute (core and
+ * non-core alike) plus the `xmlns:tools` namespace declaration.
  *
  * Every attribute's original leading whitespace (including any newline/indentation, for the common
  * one-attribute-per-line layout style) is preserved verbatim; a stripped attribute's whitespace is
@@ -16,7 +17,7 @@ package preprocess
 object ToolsAttributes {
 
   /** The design-time attributes honored for rendering; every other `tools:` attribute is dropped. */
-  private val CORE_ATTRS = setOf("text", "src", "visibility", "background", "layout")
+  private val CORE_ATTRS = setOf("text", "src", "visibility", "background", "layout", "layout_height")
 
   private const val TOOLS_NS_ATTR = "xmlns:tools"
 

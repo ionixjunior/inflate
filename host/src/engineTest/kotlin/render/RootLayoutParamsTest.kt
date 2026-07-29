@@ -144,4 +144,63 @@ class RootLayoutParamsTest {
     )
     assertEquals(ROOT_BG, argbAt(png, 150, 250), "bottom-right 100dp region must be the root's own background")
   }
+
+  // --- T90: degenerate + pass-through inflation shapes (LAY-08 AC5, AC6, data-binding/tools: edge cases) ---
+
+  @Test
+  fun `missing root height renders ok and paints nothing (LAY-08 AC5)`() {
+    val r = routing.render(request("rootparams_missing_height"))
+    assertEquals(RenderStatus.ok, r.status, "missing layout_height must not error or crash the host; error=${r.error?.message}")
+    val png = r.pngPath!!
+    assertEquals(THEME_BG, argbAt(png, 100, 0), "a 0px-height root paints nothing — top row must show the theme background")
+    assertEquals(THEME_BG, argbAt(png, 100, 150), "device vertical center must show the theme background")
+    assertEquals(THEME_BG, argbAt(png, 5, 5), "top-start corner must show the theme background")
+  }
+
+  @Test
+  fun `missing root width renders ok and paints nothing, symmetric (LAY-08 AC5)`() {
+    val r = routing.render(request("rootparams_missing_width"))
+    assertEquals(RenderStatus.ok, r.status, "missing layout_width must not error or crash the host; error=${r.error?.message}")
+    val png = r.pngPath!!
+    assertEquals(THEME_BG, argbAt(png, 0, 150), "a 0px-width root paints nothing — left column must show the theme background")
+    assertEquals(THEME_BG, argbAt(png, 100, 150), "device horizontal center must show the theme background")
+  }
+
+  @Test
+  fun `merge root still fills the canvas unchanged (LAY-08 AC6)`() {
+    val r = routing.render(request("rootparams_merge"))
+    assertEquals(RenderStatus.ok, r.status, "should render; error=${r.error?.message}")
+    val png = r.pngPath!!
+    assertEquals(ROOT_BG, argbAt(png, 2, 2), "top-left corner must stay painted (merge full-bleed unchanged)")
+    assertEquals(ROOT_BG, argbAt(png, 197, 2), "top-right corner must stay painted")
+    assertEquals(ROOT_BG, argbAt(png, 2, 297), "bottom-left corner must stay painted")
+    assertEquals(ROOT_BG, argbAt(png, 197, 297), "bottom-right corner must stay painted")
+  }
+
+  @Test
+  fun `data-binding root's unwrapped inner root honors its own layout params (LAY-08 edge case)`() {
+    val r = routing.render(request("rootparams_binding"))
+    assertEquals(RenderStatus.ok, r.status, "should render; error=${r.error?.message}")
+    val png = r.pngPath!!
+    assertEquals(ROOT_BG, argbAt(png, 5, 5), "top-start corner of the wrapped 100dp child must be the root's own background")
+    assertEquals(ROOT_BG, argbAt(png, 100, 50), "inside the wrapped 100dp band must be the root's own background")
+    assertEquals(THEME_BG, argbAt(png, 100, 150), "below the wrapped bounds must show the theme background")
+  }
+
+  @Test
+  fun `tools_layout_height override governs over the real wrap_content value (LAY-08 edge case)`() {
+    val r = routing.render(request("rootparams_tools_height"))
+    assertEquals(RenderStatus.ok, r.status, "should render; error=${r.error?.message}")
+    val png = r.pngPath!!
+    assertEquals(
+      ROOT_BG,
+      argbAt(png, 100, 100),
+      "y=100 is past the bare 50dp wrap but inside the promoted 150dp override — must be the root's own background",
+    )
+    assertEquals(
+      THEME_BG,
+      argbAt(png, 100, 200),
+      "y=200 is past the promoted 150dp override — must show the theme background",
+    )
+  }
 }
