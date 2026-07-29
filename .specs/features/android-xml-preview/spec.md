@@ -1118,8 +1118,14 @@ the first divergence report had to come from a human comparing against Android S
 3. WHEN the root element declares `layout_gravity` THEN it SHALL position the root within the
    canvas per FrameLayout child semantics; absent, the default SHALL be top|start (Studio parity).
 4. Canvas contract unchanged: the PNG SHALL remain device-config-sized (`RenderingMode.NORMAL`,
-   `useDeviceResolution`); canvas not covered by the root SHALL be transparent (the webview
-   checkerboard shows through); `imageWidth`/`imageHeight` and the wire protocol SHALL NOT change.
+   `useDeviceResolution`); canvas not covered by the root SHALL show the resolved theme's
+   `windowBackground`/`colorBackground` — Studio-parity (**amended 2026-07-28, mid-execution
+   correction**: engine-verified during T89 that `decor=false` only suppresses system chrome via
+   `SessionParams.setForceNoDecor()`, NOT window-background painting — Bridge paints the theme
+   background onto the content root regardless, confirmed by swapping a dark vs. light framework
+   theme and observing the exact `background_material_dark`/`_light` colors show through; the
+   original "stays transparent" assumption was factually wrong, see the amendment note below);
+   `imageWidth`/`imageHeight` and the wire protocol SHALL NOT change.
 5. WHEN the root element lacks `layout_width` or `layout_height` (mid-edit state) THEN the render
    SHALL still complete with status `ok` using the pinned engine's native missing-dimension
    handling (bytecode-verified: `BridgeTypedArray.getLayoutDimension` logs "You must supply a …
@@ -1134,8 +1140,9 @@ the first divergence report had to come from a human comparing against Android S
    (a) root `match_parent`×`wrap_content` with `layout_marginHorizontal="16dp"` +
    `layout_marginTop="16dp"`, background, and padding; (b) root `match_parent`×`wrap_content`
    containing a child constrained `top_toBottomOf` a sibling AND `bottom_toBottomOf="parent"` —
-   SHALL render top-anchored with the declared margins as transparent insets, the wrapped height
-   strictly less than the device height (pixels below the wrapped bounds transparent), and (b)'s
+   SHALL render top-anchored with the declared margins showing the resolved theme background as
+   insets, the wrapped height strictly less than the device height (pixels below the wrapped
+   bounds showing the resolved theme background, not the root's own background), and (b)'s
    bottom-constrained child laid out inside the wrapped bounds directly below its sibling, not
    vertically centered in the device.
 
@@ -1156,7 +1163,7 @@ the first divergence report had to come from a human comparing against Android S
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
 | Param-generation parent | `FrameLayout(context)`, `attachToRoot=false` | Matches BOTH Studio's content frame (`RenderSessionImpl.mContentRoot`) and Paparazzi's snapshot host; single-arg `addView` preserves pre-set params (1.3.5 source-verified); `removeAllViews()` in its `finally` keeps the throwaway parent leak-free | yes (2026-07-28, spec approval) |
-| Uncovered canvas rendering | stays transparent (checkerboard in webview) | Studio paints the theme `windowBackground` (light gray) there; Inflate's pinned engine runs `decor=false` (no windowBackground natively) and the deliberate checkerboard backdrop (POLISH-01) already signals "nothing painted here" — painting a theme background would hide where the layout ends | yes (2026-07-28, spec approval) |
+| Uncovered canvas rendering | shows the resolved theme's `windowBackground`/`colorBackground` (Studio-parity) | **Amended 2026-07-28 (mid-execution correction, T89):** originally assumed to stay transparent on the premise that Inflate's `decor=false` disables windowBackground painting entirely — engine-verified FALSE: `decor=false` only maps to `SessionParams.setForceNoDecor()` (suppresses system chrome — status/nav bar — not window-background painting); Bridge paints the resolved theme's background onto the content root regardless (confirmed: a dark framework theme painted exactly `#FF303030` = `background_material_dark`, a light one exactly `#FFFAFAFA` = `background_material_light`, tracking the theme precisely). Forcing genuine transparency would require reaching into Bridge internals beyond the AD-009 friend-paths surface — new engineering outside T89's scope. Accepting the theme background is MORE faithful to Studio (which the spec's own root-cause section already documents as painting `windowBackground` there), not less | yes (2026-07-28, user decision after the T89 discovery superseding the original spec-approval assumption) |
 | Canvas size for layouts | stays device-sized (no SHRINK-to-content) | Studio's design surface shows the full device frame with the layout wrapped inside it — that IS the fidelity target; drawables keep their existing SHRINK path | yes (2026-07-28, spec approval) |
 | Missing root dimension behavior | engine-native: warning log + 0 px axis | Bytecode-verified pinned-engine behavior = Studio behavior on the same engine line; degenerate mid-edit input self-heals on the next keystroke; no custom fallback code to maintain | yes (2026-07-28, spec approval) |
 | Corpus goldens | regenerate affected goldens, human-review each diff | Goldens encoded the defect; every diff must be explainable by root-param honoring alone — any other change is a regression | yes (2026-07-28, spec approval) |
