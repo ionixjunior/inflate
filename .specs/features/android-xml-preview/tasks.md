@@ -3380,12 +3380,12 @@ packaged.
 
 **Done when**:
 
-- [ ] `## 1.0.3` section present above `## 1.0.2`, covering the BOM fix — no other sections
+- [x] `## 1.0.3` section present above `## 1.0.2`, covering the BOM fix — no other sections
       touched
-- [ ] Extension no-regression sanity green: `cd extension && npm test`
+- [x] Extension no-regression sanity green: `cd extension && npm test`
 
 **Tests**: none (docs — no matrix layer for markdown content) — **Gate**: quick (extension sanity)
-**Status**: [ ] pending
+**Status**: [x] complete
 
 ---
 
