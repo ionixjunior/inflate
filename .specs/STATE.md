@@ -150,6 +150,40 @@
 
 ## Handoff
 
+- **DF-4 AMENDMENT — SPEC + TASKS APPROVED (2026-07-28), EXECUTION NOT STARTED (deliberately
+  deferred to a follow-up session — user decision)**: real-world report (user side-by-side
+  screenshots vs Android Studio, two production ConstraintLayouts): every layout preview stretches
+  its root over the entire device canvas — root `wrap_content`/margins/`layout_gravity` ignored;
+  a child constrained `top_toBottomOf` a sibling + `bottom_toBottomOf="parent"` floats centered in
+  the stretched space. Root cause (verified to the pinned engine's bytecode, not assumed):
+  `EngineAdapter.inflateOrNull` (`host/src/main/kotlin/engine/EngineAdapter.kt:290`) inflates with
+  a **null parent**, so the root's LayoutParams are never generated; Paparazzi 1.3.5's
+  `takeSnapshots` then `addView`s the params-less view into its `match_parent`×`match_parent`
+  content FrameLayout → `generateDefaultLayoutParams()` = MATCH_PARENT×MATCH_PARENT
+  (sources verified, `PaparazziSdk.kt:291/616`). Studio inflates the previewed XML *with* its
+  content frame as parent (`RenderSessionImpl` bytecode: `BridgeInflater.inflate(mBlockParser,
+  mContentRoot)`) — fix = inflate against a throwaway `FrameLayout(context)`, `attachToRoot=false`
+  (Studio-equivalent). Escape analysis: corpus goldens are self-generated, so the uniform geometry
+  bias reproduced itself in the references — 42/42 green while every non-match_parent root
+  rendered wrong; the new tests are therefore REQUIRED to assert absolute pixels
+  (alpha-below-wrapped-bounds, margin insets, not-centered positions). Missing root
+  width/height edge verified in layoutlib 14.0.11 bytecode: warning + **0 px** (engine-native, no
+  crash). Artifacts ready on branch `improvement/layout` (uncommitted at handoff): spec.md "Defect
+  Amendment (2026-07-28): DF-4" (requirement **LAY-08**, 7 ACs, 5 assumptions user-confirmed incl.
+  transparent uncovered canvas + device-sized PNG + goldens-regen policy), tasks.md "Layout Root
+  Params Fix Tasks (Amendment — 2026-07-28)" (**T89–T94, phase 21**, single inline batch: T89 fix
+  + AC1–AC3 pixel engineTests over new `rootparams_*.xml` framework-gallery fixtures [corpus
+  manifest is an explicit list — new fixtures add no corpus cases], T90 degenerate/pass-through
+  pins [AC5 0-px, merge full-bleed, data-binding root, tools: override, drawable-suite no-change],
+  T91 AC7 ConstraintLayout end-to-end [constraintlayout 2.2.1 in the bundled closure,
+  `EngineArtifacts.kt:83`], T92 corpus golden regen + per-image justification
+  (`cd corpus && npm run render:update`), T93 CHANGELOG **`## 1.0.2`** entry (user decision — 1.0.1
+  already released, commit `0eaf2b9`), T94 AD-022 + close-out). NEXT STEP (new session): activate
+  `tlc-spec-driven`, read the DF-4 spec + tasks sections, execute T89→T94 inline (one atomic
+  verb-first commit per task, gates: `cd host && ./gradlew build test`, `./gradlew engineTest`,
+  `npm run corpus`, extension sanity `cd extension && npm test`), then the always-on Verifier
+  (author ≠ verifier) appends a dated section to `validation.md`. Ships as **patch 1.0.2** via
+  REL-04 (bump `patch`).
 - **DF-3 AMENDMENT — T83–T88 (phase 20) EXECUTE COMPLETE (2026-07-27)**: the first live `/run ci`
   (PR #1) 403'd its ack comment (`issues: write` where a PR conversation comment needs
   `pull-requests: write`) and left the PR with no visible gate result (`issue_comment` runs attach
