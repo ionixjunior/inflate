@@ -158,6 +158,37 @@
 
 ## Handoff
 
+- **DF-5 AMENDMENT — SPEC APPROVED (user, 2026-07-29); READY TO EXECUTE (T95 next, fresh session).**
+  Real-world report (2026-07-29): opening a production `RelativeLayout` (pt-BR app) gives an empty
+  preview with `PI must not start with xml (position:unknown @1:5 in java.io.StringReader@…)`.
+  Root cause (verified to the pinned parser's jar, not assumed): the file starts with a UTF-8 BOM.
+  Only `refresh` renders carry `inlineContent` (`extension/src/scheduler.ts:232`), so every
+  save/reopen/config render disk-reads via `File.readText()` (the JDK's UTF-8 decode keeps U+FEFF),
+  and `Preprocessor.validate`'s `KXmlParser.setInput(StringReader(…))` — the one parser path with
+  NO BOM sniffing (`net.sf.kxml:kxml2:2.3.0`; error string verified in the cached jar's
+  `KXmlParser.class`) — accepts `<?xml` only at the absolute document start, so the BOM demotes it
+  to an illegal `xml`-named PI → the exact reported error at `@1:5` (the exception's position echo
+  even contains the raw U+FEFF). Secondary casualty: `MaterialAttrCheck.unknownAttrs`
+  (`LayoutRenderer.kt:139`) swallows the same exception → P1-B AC4 res-auto warnings silently
+  dropped for BOM'd files. Why every gate passed: byte-scan (2026-07-29) finds ZERO BOM'd
+  fixture/corpus XML repo-wide, and host unit tests feed string literals — the suite was
+  structurally blind. Fix shape (requirement **HOST-05**): strip exactly one leading U+FEFF at the
+  two executor ingestion lines (`LayoutRenderer.kt:58`, `DrawableRenderer.kt:78`) via a named
+  `preprocess/Bom.kt` helper — the single choke point ahead of EVERY consumer (validate,
+  MaterialAttrCheck, preprocessing, overlay write), covering inline and disk origins alike. Spec:
+  "Defect Amendment (2026-07-29): DF-5" in `spec.md` (5 ACs incl. include/warning/drawable parity
+  + a byte-integrity guard on every BOM fixture); tasks **T95–T98 (phase 22)** in `tasks.md` ("BOM
+  Ingestion Fix Tasks"), 4 tasks, single inline batch; ships as **patch 1.0.3** (REL-04, bump
+  `patch`); **AD-023** to be recorded at close-out (T98). NOTE: the reported file ALSO contains a
+  genuine syntax error the BOM failure currently masks (a stray `a` after
+  `android:layout_width="match_parent"` on the ScrollView's inner LinearLayout) — after the fix it
+  errors truthfully at that line until corrected (HOST-05 AC2 pins this). Amendment docs are
+  committed on branch **`fix/bom-xml-files`** (off `main`): `66860d1` (drafted docs, committed by
+  the user at review) + the approval-status flip (this commit); all five spec assumptions
+  user-confirmed at approval, incl. the 1.0.3 vehicle — the changelog entry is **T97**'s
+  deliverable (no extra task). Next action (fresh session): execute **T95 → T98** (phase 22) per
+  the tasks.md Execution Protocol — one atomic verb-first commit per task on gate pass, always-on
+  Verifier after T98, results appended to `validation.md`.
 - **DF-4 AMENDMENT — T89–T93 EXECUTE COMPLETE (2026-07-29), T94 (this commit) closes out.** Root
   cause (verified to the pinned engine's bytecode, not assumed): `EngineAdapter.inflateOrNull`
   inflated with a **null parent**, so the root's LayoutParams were never generated; Paparazzi's
