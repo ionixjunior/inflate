@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- DF-5 (HOST-05) AC1 drawable leg: bom_shape_twin.xml is these exact bytes with a leading BOM.
+     Both must render `ok` with byte-identical PNGs (DrawableRenderer ingestion path). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+  <solid android:color="#FF3366CC" />
+  <corners android:radius="8dp" />
+</shape>

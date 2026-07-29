@@ -3348,18 +3348,18 @@ T95's twin-comparison technique.
 
 **Done when**:
 
-- [ ] Error-accuracy test asserts the true syntax error's line (the stray character's line, not 1)
+- [x] Error-accuracy test asserts the true syntax error's line (the stray character's line, not 1)
       and that the message does NOT contain `PI must not start with xml`
-- [ ] BOM'd include renders with the included content present (pixel or dependency assertion);
+- [x] BOM'd include renders with the included content present (pixel or dependency assertion);
       cycle-detection suite untouched
-- [ ] Warning parity: the unknown-res-auto warning is present and identical for the BOM'd and
+- [x] Warning parity: the unknown-res-auto warning is present and identical for the BOM'd and
       BOM-less twins
-- [ ] BOM'd `<shape>` renders `ok`, byte-identical to its BOM-less twin
-- [ ] BOM-only file errors with the existing empty/invalid-document message, not the PI artifact
-- [ ] Gates green: quick + engine; corpus 42/42 zero-diff
+- [x] BOM'd `<shape>` renders `ok`, byte-identical to its BOM-less twin
+- [x] BOM-only file errors with the existing empty/invalid-document message, not the PI artifact
+- [x] Gates green: quick + engine; corpus 42/42 zero-diff
 
 **Tests**: engineTest — **Gate**: quick + engine (+ corpus zero-diff)
-**Status**: [ ] pending
+**Status**: [x] complete
 
 ---
 

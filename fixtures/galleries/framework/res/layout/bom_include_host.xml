@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DF-5 (HOST-05) AC3: bom_included.xml on disk starts with a UTF-8 BOM. The engine parses
+     on-disk resource files through kxml2's byte-level InputStream path, which auto-detects BOMs
+     (pinned by the engineTest against the real Bridge, not assumed). This host file itself has no
+     BOM — only the include target does. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <include layout="@layout/bom_included" />
+</LinearLayout>
