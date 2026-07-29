@@ -3,6 +3,15 @@
 Notable changes to the Inflate extension. Per-release notes (with merged PRs) are also published on
 the [GitHub Releases page](https://github.com/ionixjunior/inflate/releases).
 
+## 1.0.2
+
+Bug fixes — no new capability.
+
+- Fixed: layout previews now respect the root element's own `layout_width`/`layout_height`,
+  margins, and `layout_gravity` instead of always stretching over the entire device canvas. A
+  `wrap_content` card now renders at its true size inside the device frame, exactly as Android
+  Studio shows it; children constrained to the parent's bottom no longer float at mid-screen.
+
 ## 1.0.1
 
 Bug fixes — no new capability.
