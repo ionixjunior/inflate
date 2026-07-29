@@ -184,9 +184,18 @@
   pre-existing assertions touched), `npm run corpus` (42/42), `cd extension && npm test` (206/206
   unit, no regression). Two mid-execution discoveries required user confirmation before proceeding
   (both resolved, see AD-022): the AC4 transparency assumption, and the material/gallery golden
-  change. **Status: T89–T94 COMPLETE.** NEXT: the always-on Verifier (author ≠ verifier) runs,
-  appending a dated section to `validation.md`. Ships as **patch 1.0.2** via REL-04 (bump `patch`;
-  1.0.1 already released, commit `0eaf2b9`).
+  change. **Status: T89–T94 COMPLETE.** The always-on Verifier (author ≠ verifier) ran 2026-07-29
+  → **PASS** — see "Layout Root Params Fix Verification (2026-07-29)" in `validation.md`: 10/10
+  spec-anchored criteria (7 ACs + 3 edge cases) matched precise spec-defined outcomes; gates
+  re-run from clean (not cache-trusted) all green — engineTest 58/23 classes/0 fail, corpus 42/42
+  @ 0.000%, extension 206/206; 3/3 scratch discrimination mutations killed (null-parent revert,
+  ViewGroup-vs-FrameLayout parent-type swap, `CORE_ATTRS` regression); independently re-derived
+  the material/gallery golden change as geometry-impossible (all 27 corpus layout roots are
+  already `match_parent`×`match_parent`) and pixel-confirmed it as the claimed Toolbar-title text
+  becoming visible. One non-blocking documentation-only finding: a stale pre-AC4-correction
+  comment in `rootparams_wrap.xml:3` still says "stays transparent" (code and test are correct;
+  only the comment drifted). **LAY-08 traceability flipped to ✅ Verified.** Ships as **patch
+  1.0.2** via REL-04 (bump `patch`; 1.0.1 already released, commit `0eaf2b9`).
 - **DF-3 AMENDMENT — T83–T88 (phase 20) EXECUTE COMPLETE (2026-07-27)**: the first live `/run ci`
   (PR #1) 403'd its ack comment (`issues: write` where a PR conversation comment needs
   `pull-requests: write`) and left the PR with no visible gate result (`issue_comment` runs attach

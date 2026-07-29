@@ -1176,7 +1176,7 @@ child positions), the class of assertion the original gates never made.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| LAY-08 | P1-A: Preview a framework-widget layout | Implemented | T89–T94 (phase 21) complete 2026-07-29 — implemented, pending the always-on Verifier; ships as 1.0.2 (AD-022) |
+| LAY-08 | P1-A: Preview a framework-widget layout | ✅ Verified | T89–T94 (phase 21) complete 2026-07-29; Verifier PASS 2026-07-29 (`validation.md`, "Layout Root Params Fix Verification"); ships as 1.0.2 (AD-022) |
 
 **Unchanged:** LAY-01..07 and P1-A's ACs stand as written — this amendment closes the gap between
 P1-A AC2's "measure/layout results identical to layoutlib's output" and the engine adapter feeding
