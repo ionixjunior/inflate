@@ -3304,17 +3304,17 @@ verified).
 
 **Done when**:
 
-- [ ] `BomTest`: single leading U+FEFF stripped; no-BOM input returned equal; interior U+FEFF
+- [x] `BomTest`: single leading U+FEFF stripped; no-BOM input returned equal; interior U+FEFF
       untouched; a string of `"\uFEFF"` alone → empty string
-- [ ] `BomIngestionTest` pre-fix run reproduces the defect verbatim (status `error`, message
+- [x] `BomIngestionTest` pre-fix run reproduces the defect verbatim (status `error`, message
       contains `PI must not start with xml`, line 1) — recorded in the commit body; post-fix the
       BOM'd twin renders `ok` with a PNG byte-identical to the BOM-less twin's
-- [ ] BOM fixture byte-integrity guard green (first 3 bytes `EF BB BF` asserted in-test)
-- [ ] Corpus zero-diff: `npm run corpus` 42/42, no regenerated goldens
-- [ ] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
+- [x] BOM fixture byte-integrity guard green (first 3 bytes `EF BB BF` asserted in-test)
+- [x] Corpus zero-diff: `npm run corpus` 42/42, no regenerated goldens
+- [x] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
 
 **Tests**: host unit + engineTest — **Gate**: quick + engine (+ corpus zero-diff)
-**Status**: [ ] pending
+**Status**: [x] complete
 
 ---
 
