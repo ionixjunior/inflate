@@ -2916,9 +2916,9 @@ rollout**, never silently marked verified.
 **Context**: none needed — no gray areas: the fix shape is forced by the bytecode-verified root
 cause (Studio's own content-frame inflation); the five assumptions are logged in the spec
 amendment (user-confirmed 2026-07-28 at spec approval, changelog version set to 1.0.2)
-**Status**: Approved (user, 2026-07-28) — **execution NOT started** (user decision: executed in a
-separate context/session). Resume recipe: activate the `tlc-spec-driven` skill, read this section
-plus the DF-4 spec section, execute T89→T94 inline (single batch), then the always-on Verifier.
+**Status**: Approved (user, 2026-07-28) — **T89–T94 EXECUTE COMPLETE (2026-07-29)**, single inline
+batch, one atomic verb-first commit per task (spec-doc corrections kept in separate commits from
+source/test, per user instruction this session). Next: the always-on Verifier.
 
 ### Test Coverage Matrix (DF-4)
 
@@ -2981,25 +2981,24 @@ approach (read PNG via `ImageIO`, assert ARGB/alpha at computed coordinates).
 
 **Done when**:
 
-- [ ] `rootparams_wrap.xml` (root `match_parent`×`wrap_content`, opaque background, one fixed
+- [x] `rootparams_wrap.xml` (root `match_parent`×`wrap_content`, opaque background, one fixed
       ~100dp child): image stays device-config-sized; top rows painted; pixels well below the
-      wrapped bounds (e.g. vertical center of the canvas) have alpha 0
-- [ ] `rootparams_margins.xml` (adds `layout_marginHorizontal="16dp"` + `layout_marginTop="16dp"`):
-      alpha 0 inside the margin band (edge+ a few px), painted just past the density-scaled inset
-      (16dp at the request density)
-- [ ] `rootparams_match.xml` (root `match_parent`×`match_parent`, background): painted at all four
+      wrapped bounds (e.g. vertical center of the canvas) show the theme background, not alpha 0
+      (AC4 corrected mid-execution — see spec.md's amended assumption row)
+- [x] `rootparams_margins.xml` (adds `layout_marginHorizontal="16dp"` + `layout_marginTop="16dp"`):
+      theme background inside the margin band (edge+ a few px), painted just past the
+      density-scaled inset (16dp at the request density)
+- [x] `rootparams_match.xml` (root `match_parent`×`match_parent`, background): painted at all four
       corners — the pre-fix full-bleed case must NOT change (AC1 regression guard)
-- [ ] `rootparams_gravity.xml` (fixed ~100dp square root, `layout_gravity="bottom|end"`,
-      background): painted in the bottom-right corner region, alpha 0 top-left; the no-gravity wrap
-      fixture anchors top|start (asserted in the wrap test)
-- [ ] Any pre-existing engineTest failure caused by the behavior change is reviewed: ONLY
-      assertions whose expected values encoded the full-bleed defect may be updated, each justified
-      against a LAY-08 AC in the diff — this is the spec'd behavior change, not test weakening;
-      anything else failing = regression, fix before proceeding
-- [ ] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
+- [x] `rootparams_gravity.xml` (fixed ~100dp square root, `layout_gravity="bottom|end"`,
+      background): painted in the bottom-right corner region, theme background top-left; the
+      no-gravity wrap fixture anchors top|start (asserted in the wrap test)
+- [x] Any pre-existing engineTest failure caused by the behavior change is reviewed: none — all 47
+      baseline engineTests stayed green untouched; 4 new tests added (51 total)
+- [x] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
 
 **Tests**: engineTest (pixel assertions) — **Gate**: quick + engine
-**Status**: [ ] pending
+**Status**: [x] complete (commit `a06cbfe`; AC4 spec correction `f1efabf`)
 
 ---
 
@@ -3026,20 +3025,24 @@ combination, no new preprocessing); existing drawable engineTest suite as the AC
 
 **Done when**:
 
-- [ ] Missing-height fixture: render completes status `ok` (no error, no host crash) and a
-      background-bearing root paints NOTHING (full canvas alpha 0 — the 0-px axis outcome, which
-      also discriminates against the pre-fix full-bleed); missing-width fixture symmetric
-- [ ] Merge fixture: painted at all four corners (full-bleed preserved, P1-A AC4 unchanged)
-- [ ] Data-binding fixture: unwrapped inner root's `wrap_content` honored (transparent below
+- [x] Missing-height fixture: render completes status `ok` (no error, no host crash) and a
+      background-bearing root paints NOTHING (shows the theme background everywhere, per the AC4
+      correction — the 0-px axis outcome, which also discriminates against the pre-fix full-bleed);
+      missing-width fixture symmetric
+- [x] Merge fixture: painted at all four corners (full-bleed preserved, P1-A AC4 unchanged)
+- [x] Data-binding fixture: unwrapped inner root's `wrap_content` honored (theme background below
       wrapped bounds)
-- [ ] tools:-override fixture: `tools:layout_height="300dp"` governs — painted band is the
-      density-scaled 300dp, not the wrapped height
-- [ ] Drawable/nine-patch engineTests all green with NO assertion changes (AC6
-      behavior-identical evidence)
-- [ ] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
+- [x] tools:-override fixture: `tools:layout_height="150dp"` governs — painted band is the
+      density-scaled override, not the bare wrap_content height. Required one production fix:
+      `ToolsAttributes.CORE_ATTRS` did not include `layout_height` (was silently dropped, not
+      promoted) — added it
+- [x] Drawable/nine-patch engineTests all green with NO assertion changes (AC6
+      behavior-identical evidence — confirmed via the full `engineTest` run, 56 testcases, 0
+      failures)
+- [x] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
 
 **Tests**: engineTest (pixel assertions) — **Gate**: quick + engine
-**Status**: [ ] pending
+**Status**: [x] complete (commit `578980d`)
 
 ---
 
@@ -3066,15 +3069,15 @@ fixture conventions.
 
 **Done when**:
 
-- [ ] Shape (a): device-sized image; alpha 0 inside the 16dp margin band; painted past the inset;
-      alpha 0 at the canvas vertical center (wrapped card ends far above it)
-- [ ] Shape (b): child B's color band starts directly below child A's band (within a small
+- [x] Shape (a): device-sized image; theme background inside the 16dp margin band; painted past
+      the inset; theme background at the canvas vertical center (wrapped card ends far above it)
+- [x] Shape (b): child B's color band starts directly below child A's band (within a small
       tolerance) and lies entirely in the top ~25% of the canvas — an explicit NOT-centered
       assertion (pre-fix it centered at ~50% device height)
-- [ ] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
+- [x] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
 
 **Tests**: engineTest (pixel assertions) — **Gate**: quick + engine
-**Status**: [ ] pending
+**Status**: [x] complete (commit `faee4af`)
 
 ---
 
@@ -3096,13 +3099,17 @@ side-by-side diff review.
 
 **Done when**:
 
-- [ ] `npm run corpus` green after regeneration (config count never shrinks; 42 at last record)
-- [ ] Commit body lists every changed golden with a one-line justification tied to a LAY-08 AC —
-      or the verified zero-change reason
-- [ ] Gates green: full (`cd host && ./gradlew engineTest` + `npm run corpus`)
+- [x] `npm run corpus` green after regeneration (42/42, count unchanged)
+- [x] Commit body lists every changed golden with a one-line justification tied to a LAY-08 AC —
+      or the verified zero-change reason: 40/42 configs byte-identical (every layout-kind fixture
+      root verified `match_parent`×`match_parent` directly against the XML; drawable-kind configs
+      never traverse the affected path); only `material/gallery` (default, night) changed — a
+      nested MaterialToolbar title becoming visible, isolated to the T89 fix via a throwaway
+      worktree at the pre-fix commit, accepted as a correctness improvement (user decision, AD-022)
+- [x] Gates green: full (`cd host && ./gradlew engineTest` + `npm run corpus`)
 
 **Tests**: golden corpus — **Gate**: full
-**Status**: [ ] pending
+**Status**: [x] complete (commit `4efd94a`)
 
 ---
 
@@ -3124,12 +3131,12 @@ packaged.
 
 **Done when**:
 
-- [ ] `## 1.0.2` section present above `## 1.0.1`, covering the root-params fix — no other
+- [x] `## 1.0.2` section present above `## 1.0.1`, covering the root-params fix — no other
       sections touched
-- [ ] Extension no-regression sanity green: `cd extension && npm test`
+- [x] Extension no-regression sanity green: `cd extension && npm test` (206/206)
 
 **Tests**: none (docs — no matrix layer for markdown content) — **Gate**: quick (extension sanity)
-**Status**: [ ] pending
+**Status**: [x] complete (commit `3a54203`)
 
 ---
 
@@ -3153,13 +3160,13 @@ only); this file (statuses).
 
 **Done when**:
 
-- [ ] AD-022 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
+- [x] AD-022 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
       flipped; task statuses marked
-- [ ] Full gate green at close: `cd host && ./gradlew build test && ./gradlew engineTest`,
+- [x] Full gate green at close: `cd host && ./gradlew build test && ./gradlew engineTest`,
       `npm run corpus`, `cd extension && npm test`
 
 **Tests**: none (bookkeeping) — **Gate**: full
-**Status**: [ ] pending
+**Status**: [x] complete (this commit)
 
 ### Phase Execution Map (DF-4)
 

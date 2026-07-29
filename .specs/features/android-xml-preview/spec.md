@@ -1071,11 +1071,10 @@ gate's read-only token all stay exactly as verified.
 > floats vertically centered in the stretched space instead of sitting right below the sibling
 > inside the wrapped bounds. Every layout preview since v1.0.0 is affected the same way — the
 > defect is systematic, not layout-specific. Fix tasks: **T89–T94 (phase 21)** in `tasks.md`
-> ("Layout Root Params Fix Tasks", approved 2026-07-28, execution deferred to a follow-up
-> session); requirement **LAY-08** below; discovery to be recorded as **AD-022** in
-> `.specs/STATE.md` at close-out (T94). Ships as **patch release 1.0.2** (new CHANGELOG `## 1.0.2`
-> section; SemVer: bug fix, no new capability; REL-04 pipeline, bump `patch` — 1.0.1 already
-> shipped).
+> ("Layout Root Params Fix Tasks", approved 2026-07-28, **executed and complete 2026-07-29**);
+> requirement **LAY-08** below; discovery recorded as **AD-022** in `.specs/STATE.md`. Ships as
+> **patch release 1.0.2** (new CHANGELOG `## 1.0.2` section; SemVer: bug fix, no new capability;
+> REL-04 pipeline, bump `patch` — 1.0.1 already shipped).
 
 **Root cause (code-verified down to the pinned engine's bytecode):**
 
@@ -1177,7 +1176,7 @@ child positions), the class of assertion the original gates never made.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| LAY-08 | P1-A: Preview a framework-widget layout | Tasks | Approved & task-broken (T89–T94, phase 21, 2026-07-28) — execution NOT started, deferred to a follow-up session; ships as 1.0.2 |
+| LAY-08 | P1-A: Preview a framework-widget layout | Implemented | T89–T94 (phase 21) complete 2026-07-29 — implemented, pending the always-on Verifier; ships as 1.0.2 (AD-022) |
 
 **Unchanged:** LAY-01..07 and P1-A's ACs stand as written — this amendment closes the gap between
 P1-A AC2's "measure/layout results identical to layoutlib's output" and the engine adapter feeding
