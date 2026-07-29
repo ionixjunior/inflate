@@ -1302,7 +1302,7 @@ editor/formatter pass cannot silently neutralize the suite.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| HOST-05 | P1-A + P1-C (shared executor ingestion), in service of P1-I/UX-04 error truthfulness | Tasks | Approved (user, 2026-07-29) — T95–T98 (phase 22) ready to execute on branch `fix/bom-xml-files`; ships as 1.0.3 on completion (AD-023 at close-out) |
+| HOST-05 | P1-A + P1-C (shared executor ingestion), in service of P1-I/UX-04 error truthfulness | Done | Implemented (T95–T98, phase 22, 2026-07-29) — `dead0a6`/`05a81fe`/`e4154a9` + close-out; recorded as **AD-023**; ships as patch **1.0.3** on release |
 
 **Unchanged:** UX-04's error contract stands as written — this amendment makes it truthful for
 BOM'd files (the error reported is now the file's real problem, or none). LAY-01..08, DRW-*, RES-*

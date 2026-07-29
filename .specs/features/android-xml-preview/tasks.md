@@ -3235,10 +3235,10 @@ distills it via `scripts/lessons.py`.
 **Context**: none needed — no gray areas: the fix shape is forced by the jar-verified root cause
 (the BOM must be gone before the first parser sees the string); the open choices are logged as
 assumptions in the spec amendment (user-confirmed 2026-07-29 at spec approval)
-**Status**: **Approved (user, 2026-07-29)** — ready to execute on branch `fix/bom-xml-files` (off
-`main`; amendment docs committed as `66860d1`). Execution starts at T95 in a fresh session — one
-atomic verb-first commit per task on gate pass, always-on Verifier after T98. The 1.0.3 changelog
-entry is T97's deliverable (user-confirmed at approval — no additional task needed).
+**Status**: **Complete (2026-07-29)** — T95–T98 executed on branch `fix/bom-xml-files`, one atomic
+verb-first commit per task on gate pass: `dead0a6` (T95), `05a81fe` (T96), `e4154a9` (T97), this
+commit (T98 close-out). Discovery recorded as **AD-023** in `.specs/STATE.md`. Ships as patch
+**1.0.3** on release. Always-on Verifier runs next per the Execution Protocol.
 
 ### Test Coverage Matrix (DF-5)
 
@@ -3408,13 +3408,13 @@ only); this file (statuses).
 
 **Done when**:
 
-- [ ] AD-023 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
+- [x] AD-023 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
       flipped; task statuses marked
-- [ ] Full gate green at close: `cd host && ./gradlew build test && ./gradlew engineTest`,
+- [x] Full gate green at close: `cd host && ./gradlew build test && ./gradlew engineTest`,
       `npm run corpus`, `cd extension && npm test`
 
 **Tests**: none (bookkeeping) — **Gate**: full
-**Status**: [ ] pending
+**Status**: [x] complete
 
 ### Phase Execution Map (DF-5)
 
