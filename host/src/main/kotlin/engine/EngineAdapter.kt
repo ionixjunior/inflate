@@ -286,8 +286,24 @@ class EngineAdapter(
   fun inflate(layoutId: Int): View =
     checkNotNull(inflateOrNull(layoutId)) { "layout id $layoutId inflated to null" }
 
-  /** Inflate without the non-null assertion (unknown roots/children may yield null). */
-  fun inflateOrNull(layoutId: Int): View? = sdk!!.layoutInflater.inflate(layoutId, null)
+  /**
+   * Inflate without the non-null assertion (unknown roots/children may yield null).
+   *
+   * LAY-08: inflates against a throwaway [android.widget.FrameLayout] parent with
+   * `attachToRoot=false` — Studio's content-frame equivalent (`RenderSessionImpl.mContentRoot`).
+   * This makes `LayoutInflater` generate the root element's own `LayoutParams` (width/height/
+   * margins/gravity) instead of discarding them under a null parent; Paparazzi's single-arg
+   * `addView` then preserves those pre-set params on the returned root view. The throwaway parent
+   * never gains a child (attachToRoot=false), so `removeAllViews()` is a defensive no-op.
+   */
+  fun inflateOrNull(layoutId: Int): View? {
+    val parent = android.widget.FrameLayout(sdk!!.context)
+    try {
+      return sdk!!.layoutInflater.inflate(layoutId, parent, false)
+    } finally {
+      parent.removeAllViews()
+    }
+  }
 
   /** Resolve a resource id (name/type/package) via the engine's resources. */
   fun resourceId(name: String, type: String, packageName: String): Int =

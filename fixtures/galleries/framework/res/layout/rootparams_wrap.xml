@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LAY-08 AC1/AC3: root match_parent x wrap_content with one fixed-height child. The wrapped
+     band must be painted top|start-anchored; the canvas below the wrapped bounds shows the
+     resolved theme background (not transparent — see LAY-08 AC4's amended assumption). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FF224488">
+
+    <View
+        android:layout_width="100dp"
+        android:layout_height="100dp" />
+</FrameLayout>

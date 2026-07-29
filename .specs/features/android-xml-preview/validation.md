@@ -697,3 +697,110 @@ None recorded. Signal walk: 0 failed/uncovered ACs, 0 surviving mutants (3/3 kil
 ### Lessons
 
 One grounded spec-precision gap recorded: AC3's literal `needs: gate` wording in `spec.md` does not match the necessary `needs: [accept, gate]` job dependency (needed to thread the captured head SHA per AC2's single-resolve invariant) — a reusable lesson about writing `needs:` lists in spec ACs to already reflect cross-job output dependencies, not just the "primary" upstream job, is warranted; record via `scripts/lessons.py` if the project's lessons workflow is run as a follow-up to this report.
+
+## Layout Root Params Fix Verification (2026-07-29)
+
+**Diff range**: `a06cbfe..58471a1` (7 commits, T89–T94, phase 21, "Layout Root Params Fix Tasks" — DF-4, requirement LAY-08). Full change surface independently confirmed via `git diff --stat e9859bd..58471a1 -- host/ fixtures/ extension/`: exactly 18 files — `EngineAdapter.kt` (+20/-6), `ToolsAttributes.kt` (+8/-1), two new engineTest classes, 9 new `rootparams_*` fixtures (7 framework + 2 material), 2 regenerated material-gallery goldens, `CHANGELOG.md`. No extension source, wire protocol, or scheduler file touched.
+**Verifier**: independent sub-agent (author ≠ verifier; evidence-or-zero, re-derived; did not implement the fix).
+
+### Verdict: ✅ PASS
+
+### Task Completion
+
+All 6 tasks (T89–T94) marked `[x]` in `tasks.md` with commit hashes; every "Done when" item independently spot-checked against the actual diff (code, tests, fixtures) rather than trusted from the task text. No partial/blocked tasks found.
+
+### Spec-Anchored Acceptance Criteria (LAY-08)
+
+| Criterion | Spec-defined outcome | `file:line` + assertion | Result |
+| --------- | --------------------- | ------------------------ | ------ |
+| AC1: root LayoutParams generated via FrameLayout parent, `attachToRoot=false` | `wrap_content` wraps, fixed dp measures at that size, `match_parent` unchanged | `EngineAdapter.kt:299-306` (the fix) + `RootLayoutParamsTest.kt:100-111` (wrap paints only its band) + `:125-133` (match_parent still full-bleed, all 4 corners) | ✅ PASS |
+| AC2: root margins inset within canvas, density-scaled | theme bg in margin band, root bg just past inset | `RootLayoutParamsTest.kt:114-122` — `argbAt(png,8,50)==THEME_BG`, `argbAt(png,20,20)==ROOT_BG` (16dp inset at mdpi 1:1) | ✅ PASS |
+| AC3: `layout_gravity` positions fixed-size root; default top\|start | gravity bottom\|end → painted bottom-right, theme bg top-left | `RootLayoutParamsTest.kt:136-146` — `argbAt(png,10,10)==THEME_BG`, `argbAt(png,150,250)==ROOT_BG`; default top\|start anchoring cross-checked by the no-gravity wrap test | ✅ PASS |
+| AC4: uncovered canvas shows resolved theme `windowBackground`, canvas stays device-sized (amended) | exact theme color, not alpha 0; `imageWidth`/`imageHeight` unchanged | `RootLayoutParamsTest.kt:44-49` (THEME_BG = `#FF303030`, empirically cross-checked against light theme `#FFFAFAFA` per spec text) + `RootParamsConstraintTest.kt:106-107` (`imageWidth==200`, `imageHeight==300` explicit) | ✅ PASS |
+| AC5: missing root dimension → `ok`, 0px axis, no crash | status `ok`, background-bearing root paints nothing | `RootLayoutParamsTest.kt:151-167` — both missing-height/width fixtures assert `RenderStatus.ok` + THEME_BG at multiple probe points | ✅ PASS |
+| AC6: scope guard — `<merge>` root stays full-bleed | all 4 corners painted, unaffected | `RootLayoutParamsTest.kt:170-178` | ✅ PASS |
+| AC7: reported shapes end-to-end (wrap+margins card; bottom-constrained child not centered) | wrapped height < device height, child B directly below sibling A, not at ~50% device height | `RootParamsConstraintTest.kt:101-124` (shape a) + `:126-145` (shape b — explicit "NOT centered" assertion at y=150) | ✅ PASS |
+| Edge case: data-binding `<layout>` root unwrap | inner root's own params honored | `RootLayoutParamsTest.kt:181-188` | ✅ PASS |
+| Edge case: `tools:` override governs root height | promoted value governs over real wrap_content measure | `RootLayoutParamsTest.kt:191-205` + `ToolsAttributes.kt:20` (`layout_height` added to `CORE_ATTRS`) | ✅ PASS |
+| Edge case: oversize root / RTL margins | framework-native pass-through, no Inflate code path | Correctly marked N/A in the Test Coverage Matrix — no new code touches either path; existing NORMAL-mode/MAX_CANVAS_PX and MarginLayoutParams RTL resolution are untouched by this diff | ✅ N/A (verified no code path added) |
+
+**Status**: 10/10 criteria (7 ACs + 3 edge cases) matched their spec-defined outcome with pixel-level, non-shallow assertions. Zero gaps, zero spec-precision gaps on the criteria themselves (see one documentation-only note below).
+
+### Edge Cases
+
+- [x] Data-binding root unwrap — handled, pixel-verified
+- [x] `tools:` override on root height — handled, pixel-verified (required the `CORE_ATTRS` fix, independently re-derived as correct and minimal — one string added, nothing else touched)
+- [x] Oversize root / RTL margins — correctly scoped N/A, no new code path
+- [x] `<merge>` root scope guard — handled, pixel-verified
+
+### Gate Check (all re-run by this Verifier, not inferred from the handoff)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Quick (build+test) | `cd host && ./gradlew build test` | ✅ BUILD SUCCESSFUL |
+| Engine | `cd host && ./gradlew engineTest --rerun-tasks` | ✅ **58 testcases / 23 classes**, 0 failures, 0 errors — counts read directly from `build/test-results/engineTest/TEST-*.xml`, not trusted from the handoff. Matches the claimed baseline delta exactly: 47→58 (+11: 4 T89 + 5 T90 + 2 T91), 22→23 classes (+1 new class, `RootParamsConstraintTest`; `RootLayoutParamsTest` extends the existing-in-this-diff class rather than adding a second one for T90) |
+| Corpus | `cd corpus && npm run corpus` | ✅ **42/42 passed**, 0.000% diff on every config, including both `material/gallery` configs (goldens already regenerated to match current engine output) |
+| Extension sanity | `cd extension && npm test` | ✅ **206/206 passed**, 0 failed (16 files) — no extension source in the diff, pure no-regression check |
+
+**Test count deltas**: engineTest 47→58 (+11, all new — none renamed; independently confirmed by grepping for `@Test` in the two new files: 4 in `RootLayoutParamsTest`'s original T89 block + 5 in its T90 extension + 2 in `RootParamsConstraintTest` = 11). Corpus 42/42 unchanged (no new corpus cases — independently confirmed: `grep rootparams corpus/manifest.json` → zero matches, the new gallery fixtures are engineTest-only). Extension 206/206 unchanged.
+
+**Golden diff independently re-derived** (not trusted from AD-022's prose): diffed `git show a06cbfe:.../material-gallery__default.png` against the current golden pixel-by-pixel — the only differing region is a tight bounding box (33,1485)-(115,1509), 793 pixels total. Cropping and rendering both images at that exact region shows the pre-fix golden blank there and the post-fix golden showing the literal glyphs "Title" — this is pixel-exact confirmation of AD-022's claim (`MaterialToolbar`'s `android:title="Title"` becoming visible), not a geometry change. Independently re-verified the *precondition* for that claim's logic: wrote a script against `corpus/manifest.json` to check every `kind: layout` fixture's root tag/`layout_width`/`layout_height` directly against its XML (excluding `<merge>` roots) — **all 27 layout fixtures in the corpus are `match_parent`×`match_parent` at the root**, so root-geometry honoring is provably a no-op for every corpus fixture, and `material/gallery`'s root is confirmed `match_parent`×`match_parent` by direct inspection (`material_gallery.xml:12-13`) too. This closes the loop on AD-022's isolation claim without needing to re-run the worktree experiment: the golden diff cannot be explained by root-param geometry (there's no geometry to change), so it must come from some other engine-behavior shift triggered by the same code change — consistent with (though not a full mechanistic proof of) AD-022's "isolated via throwaway worktree, reapply EngineAdapter change only" methodology. Accepting the change as a correctness improvement (a Toolbar's own declared title genuinely should render) is reasonable given this evidence.
+
+### Discrimination Sensor (scratch-only; tree left clean via `git status --short` verification after each restore)
+
+| # | File:line | Mutation | Test run | Killed? |
+| - | --------- | -------- | -------- | ------- |
+| 1 | `EngineAdapter.kt:299-306` | Reverted `inflateOrNull` to the pre-fix null-parent inflate (`sdk!!.layoutInflater.inflate(layoutId, null)`) | `./gradlew engineTest --tests render.RootLayoutParamsTest --tests render.RootParamsConstraintTest` | ✅ **Killed** — 9/11 tests failed (every test whose fixture root isn't already `match_parent`×`match_parent` went red); the 2 that stayed green (`match_parent` regression guard, `<merge>` guard) correctly did so, since those shapes are full-bleed either way |
+| 2 | `EngineAdapter.kt:299` | Swapped the throwaway `FrameLayout` parent for a minimal anonymous `android.view.ViewGroup` subclass (base `ViewGroup.generateLayoutParams(AttributeSet)` reads only width/height, dropping margins and gravity) | same two test classes | ✅ **Killed** — exactly 3/11 tests failed: the margins test, the gravity test, and AC7 shape (a) (which has margins) — every size-only test (wrap, match_parent, merge, missing-height/width, tools_height, shape b) correctly stayed green, showing the tests discriminate at the specific margin/gravity behavior granularity, not just "something changed" |
+| 3 | `ToolsAttributes.kt:20` | Removed `"layout_height"` from `CORE_ATTRS` (reverting T90's production fix) | `./gradlew engineTest --tests render.RootLayoutParamsTest` | ✅ **Killed** — exactly 1/9 failed: the `tools_layout_height` override test; all others (including the unrelated missing-dimension/merge/binding tests) stayed green, confirming this test alone covers that fix |
+
+Each mutation was applied via `Edit`, run, then reverted via a matching `Edit` back to the exact original text; `git status --short` and `git diff --stat` confirmed empty after every restore (no scratch state leaked into the real tree — worktree/stash were unnecessary since the tree was clean before and after each single-file round-trip).
+
+**Sensor depth**: lightweight (3 mutations, proportional to a bug-fix-scoped amendment — covers the root-cause line, the margin/gravity-specific parent-type risk called out explicitly in `tasks.md`'s own sensor-candidate list, and the one production fix from T90).
+**Result**: **3/3 killed**, 0 survived.
+
+### Code Quality
+
+| Check | Pass? |
+| ----- | ----- |
+| No features beyond what was asked | ✅ — the fix is exactly the parent-swap in `inflateOrNull` plus the one-line `CORE_ATTRS` addition genuinely required by the already-approved `tools:layout_height` edge case |
+| No abstractions for single-use code | ✅ — no new classes/interfaces; the throwaway `FrameLayout` is a local, not a reusable abstraction |
+| No unnecessary "flexibility" added | ✅ |
+| Only touched files required for task | ✅ — `git diff --stat e9859bd..58471a1 -- host/ fixtures/ extension/` shows exactly the 18 files enumerated in AD-022's Scope line, no extras |
+| Didn't "improve" unrelated code | ✅ — the `ToolsAttributes.kt` KDoc edit is scoped to documenting the new `layout_height` entry, no other rewording |
+| Matches existing patterns/style | ✅ — reuses `LayoutRendererTest`'s gallery/routing setup shape, the AC7-style pixel-probe technique, and existing fixture-comment conventions |
+| Would senior engineer approve? | ✅ |
+| Tests map to acceptance criteria and are non-shallow (spot-check one story) | ✅ — spot-checked `RootParamsConstraintTest` shape (b): asserts an explicit NOT-centered condition at the exact pixel the pre-fix defect would have painted, not just "renders ok" |
+| Spec-anchored outcome check | ✅ — see AC table above, all 10 criteria matched precise spec-defined values |
+| Per-layer Coverage Expectation met | ✅ — 1:1 engineTest-per-AC as the Test Coverage Matrix (DF-4) requires; no domain layer beyond the engine adapter in scope |
+| Every test in scope maps to a spec AC, listed edge case, or Done-when criterion | ✅ — every new `@Test` name cites its LAY-08 AC or edge case in its label |
+| Documented project quality/testing guidelines followed | Test Coverage Matrix (DF-4) and Gate Check Commands (DF-4) in `tasks.md`, followed as written |
+
+**One documentation-only note (non-blocking, not counted as a spec gap since it affects a code comment, not a criterion or assertion):** `fixtures/galleries/framework/res/layout/rootparams_wrap.xml:3`'s comment still reads "...the canvas below the wrapped bounds stays transparent" — this restates the ORIGINAL, since-superseded AC4 assumption (transparent), not the corrected one (theme background) that the fixture's own consuming test (`RootLayoutParamsTest.kt:106-110`) correctly asserts against (`THEME_BG`, not alpha 0). The code is right; one comment in one fixture file was not updated when AC4 was corrected in `f1efabf`. Recommended trivial follow-up: update that comment to match the corrected assumption, for future readers who trust fixture comments as the spec restatement.
+
+### Summary
+
+**Overall**: ✅ Ready — DF-4 fix is sound, precisely scoped, and its new tests genuinely discriminate the defect class they were written for.
+
+**Spec-anchored check**: 10/10 (7 ACs + 3 edge cases) matched their spec-defined outcome with pixel-precise assertions; 0 spec-precision gaps on the criteria themselves.
+**Sensor**: 3 mutations injected (null-parent revert, ViewGroup-instead-of-FrameLayout parent-type swap, CORE_ATTRS regression), **3/3 killed**, 0 survived.
+**Gate**: Quick ✅, Engine 58/23 (0 fail, re-run from clean with `--rerun-tasks`, not cache-trusted) ✅, Corpus 42/42 @ 0.000% ✅, Extension 206/206 ✅.
+
+**What works**: the root cause diagnosis is bytecode-accurate and the fix (throwaway `FrameLayout` parent, `attachToRoot=false`) is the minimal correct change; the new pixel-probe tests are fine-grained enough that a mutation affecting only margins/gravity is caught without also tripping the size-only tests (verified directly, not assumed); the AC4 mid-execution correction is self-consistent between the spec text, the test assertions, and the empirical theme-color values used; the material/gallery golden change was independently re-derived as geometry-impossible (every corpus layout root is already `match_parent`×`match_parent`) and pixel-confirmed as the claimed Toolbar-title text becoming visible, supporting the "correctness improvement" acceptance decision.
+
+**Issues found**: 1 non-blocking documentation gap — a stale pre-correction comment in `rootparams_wrap.xml` (see Code Quality note above). No behavioral defect, no test weakness, no scope creep.
+
+**Next steps**: none blocking. Optional trivial follow-up: fix the stale comment in `rootparams_wrap.xml`. Ships as planned (patch 1.0.2, REL-04 pipeline).
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| LAY-08 | Implemented, pending Verifier | ✅ Verified |
+
+### Lessons
+
+No `.specs/scripts/lessons.py` exists in this repository (checked: `.specs/scripts/` is absent). Per validate.md's fallback, lesson candidates are noted here instead of being recorded mechanically:
+
+- **Candidate lesson** (signal: documentation drift, not a test/AC gap — informational only, likely below the grounding bar for `lessons.py`'s signal table since it isn't an AC gap/surviving mutant/spec-precision gap/gate-fail): "When a spec assumption is corrected mid-execution (e.g., an amended AC), grep test fixtures' own comments for restatements of the superseded assumption, not just the spec/test-file prose — fixture XML comments are read as ground truth by future contributors and can silently drift from a corrected spec." Source: `fixtures/galleries/framework/res/layout/rootparams_wrap.xml:3` vs. the corrected LAY-08 AC4 in `spec.md`.
+- No `ac_gap`, `surviving_mutant`, `spec_precision_gap`, or `gate_fail` signals were produced by this verification — the run was a clean PASS on all mechanically-gated signal types, so no lesson is mandated by the strict `lessons.md` signal table. The item above is recorded for completeness only, not as a required entry.

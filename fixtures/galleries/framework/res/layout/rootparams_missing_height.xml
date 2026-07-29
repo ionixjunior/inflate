@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LAY-08 AC5: root declares width but not height (mid-edit state). Engine-native handling
+     (BridgeTypedArray.getLayoutDimension) resolves the missing axis to 0px — no crash, no error. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:background="#FF224488" />

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LAY-08 AC3: a fixed-size root with layout_gravity must be positioned within the device canvas
+     per FrameLayout child semantics (the throwaway inflate parent is itself a FrameLayout). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="100dp"
+    android:layout_height="100dp"
+    android:layout_gravity="bottom|end"
+    android:background="#FF224488" />

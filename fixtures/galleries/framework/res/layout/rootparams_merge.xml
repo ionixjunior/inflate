@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LAY-08 AC6: a merge root with a match_parent child must keep filling the canvas — the
+     Structural preprocessor already wraps <merge> in an explicit match_parent FrameLayout before
+     inflation, so this root-params fix must not change this shape. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF224488" />
+</merge>
