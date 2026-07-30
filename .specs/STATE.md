@@ -166,6 +166,40 @@
 
 ## Handoff
 
+- **DF-6 AMENDMENT — SPEC + TASKS APPROVED (2026-07-29), EXECUTION NOT STARTED. Next action:
+  execute T99–T104 (phase 23, single inline batch) on branch `fix/multi-tab-preview` per the
+  Execution Protocol at the top of `tasks.md`.** Defect: with >1 preview open, a hidden preview
+  tab comes back BLANK on reveal; renders completed while hidden are never shown; closing one
+  preview deletes every document's PNGs. Root cause (code-verified, extension-panel layer only —
+  scheduler/host/protocol are multi-doc-correct and untouched): `retainContextWhenHidden: false`
+  (`extension/src/panel.ts:213`) + all preview state living only in the webview DOM via
+  `postMessage` (no `setState` anywhere in `webview-ui/`) → VS Code destroys hidden webviews and
+  the re-`ready` flushes an empty `PendingMessageQueue` (queue only ever holds pre-FIRST-ready
+  messages); `postMessage` to a dead webview is silently dropped; `onDidDispose → sweepPngs()`
+  (`panel.ts:223-226`) sweeps ALL PNGs, defeating the host's per-doc `PngWriter` naming
+  (`<docToken>__<renderId>.png`, `keepPerDoc=2`). Third real-webview-behavior escape (family:
+  AD-017 401, AD-018 drag) — fake-webview `lastApplied` assertions and jsdom are structurally
+  blind to webview lifecycle. Spec: "Defect Amendment (2026-07-29): DF-6" in `spec.md`,
+  requirement **UX-06** (7 ACs + edges; assumption table all confirmed). Fix shape (approved):
+  T99 vscode-free `PanelStateStore` snapshot replayed on EVERY webview `ready` (retires
+  `messageQueue.ts`; config re-derived at replay time via a hydration callback — never an
+  open-time copy; separate last-good-image slot so error replays as [image, error] for stale
+  display; RED-first integration repro against real webviews recorded in the commit body) →
+  T100 hidden-state pins (save-while-hidden, config-change-then-reveal, file-gone, host-error,
+  reveal-mid-render; expect NO further prod code) → T101 webview-side `vscode.setState` cache
+  (pan/zoom survive, instant repaint) → T102 per-doc PNG sweep (TS token mirrors
+  `PngWriter.tokenOf`, cross-language pin) → T103 update the **1.0.3** release notes (user
+  decision: DF-6 ships in the pending 1.0.3; STOP if a `Release 1.0.3` commit already exists) →
+  T104 record **AD-024** + MANDATORY interactive UAT (AD-018 rule — no headless skip) + close-out.
+  User decisions locked 2026-07-29 (do not re-ask): hidden tabs render eagerly in the background;
+  trigger stays on-save; NO restart persistence (deferred idea); ships in 1.0.3;
+  `retainContextWhenHidden: true` rejected (per-panel memory growth). After T104: always-on
+  Verifier (spec-anchored check + discrimination sensor — candidates listed in the spec's
+  verification note) appends "Multi-Tab Preview Fix Verification" to `validation.md`. Gates:
+  quick = `cd extension && npm test`; full at close adds host `build test` + `engineTest` +
+  `npm run corpus` (host untouched — no-regression only). Baselines at draft: extension 206
+  unit / 25 integration; re-baseline before T99; counts only grow (minus retired
+  `messageQueue.test.ts`, whose no-loss assertions move into `panelState.test.ts`).
 - **DF-5 AMENDMENT — T95–T97 EXECUTE COMPLETE (2026-07-29), T98 (this commit) closes out.** Root
   cause (verified to the pinned parser's jar, not assumed): a leading UTF-8 BOM survives disk
   ingestion (`File.readText()` doesn't strip U+FEFF), and `Preprocessor.validate`'s
