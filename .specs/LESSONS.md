@@ -44,6 +44,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: REL-06 AC3 (.specs/features/*/spec.md)
 - last seen: 2026-07-27T22:32:38Z
 
+### L-006 — A pure webview-ui state module (e.g. a vscode.setState/getState cache) having its own isolated unit tests does not prove the live entry script actually calls it at boot or on every relevant event; add a real-webview assertion that would fail if the call-site wiring were removed, not just the extracted module's unit tests.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `extension/webview-ui` · harmful: 0
+- features: android-xml-preview
+- evidence: extension/webview-ui/main.ts (persistState()/getState() boot wiring, DF-6 UX-06 AC4) — dropping the wiring entirely left all 224 unit + 33 integration tests green (extension/webview-ui)
+- last seen: 2026-07-30T12:00:00Z
+
+### L-007 — Do not increment a delivery/replay observability counter unconditionally in a handler; increment it only from inside the branch that actually performs the delivery, or a regression that silently skips delivery will still show the counter advancing and slip past tests that check the counter instead of the payload.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `extension/panel` · harmful: 0
+- features: android-xml-preview
+- evidence: extension/src/panel.ts:227-233 (ready handler replayCount, DF-6 UX-06 AC1/AC2/AC7) — gating the actual replay to first-ready-only while replayCount kept incrementing unconditionally left the dedicated RED-first-repro test green; only the unrelated AC5 config test happened to catch it (extension/panel)
+- last seen: 2026-07-30T12:00:00Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

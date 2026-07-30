@@ -912,3 +912,127 @@ Each mutation was applied via `Edit`, run in isolation (`--tests render.BomInges
 ### Lessons
 
 Clean PASS — no `ac_gap`, `surviving_mutant`, `spec_precision_gap` (on the 5 numbered ACs; the 2 edge-case gaps above are noted but are provably-correct-by-composition, not real coverage gaps), or `gate_fail` signals were produced by this verification: all 3 discrimination-sensor mutations were killed exactly as the spec amendment predicted, all 4 gates passed with deltas matching expectations exactly, and no test was weakened or deleted. Per `lessons.md`, a clean run with no signal writes nothing — recording nothing here. (Note: `scripts/lessons.py` is not present at the repo root in this checkout, consistent with the prior DF-4 verification record's finding; the mechanical path was unavailable regardless, but is moot here since there is no signal to record.)
+
+
+## Multi-Tab Preview Fix Verification (2026-07-30)
+
+**Spec**: "Defect Amendment (2026-07-29): DF-6 — hidden preview tabs go blank" in `spec.md`, requirement **UX-06**
+**Diff range**: `44d1e4c..HEAD` (6 commits: `d3c9403` T99, `a55551f` T100, `2ff9b07` T101, `b9addf8` T102, `82b7bb2` T103, `a3e9ebe` T104)
+**Verifier**: independent sub-agent (author ≠ verifier; evidence-or-zero, re-derived)
+
+### Task Completion
+
+| Task | Status | Notes |
+| ---- | ------ | ----- |
+| T99 | ✅ Done | `panelState.ts` (`PanelStateStore`, `pngTokenOf`) new; `panel.ts` entry/`post()`/`openFor`/ready-handling rewired; `activation.ts` passes `hydratePanelConfig`; `messageQueue.ts`+test deleted; `multitab.test.ts` RED-first repro present |
+| T100 | ✅ Done | `multitab.test.ts` extended with 6 more real-webview scenarios (save-while-hidden, fan-out, config-then-reveal, file-gone, host-error, mid-render reveal); no unrelated production code changed |
+| T101 | ✅ Done | `webview-ui/panelStateCache.ts` (`captureState`/`restoreState`) new + wired into `main.ts` (`persistState()`, boot-time `getState()` restore) |
+| T102 | ✅ Done | `panelState.ts`'s `pngTokenOf` + `panel.ts`'s `sweepPngs(docPath?)` per-doc mode; `onDidDispose` scoped |
+| T103 | ✅ Done | `CHANGELOG.md` 1.0.3 section gets 4 user-facing bullets; no other section touched; no version bump |
+| T104 | ✅ Done | AD-024 recorded in `STATE.md`; Handoff updated with commit hashes + gate evidence; UX-06 traceability flipped in `spec.md`; T99-T104 marked `[x]` in `tasks.md`; interactive UAT recorded as PASSED |
+
+### Spec-Anchored Acceptance Criteria (UX-06)
+
+| Criterion (WHEN X THEN Y) | Spec-defined outcome | `file:line` + assertion | Result |
+| -------------------------- | --------------------- | ------------------------ | ------ |
+| AC1: hidden tab revealed shows exactly its last-applied state (image+warnings/badges, or error over dimmed prior image + stale chip, or file-gone), no manual refresh | `status`/`hasStaleImage` reflect the last-applied state post-reveal | `extension/src/test/integration/multitab.test.ts:118-137` — `assert.strictEqual(applied.status, 'ok', ...)`; error-over-dimmed-image leg: `panelState.test.ts:44-53` — `expect(store.replay()).toEqual([{type:'setImage',...},{type:'setError',...}])` | ✅ PASS |
+| AC2: a render settling while hidden is recorded and is what reveal shows (background/eager delivery) | reveal's `responseId` equals the ID of the render that landed while hidden, not a stale one | `multitab.test.ts:139-157` — `assert.strictEqual(applied.responseId, freshId, 'reveal must show the result rendered while hidden, not a stale one')` | ✅ PASS |
+| AC3: a save fanning out to several previews (visible + hidden) leaves both fresh | both panels' `status === 'ok'` after the shared dependency is saved | `multitab.test.ts:159-174` — `assert.strictEqual(a.panelManager.lastApplied(fileA)!.status, 'ok', ...)`; `assert.strictEqual(a.panelManager.lastApplied(fileB)!.status, 'ok', ...)` | ✅ PASS |
+| AC4: viewport zoom AND pan survive a hide/reveal cycle (webview-local transients) | restored zoom/pan numerically equal what was captured at hide time | `extension/webview-ui/panelStateCache.test.ts:106-118` — `expect(restored.zoom).toEqual(ZOOM_150)`; `expect(restored.pan).toEqual(PAN)` (pure-module level) | ⚠️ Spec-precision / coverage gap — see Discrimination Sensor "extra mutation": no test exercises `main.ts`'s actual `getState()`-at-boot / `persistState()` call sites; a mutation that fully deletes that wiring passes 224/224 unit + 33/33 integration unchanged. AC4's *module logic* is proven; its *live wiring* is proven only by the (already-passed) manual interactive UAT, not by any automated test |
+| AC5: a post-open toolbar config change survives hide/reveal — never a stale open-time copy | replayed config reflects ConfigStore truth, not the value captured at open time | `multitab.test.ts:176-209` — `assert.strictEqual(a.panelManager.lastConfigSent(fileA)?.night, true, 'the replayed config must reflect ConfigStore truth ...')`; unit: `panelState.test.ts:79-85` — `expect(store.replay(() => fresh)).toEqual([fresh])` | ✅ PASS |
+| AC6: closing one preview sweeps only that document's PNGs; every other panel's PNGs remain and stay loadable through a later hide/reveal | closed doc's PNGs deleted; other doc's PNGs remain on disk and its tab keeps working | `multitab.test.ts:272-316` — `assert.ok(fs.existsSync(pngA), ...)`; `assert.ok(!fs.existsSync(pngB), ...)`; token pin: `panelState.test.ts:6-17` (`pngTokenOf` mirrors `PngWriter.kt:45`) | ✅ PASS |
+| AC7: on every `ready` (first load or reload) deliver the canonical sequence (config, themes, result [image / error-with-stale-image / file-gone], busy-if-in-progress); no not-ready message is lost | `replay()` returns exactly `[config?, themes?, staleImage-if-error?, result?, busy?]` in that order; every recorded-while-not-ready message type is represented | `panelState.ts:76-85` (implementation); `panelState.test.ts:21-34` (canonical order) — `expect(store.replay()).toEqual([config, themes, image, busy])`; no-loss: `panelState.test.ts:87-101` | ✅ PASS — but see Discrimination Sensor mutation (a): the dedicated AC1/AC2/AC7 "RED-first repro" integration test does not itself verify delivery (weak-kill finding, gate-level pass only via the unrelated AC5 test) |
+
+**Status**: ✅ 6/7 numbered ACs cleanly covered with spec-exact assertions; AC4 covered at the pure-module level with a flagged wiring-level coverage gap (non-blocking — UAT already exercised the real behavior; automated regression protection for a future `main.ts` refactor is weaker than the Test Coverage Matrix implies).
+
+### Edge Cases
+
+- [x] Reveal mid-render shows busy then settles, no stuck spinner — `multitab.test.ts:241-270`
+- [x] Engine-prep busy labels replay only the latest — same `setBusy`/store code path as render-busy, unit-proven at `panelState.test.ts:63-69` (`store.replay()` returns only the newest label); no dedicated engine-prep-labeled scenario test, but it is the identical mechanism, not a separate one
+- [x] File deleted while hidden → reveal shows file-gone — `multitab.test.ts:211-223`
+- [x] Host-level failure while hidden → reveal replays error over dimmed prior image — `multitab.test.ts:225-239` (`applied.hasStaleImage === true`, `status === 'hostError'`)
+- [ ] Two preview panels simultaneously visible in **separate** editor groups both keep updating live — ⚠️ not directly exercised: every `multitab.test.ts` scenario stacks A/B as tabs in the *same* group (by design, per the file's own doc comment, to reproduce the field report); the live-post-when-ready path is unchanged code and is exercised by the pre-existing single-panel hot-reload suite, but no test opens two panels in genuinely separate `ViewColumn`s and asserts both update live simultaneously. Low risk (unchanged code path), but not literally proven — non-blocking spec-precision gap
+- [x] PNG sweep token mirrors `PngWriter.tokenOf`; collisions are pre-existing, unchanged, explicitly out of new-test scope — `panelState.test.ts:6-17`
+- [x] VS Code window reload: tabs not restored — explicitly out of scope (deferred idea), no test required, none added
+
+### Discrimination Sensor (scratch-only; real tree confirmed clean via `git status --short`/`git diff --stat` before and after every mutation)
+
+| # | File:line | Mutation | Test run | Killed? |
+| - | --------- | -------- | -------- | ------- |
+| a | `extension/src/panel.ts:227-233` (ready handler) | Reverted the re-ready replay to first-ready-only (`if (entry.replayCount === 1) { ...compute+post replay... }`), while leaving `entry.replayCount++` unconditional — reproduces "queue-flush-only" | `cd extension && npm run test:integration` | ⚠️ **Killed at gate level, but only via an unrelated test.** The dedicated AC1/AC2/AC7 "RED-first repro" test (`multitab.test.ts:118-137`) **stayed green** — its assertions (`applied.status === 'ok'`, `applied.replayCount > replaysAfterFirstOpen`) both check state that's independent of whether the replay was actually posted (`lastApplied()` reflects `entry.lastResponse`, set by `applyResult`, not by replay; `replayCount` increments unconditionally). The suite's *overall* failure came solely from the AC5 config-then-reveal test (`multitab.test.ts:176-209`), which happens to compute+store `lastConfigSent` only inside the same gated block. This is the exact shallow-test trap the task's payload/conjunction check step warns about — see Lessons L-007 |
+| b | `extension/src/panel.ts:227-233` | Replayed a cached open-time config copy (`if (!entry.lastConfigSent) entry.lastConfigSent = this.deriveConfig(docPath)`) instead of re-deriving fresh every ready | `cd extension && npm run test:integration` | ✅ **Killed cleanly** — AC5 test failed exactly as the spec predicted: `AssertionError: the replayed config must reflect ConfigStore truth ... false !== true` |
+| c | `extension/src/panel.ts:284-287` (`onDidDispose`) | Reverted to sweep-all on dispose (`this.sweepPngs()` with no `docPath`) | `cd extension && npm run test:integration` | ✅ **Killed cleanly** — AC6 test failed exactly as predicted: `AssertionError: closing B must leave A's PNGs on disk` |
+| d | `extension/webview-ui/panelStateCache.ts:63-81` (`restoreState`) | Dropped the cache's effect — always restores `pan: {0,0}` and `zoom: fit/100%`, ignoring the cached snapshot | `cd extension && npm test` | ✅ **Killed cleanly** — 2/9 `panelStateCache.test.ts` assertions failed exactly as predicted (`restored.zoom`/`restored.pan` mismatches) |
+| e | `extension/src/panelState.ts:76-85` (`replay()`) | Dropped the separate `lastGoodImage` slot's prefix line (`if (this.result?.type === 'setError' && this.lastGoodImage) sequence.push(this.lastGoodImage);` removed) | `cd extension && npm test` | ✅ **Killed cleanly** — the stale-replay test failed exactly as predicted: `expected [{type:'setError',...}] to deeply equal [{type:'setImage',...},{type:'setError',...}]` |
+| extra (not spec-named) | `extension/webview-ui/main.ts:83-85,543-549` | Fully dropped `main.ts`'s wiring to the cache — `persistState()` made a no-op, and the boot-time `getState()`/`restoreState()` call removed entirely (module-level `captureState`/`restoreState` themselves untouched) | `cd extension && npm test && npm run test:integration` | ❌ **Survived completely** — 224/224 unit and 33/33 integration all still passed. This is the genuine AC4 coverage gap flagged in the ACs table above and recorded as Lessons L-006 |
+
+Each mutation was applied via `Edit`, run in isolation, then reverted via `git checkout -- <file>`; `git status --short`/`git diff --stat` confirmed the real tree was byte-identical to its pre-sensor state after every round-trip (re-verified with a final `npm test` + `npm run test:integration` pass at 224/224 and 33/33 after all mutations were discarded).
+
+**Sensor depth**: lightweight (5 spec-named candidates + 1 additional mutation targeting the AC4 wiring gap flagged during the AC review).
+**Result**: **4/6 killed cleanly**, **1/6 killed only incidentally (weak kill, mutation a)**, **1/6 survived completely (extra mutation, AC4 wiring)**.
+
+### Payload/Conjunction Check (replay mechanism)
+
+- `panelState.test.ts` (unit level): assertions target the actual returned `StoreMessage[]` array and its exact field values (`toEqual([{type:'setImage', uri:'img/2.png'}])`, etc.) — genuine payload assertions, not just "a message exists."
+- `multitab.test.ts` (integration level): **does not** assert on the actual `postMessage` payload delivered to the real webview at all — every assertion goes through `panelManager.lastApplied()`/`lastConfigSent()`, extension-side bookkeeping that is set independently of whether `webview.postMessage()` was ever called (confirmed by mutation `a` above, where `lastApplied()` stayed correct with delivery silently disabled). The suite's real webview panels (test-electron) never have their DOM/state inspected — the file's own header comment says the fake host "never actually writes into" the output dir, and no test reads back from the webview iframe. AC5's `lastConfigSent` check is the *only* one of the 7 multitab scenarios whose assertion happens to be computed inside the same code path as the actual delivery, which is why it alone caught mutation (a).
+- **Conclusion**: the replay mechanism's payload correctness is proven at the unit level (`panelState.test.ts`), but the integration level tests bookkeeping, not delivery — a real regression that stops calling `webview.postMessage()` (while leaving `entry.lastResponse`/`entry.replayCount` bookkeeping untouched) would slip through 6 of 7 scenarios in `multitab.test.ts`. Not blocking for this verification (mutation a was still killed overall, and interactive UAT independently confirmed real delivery works), but worth hardening — see Lessons L-007.
+
+### Code Quality
+
+| Check | Pass? |
+| ----- | ----- |
+| No features beyond what was asked | ✅ — every file touched maps directly to T99-T104's stated scope |
+| No abstractions for single-use code | ✅ — `PanelStateStore` is one small class with 5 private slots; `panelStateCache.ts` is two pure functions, mirroring the existing `viewmodel.ts`/`viewport.ts` pattern |
+| No unnecessary "flexibility" added | ✅ |
+| Only touched files required for task | ✅ — `git diff 44d1e4c..HEAD --stat`: `panel.ts`, `panelState.ts`(+test), `activation.ts`, `messageQueue.ts`(+test, deleted), `test/integration/multitab.test.ts`, `webview-ui/main.ts`, `webview-ui/panelStateCache.ts`(+test), `CHANGELOG.md`, bookkeeping (`STATE.md`, `spec.md` traceability row, `tasks.md` statuses) — no extras |
+| Didn't "improve" unrelated code | ✅ — `activation.ts`'s `hydratePanelConfig` diff is a pure relocation (return value instead of a side-effecting call into `panelManager.hydrateConfig`), no unrelated reformatting |
+| Matches existing patterns/style | ✅ — `panelStateCache.ts` explicitly mirrors `viewmodel.ts`/`viewport.ts`/`toolbar.ts`'s vscode-free, jsdom-free pure-module convention; `PanelStateStore` reuses the existing `AppliedState`/observation-hook idiom |
+| Would senior engineer approve? | ⚠️ Mostly — the core mechanism is clean and minimal, but see the two Discrimination Sensor findings (weak-kill on the flagship repro test, and the fully-uncovered `main.ts` wiring for AC4) — a senior reviewer would likely ask for a wiring-level assertion before calling AC4's Test Coverage Matrix entry ("boot-time synchronous restore") satisfied |
+| Tests map to acceptance criteria and are non-shallow (spot-check one story) | ⚠️ Spot-checked AC1/AC2/AC7's flagship test: assertions are shallow relative to what the test's own name/comments claim (see Payload/Conjunction Check) |
+| Spec-anchored outcome check | ✅ — see AC table; 6/7 exact-value assertions confirmed, 1 (AC4) flagged |
+| Per-layer Coverage Expectation met | ✅ — matches the Test Coverage Matrix (DF-6) layer-by-layer, modulo the AC4 wiring gap noted above |
+| Every test in scope maps to a spec AC, listed edge case, or Done-when criterion | ✅ — every new test name cites its AC/task label directly |
+| Documented project quality/testing guidelines followed | Test Coverage Matrix (DF-6) and Gate Check Commands (DF-6) in `tasks.md`, followed as written |
+
+### Gate Check (all re-run by this Verifier from a clean state, not inferred from commit bodies)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Extension unit | `cd extension && npm test` | ✅ **224/224 passed**, 0 failed (17 files). Baseline (DF-5 close, 2026-07-29): 206. Delta: **206→224 (+18)** — `panelState.test.ts` (12) + `panelStateCache.test.ts` (9) new, minus retired `messageQueue.test.ts` (−3, from the 224 count already reflecting the net); count only grows as the tasks doc requires |
+| Extension integration | `cd extension && npm run test:integration` | ✅ **33/33 passed**, 0 failed. Baseline: 25. Delta: **25→33 (+8)**, all 8 new tests in `multitab.test.ts` |
+| Host build+test | `cd host && ./gradlew build test` | ✅ **115 tests, 0 failures, 0 ignored** (`build/reports/tests/test/index.html`) — no-regression, host untouched by this diff |
+| Host engineTest | `cd host && ./gradlew engineTest` | ✅ **64 tests, 0 failures, 0 ignored** (`build/reports/tests/engineTest/index.html`) — matches the DF-5-close baseline exactly, no-regression |
+| Corpus | `npm run corpus` (repo root) | ✅ **42/42 passed**, 0.000% diff on every fixture — unchanged, no-regression |
+
+**Test count deltas**: extension unit 206→224 (+18); extension integration 25→33 (+8); host unit 115/115 (unchanged); engineTest 64/64 (unchanged); corpus 42/42 (unchanged). No test was deleted without replacement (`messageQueue.test.ts`'s 3 no-loss assertions were carried into `panelState.test.ts`, not just removed), skipped, or weakened.
+
+### Summary
+
+**Overall**: ⚠️ Issues — the fix itself is sound and interactive UAT already confirmed the real behavior works end-to-end; however, the discrimination sensor found one genuine coverage gap (AC4's `main.ts` wiring) and one weak-kill (the flagship AC1/AC2/AC7 integration test doesn't itself verify delivery). Neither blocks shipping 1.0.3 — both are test-hardening follow-ups, not functional defects — but per this skill's rules a surviving mutant is reported, not silently waved through.
+
+**Spec-anchored check**: 6/7 numbered UX-06 ACs matched their spec-defined outcome with exact-value assertions; 1 (AC4) flagged as a coverage gap at the wiring level (module logic itself is proven).
+**Sensor**: 6 mutations injected (5 spec-named + 1 additional), **4/6 killed cleanly**, **1/6 killed only incidentally**, **1/6 survived**.
+**Gate**: extension unit 224/224 ✅ (+18 vs. 206 baseline), extension integration 33/33 ✅ (+8 vs. 25 baseline), host build+test 115/115 ✅ (unchanged), engineTest 64/64 ✅ (unchanged), corpus 42/42 @ 0.000% ✅ (unchanged).
+
+**What works**: the snapshot-replay mechanism (`PanelStateStore`) correctly reconstructs and redelivers config/themes/result/busy on every `ready`, proven at the unit level with exact payload assertions; the per-doc PNG sweep correctly mirrors the host's `PngWriter.tokenOf` and is proven both by a cross-language token pin and a real fs-level integration test; the webview-side `setState` cache's pure capture/restore logic is proven correct in isolation; and interactive UAT (recorded in `STATE.md`'s Handoff, 2026-07-30) independently confirmed the full real-VS-Code behavior — multiple tabs keep content across switches with pan/zoom preserved, a hidden tab's save shows fresh on switch-back, a values-file save updates every dependent, closing one preview leaves others working, and a deleted hidden file shows the file-gone notice on reveal.
+
+**Issues found**:
+1. **AC4 wiring coverage gap** (Minor — UAT-covered, automated-regression-uncovered): `extension/webview-ui/main.ts`'s actual calls to `persistState()`/`vscode.getState()` at boot have zero automated test coverage — only the extracted pure functions in `panelStateCache.ts` are unit-tested. A future refactor that silently drops this wiring would pass the full gate (224/224 + 33/33) with no signal. **Fix**: add a `test-electron` assertion (or a thin jsdom harness around `main.ts` itself, if one can be built without a full bundler run) that drives a hide/reveal cycle and confirms the webview's actual rendered zoom/pan/image survive it, not just `lastApplied()`'s extension-side view.
+2. **Weak-kill on the flagship AC1/AC2/AC7 repro test** (Minor — the bug class is still caught overall, just not by its own dedicated test): `multitab.test.ts`'s "revealing a hidden preview tab re-delivers its state..." test asserts only `lastApplied()`/`replayCount`, both of which are set independently of whether the replay was actually posted to the webview. **Fix**: either move `replayCount++` inside the actual replay-posting branch (so it can only be true evidence of delivery), or add a direct assertion on the messages passed to `entry.panel.webview.postMessage` (e.g. a test-only spy/hook) in this specific test.
+
+**Next steps**: Route both issues as fix tasks (T105/T106) if the team wants hardening before shipping, per this skill's fix→re-verify loop — or accept them as documented residual risk given the passed interactive UAT and ship 1.0.3 as planned, recording that decision in `STATE.md`. Recommend the latter given severity is Minor and UAT already passed, but this is the user's call, not mine to make silently.
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| UX-06 | ✅ Verified — T99–T104 (phase 23) complete 2026-07-30 (as recorded by the author at close-out) | ✅ Verified, with 2 non-blocking test-hardening gaps flagged (see Issues Found) — functional behavior independently confirmed via interactive UAT |
+
+### Lessons
+
+Two grounded `surviving_mutant` signals were produced (Discrimination Sensor: mutation `a`'s weak kill, and the "extra" fully-surviving AC4 wiring mutation). `scripts/lessons.py` is not present at the repo root in this checkout (consistent with the prior DF-5 verification record's finding) — **using the documented no-script fallback**, both lessons were hand-recorded as new candidates (`L-006`, `L-007`) directly in `.specs/lessons.json` and `.specs/LESSONS.md`, following the same schema, phrasing rules, and `status: candidate` / `recurrence: 1` bookkeeping the script would otherwise own. Stating this explicitly per the fallback's requirement: **this accounting is best-effort, hand-maintained, not script-verified.**
+
+- **L-006** (`surviving_mutant`, scope `extension/webview-ui`): a pure webview-ui state module having its own unit tests does not prove the live entry script actually calls it — add a real-webview assertion for the wiring itself.
+- **L-007** (`surviving_mutant`, scope `extension/panel`): don't increment a delivery/replay observability counter unconditionally in a handler — gate it to the branch that actually delivers, or assert the payload directly.
+
+Neither lesson is promotable yet (recurrence 1/2 distinct features, both logged under this same `android-xml-preview` feature folder) — they remain `candidate` until corroborated by a second, distinct feature.

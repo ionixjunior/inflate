@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 6,
+  "next_id": 8,
   "lessons": [
     {
       "id": "L-001",
@@ -94,6 +94,42 @@
       ],
       "created": "2026-07-27T22:32:38Z",
       "last_seen": "2026-07-27T22:32:38Z"
+    },
+    {
+      "id": "L-006",
+      "key": "surviving_mutant::a pure webview ui state module e g a vscode setstate getstate cache having its own isolated unit tests does not prove the live entry script actually calls it at boot or on every relevant event add a real webview assertion that would fail if the call site wiring were removed not just the extracted module s unit tests",
+      "text": "A pure webview-ui state module (e.g. a vscode.setState/getState cache) having its own isolated unit tests does not prove the live entry script actually calls it at boot or on every relevant event; add a real-webview assertion that would fail if the call-site wiring were removed, not just the extracted module's unit tests.",
+      "signal": "surviving_mutant",
+      "scope": "extension/webview-ui",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "extension/webview-ui/main.ts (persistState()/getState() boot wiring, DF-6 UX-06 AC4) — dropping the wiring entirely left all 224 unit + 33 integration tests green (extension/webview-ui)"
+      ],
+      "created": "2026-07-30T12:00:00Z",
+      "last_seen": "2026-07-30T12:00:00Z"
+    },
+    {
+      "id": "L-007",
+      "key": "surviving_mutant::do not increment a delivery replay observability counter unconditionally in a handler increment it only from inside the branch that actually performs the delivery or a regression that silently skips delivery will still show the counter advancing and slip past tests that check the counter instead of the payload",
+      "text": "Do not increment a delivery/replay observability counter unconditionally in a handler; increment it only from inside the branch that actually performs the delivery, or a regression that silently skips delivery will still show the counter advancing and slip past tests that check the counter instead of the payload.",
+      "signal": "surviving_mutant",
+      "scope": "extension/panel",
+      "status": "candidate",
+      "features": [
+        "android-xml-preview"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "extension/src/panel.ts:227-233 (ready handler replayCount, DF-6 UX-06 AC1/AC2/AC7) — gating the actual replay to first-ready-only while replayCount kept incrementing unconditionally left the dedicated RED-first-repro test green; only the unrelated AC5 config test happened to catch it (extension/panel)"
+      ],
+      "created": "2026-07-30T12:00:00Z",
+      "last_seen": "2026-07-30T12:00:00Z"
     }
   ]
 }
