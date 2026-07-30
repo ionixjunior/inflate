@@ -52,9 +52,16 @@ import {
   shouldRequestPixelScale,
   type PanOffset,
 } from './viewport';
+import { captureState, restoreState } from './panelStateCache';
 
-// Provided by the VS Code webview runtime.
-declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+// Provided by the VS Code webview runtime. `getState`/`setState` are the only storage that survives
+// a hidden webview's context being destroyed and recreated (DF-6, T101) — plain module variables
+// below reset to their initial values on every reload since the script re-executes from scratch.
+declare function acquireVsCodeApi(): {
+  postMessage(msg: unknown): void;
+  getState(): unknown;
+  setState(state: unknown): void;
+};
 
 const vscode = acquireVsCodeApi();
 let state: PanelViewModel = initialViewModel;
@@ -69,6 +76,13 @@ let docKind: 'layout' | 'drawable' = 'layout';
 /** The active custom device size, if any (fix-pack POLISH-07, FP-3 AC5) — drives the Device picker's
  * transient "Custom (W×H dp)" entry; cleared locally the moment a preset is picked (FP-3 AC6). */
 let customSize: { w: number; h: number } | undefined;
+
+/** Cache the current image + viewport transients via `vscode.setState` (T101, DF-6, UX-06 AC4) — the
+ * extension's replay (T99) is still authoritative and reconciles moments later; this only kills the
+ * blank flash between a reloaded webview's boot and that round-trip. */
+function persistState(): void {
+  vscode.setState(captureState(state, zoom, pan));
+}
 
 /** Recompute the effective zoom against the current stage size + image, applying the resulting
  * pixel-scale escalation (debounced persist, T52/UX-03) and CSS transform. */
@@ -92,6 +106,7 @@ function applyZoom(nextSetting: ZoomState['zoom']): void {
   zoomPersistTimer = setTimeout(() => vscode.postMessage({ type: 'zoomChanged', zoom: zoom.zoom }), 250);
 
   if (requestPixelScale) vscode.postMessage({ type: 'configChanged', pixelScale: zoom.pixelScale });
+  persistState();
 }
 
 /** Apply the current zoom/pan as a CSS transform on the preview image. */
@@ -341,6 +356,7 @@ $('stage')?.addEventListener(
         zoom.percent,
       );
       paintTransform();
+      persistState();
     }
   },
   { passive: false },
@@ -455,6 +471,7 @@ window.addEventListener('pointerup', (e: PointerEvent) => {
     }
     return;
   }
+  if (dragStart) persistState(); // commit the pan-drag's final position (avoid per-move chatter)
   dragStart = undefined;
 });
 
@@ -518,6 +535,18 @@ document.addEventListener('change', (e) => {
     vscode.postMessage(buildThemeChanged(theme));
   }
 });
+
+// Restore the cached image + viewport synchronously, BEFORE the 'ready' round-trip — the extension's
+// replay (T99) is still authoritative and reconciles moments later; this only kills the blank flash
+// a reloaded (hidden->revealed) webview would otherwise show while that round-trip is in flight
+// (T101, DF-6, UX-06 AC4).
+const cached = vscode.getState() as ReturnType<typeof captureState> | undefined;
+if (cached) {
+  const restored = restoreState(cached);
+  zoom = restored.zoom;
+  pan = restored.pan;
+  if (restored.viewModel) state = { ...state, ...restored.viewModel };
+}
 
 // Signal readiness so the extension can flush any queued state.
 vscode.postMessage({ type: 'ready' });
