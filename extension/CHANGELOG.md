@@ -11,6 +11,13 @@ Bug fixes — no new capability.
   authored projects — failed to preview with a misleading `PI must not start with xml` error. Such
   files now preview correctly; a genuine syntax error in a BOM'd file now points at its real line
   instead.
+- Fixed: with more than one preview open, switching back to a hidden tab showed a blank panel.
+  Multiple preview tabs now keep their content when switching between them.
+- Fixed: a file edited while its preview tab was hidden showed nothing new on switching back — the
+  fresh result now shows immediately.
+- Fixed: closing one preview could break the images of other open previews. Closing a preview no
+  longer affects any other open preview.
+- Zoom and pan now survive switching away from a preview tab and back.
 
 ## 1.0.2
 
