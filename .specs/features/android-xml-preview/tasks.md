@@ -3477,8 +3477,10 @@ the no-BOM-fixture blindness), the Verifier distills it via `scripts/lessons.py`
 tabs render in the background (eager); trigger stays on-save; no restart persistence (deferred).
 Remaining defaults (snapshot-replay mechanism, queue retirement, no burst prioritization, release
 vehicle) are assumption-logged pending spec approval — no separate context.md section needed.
-**Status**: **Approved by the user 2026-07-29 — ready for execution (T99 next; execution to start
-in a fresh session per the Handoff in `.specs/STATE.md`).**
+**Status**: ✅ **T99–T104 (phase 23) COMPLETE & VERIFIED — 2026-07-30.** All 6 tasks committed, one
+atomic commit per task (`d3c9403`, `a55551f`, `2ff9b07`, `b9addf8`, `82b7bb2`, this commit); AD-024
+recorded in `.specs/STATE.md`; interactive UAT PASSED in a real VS Code Extension Development Host
+(2026-07-30); ships in patch **1.0.3**.
 
 ### Test Coverage Matrix (DF-6)
 
@@ -3563,7 +3565,7 @@ real-webview precedent.
 - [ ] Gates green: `cd extension && npm test` (unit + integration), zero skipped
 
 **Tests**: extension unit + integration — **Gate**: quick
-**Status**: [ ] pending
+**Status**: [x] complete (commit `d3c9403`)
 
 ---
 
@@ -3594,7 +3596,7 @@ scenarios; T99's replay observability hook.
 - [ ] Gates green: quick
 
 **Tests**: extension integration — **Gate**: quick
-**Status**: [ ] pending
+**Status**: [x] complete (commit `a55551f`)
 
 ---
 
@@ -3625,7 +3627,7 @@ extend `viewport.test.ts` / add cache coverage in the webview-ui test pattern wi
 - [ ] Gates green: quick
 
 **Tests**: webview-ui jsdom unit — **Gate**: quick
-**Status**: [ ] pending
+**Status**: [x] complete (commit `2ff9b07`)
 
 ---
 
@@ -3657,7 +3659,7 @@ the fake host writes none).
 - [ ] Gates green: quick
 
 **Tests**: extension unit + integration — **Gate**: quick
-**Status**: [ ] pending
+**Status**: [x] complete (commit `b9addf8`)
 
 ---
 
@@ -3684,7 +3686,7 @@ the release vehicle with the user — never silently open a new section. No `pac
 - [ ] Extension no-regression sanity green: `cd extension && npm test`
 
 **Tests**: none (docs — no matrix layer for markdown content) — **Gate**: quick (extension sanity)
-**Status**: [ ] pending
+**Status**: [x] complete (commit `82b7bb2`)
 
 ---
 
@@ -3719,7 +3721,7 @@ only); this file (statuses).
       `cd host && ./gradlew build test && ./gradlew engineTest`, `npm run corpus`
 
 **Tests**: none (bookkeeping) — **Gate**: full + interactive UAT
-**Status**: [ ] pending
+**Status**: [x] complete (this commit; interactive UAT PASSED)
 
 ### Phase Execution Map (DF-6)
 

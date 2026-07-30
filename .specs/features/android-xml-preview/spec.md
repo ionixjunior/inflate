@@ -1443,7 +1443,7 @@ error-over-dimmed-image leg) alone must kill it.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| UX-06 | P1-A + P1-F (preview loop / hot reload), in service of the multi-file preview workflow | Tasks | In Tasks — approved by the user 2026-07-29; execution pending (T99–T104, phase 23, branch `fix/multi-tab-preview`) |
+| UX-06 | P1-A + P1-F (preview loop / hot reload), in service of the multi-file preview workflow | Tasks | ✅ Verified — T99–T104 (phase 23) complete 2026-07-30, `fix/multi-tab-preview`; AD-024; interactive UAT PASSED; ships in patch 1.0.3 |
 
 **Unchanged:** the scheduler (UX-02 coalescing, dependency fan-out, latest-wins discipline — already
 correct for N documents), the wire protocol, the host (PngWriter's per-doc naming and

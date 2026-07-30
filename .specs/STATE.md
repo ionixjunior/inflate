@@ -164,42 +164,48 @@
 - **Date**: 2026-07-29
 - **Status**: active — ships as patch **1.0.3** via REL-04 (bump `patch`); a RECOMMENDED (not mandated) post-release smoke is the user re-opening the originally reported layout after removing its stray `a`.
 
+### AD-024 (post-release defect fix DF-6, 2026-07-30)
+- **Decision**: Extension-side authoritative state snapshot (`extension/src/panelState.ts`'s `PanelStateStore`) replayed on EVERY webview `ready`, first load or a hidden-tab's reload alike — retires the old `PendingMessageQueue` (`messageQueue.ts`, which only ever flushed messages posted before the FIRST ready). The store holds one latest-wins slot per message type (`setConfig`/`setThemes`/`setImage`/`setError`/`fileGone`/`setBusy`) plus a SEPARATE last-good-image slot so an error-after-ok still replays as `[image, error]` for stale display; config is re-derived FRESH at replay time via a constructor-injected hydration callback (never a cached open-time copy) so a post-open toolbar change is never reverted. `retainContextWhenHidden` stays `false` (the one-line `true` alternative was explicitly rejected — linear per-panel memory growth against the stated "a lot of XML files" workflow). A webview-side `vscode.setState`/`getState` cache (`webview-ui/panelStateCache.ts`) additionally persists the last image + zoom/pan across a context-destroy/recreate cycle, repainting synchronously at boot before the replay round-trip lands — kills the blank flash on reveal; the replay is still authoritative and a same-URI re-apply is idempotent. The panel-close PNG sweep is now scoped per-document (`pngTokenOf`, mirroring `PngWriter.kt:45`'s `tokenOf` exactly) instead of sweeping every PNG in the session output dir.
+- **Reason**: Found in real-world use (2026-07-29): previewing a second layout while a first was open hid the first (both open via `inflate.openPreview` with no source editor shown; VS Code reuses the existing side group when the same column stays active — `showEditor`'s doc comment in `multitab.test.ts` traces the exact mechanism), and its webview context was destroyed (`retainContextWhenHidden: false`); nothing ever re-delivered its state on reveal, so it came back permanently blank. Root cause code-verified against `panel.ts:213` (webview options) and a grep-confirmed absence of `setState`/`getState` anywhere in `webview-ui/` pre-fix. This is the **third real-webview-behavior escape** in the family after AD-017 (resource-scheme 401) and AD-018 (native image drag): webview **lifecycle** (destroy/recreate on hide/reveal) is invisible to both the fake-host integration suite (asserts `lastApplied`, the extension-side tracked truth — correctly updated for hidden panels — never the webview-delivered truth) and the jsdom webview-ui suite (a DOM that's never destroyed). Tightening: `multitab.test.ts` drives REAL webview panels through hide/reveal in test-electron (not fake-webview `lastApplied` assertions alone), and interactive UAT was mandatory at close-out per the AD-018 rule extended to this class.
+- **Trade-off**: Two small test-only observability additions were needed inside the T99 seam to make T100's hidden-state scenarios provable at all (neither changes T99's behavior): `PreviewPanelManager.lastConfigSent(docPath)` (the config actually included in the most recent replay — proves `deriveConfig` is re-invoked fresh, not cached) and wiring `markFileGone`'s `entry.fileGone` flag into `lastApplied()` (previously `AppliedState.status` promised a `'fileGone'` value `lastApplied()` never actually returned — a pre-existing, unrelated observability gap this fix closed incidentally). Test methodology note: reveal must be simulated via `panel.reveal()` directly (what a real tab click does) — re-invoking `inflate.openPreview` always dispatches an unconditional fresh render (its `'reopen'` cause) that would silently clobber every hidden-state scenario. Each preview's zoom must be pinned to a fixed percent before opening in tests — the real webview's zoom-to-fit computation against the fake host's 1x1 test PNG can otherwise cross the 200% pixel-scale threshold and post its own `configChanged`, an unrelated pre-existing T52/UX-03 behavior that raced these assertions.
+- **Scope**: `extension/src/panelState.ts` (new) + `.test.ts`, `extension/src/panel.ts`, `extension/src/activation.ts`, `extension/webview-ui/panelStateCache.ts` (new) + `.test.ts`, `extension/webview-ui/main.ts`, `extension/src/test/integration/multitab.test.ts` (new), retires `extension/src/messageQueue.ts` + `.test.ts`, `extension/CHANGELOG.md` `## 1.0.3`, `UX-06` traceability. Host/scheduler/wire-protocol untouched (already multi-document-correct).
+- **Date**: 2026-07-30
+- **Status**: active — ships as patch **1.0.3** via REL-04 (bump `patch`, same release as AD-023/DF-5); interactive UAT recorded in this Handoff.
+
 ## Handoff
 
-- **DF-6 AMENDMENT — SPEC + TASKS APPROVED (2026-07-29), EXECUTION NOT STARTED. Next action:
-  execute T99–T104 (phase 23, single inline batch) on branch `fix/multi-tab-preview` per the
-  Execution Protocol at the top of `tasks.md`.** Defect: with >1 preview open, a hidden preview
-  tab comes back BLANK on reveal; renders completed while hidden are never shown; closing one
-  preview deletes every document's PNGs. Root cause (code-verified, extension-panel layer only —
-  scheduler/host/protocol are multi-doc-correct and untouched): `retainContextWhenHidden: false`
-  (`extension/src/panel.ts:213`) + all preview state living only in the webview DOM via
-  `postMessage` (no `setState` anywhere in `webview-ui/`) → VS Code destroys hidden webviews and
-  the re-`ready` flushes an empty `PendingMessageQueue` (queue only ever holds pre-FIRST-ready
-  messages); `postMessage` to a dead webview is silently dropped; `onDidDispose → sweepPngs()`
-  (`panel.ts:223-226`) sweeps ALL PNGs, defeating the host's per-doc `PngWriter` naming
-  (`<docToken>__<renderId>.png`, `keepPerDoc=2`). Third real-webview-behavior escape (family:
-  AD-017 401, AD-018 drag) — fake-webview `lastApplied` assertions and jsdom are structurally
-  blind to webview lifecycle. Spec: "Defect Amendment (2026-07-29): DF-6" in `spec.md`,
-  requirement **UX-06** (7 ACs + edges; assumption table all confirmed). Fix shape (approved):
-  T99 vscode-free `PanelStateStore` snapshot replayed on EVERY webview `ready` (retires
-  `messageQueue.ts`; config re-derived at replay time via a hydration callback — never an
-  open-time copy; separate last-good-image slot so error replays as [image, error] for stale
-  display; RED-first integration repro against real webviews recorded in the commit body) →
-  T100 hidden-state pins (save-while-hidden, config-change-then-reveal, file-gone, host-error,
-  reveal-mid-render; expect NO further prod code) → T101 webview-side `vscode.setState` cache
-  (pan/zoom survive, instant repaint) → T102 per-doc PNG sweep (TS token mirrors
-  `PngWriter.tokenOf`, cross-language pin) → T103 update the **1.0.3** release notes (user
-  decision: DF-6 ships in the pending 1.0.3; STOP if a `Release 1.0.3` commit already exists) →
-  T104 record **AD-024** + MANDATORY interactive UAT (AD-018 rule — no headless skip) + close-out.
-  User decisions locked 2026-07-29 (do not re-ask): hidden tabs render eagerly in the background;
-  trigger stays on-save; NO restart persistence (deferred idea); ships in 1.0.3;
-  `retainContextWhenHidden: true` rejected (per-panel memory growth). After T104: always-on
-  Verifier (spec-anchored check + discrimination sensor — candidates listed in the spec's
-  verification note) appends "Multi-Tab Preview Fix Verification" to `validation.md`. Gates:
-  quick = `cd extension && npm test`; full at close adds host `build test` + `engineTest` +
-  `npm run corpus` (host untouched — no-regression only). Baselines at draft: extension 206
-  unit / 25 integration; re-baseline before T99; counts only grow (minus retired
-  `messageQueue.test.ts`, whose no-loss assertions move into `panelState.test.ts`).
+- **DF-6 AMENDMENT — T99–T104 (phase 23) EXECUTE COMPLETE, interactive UAT PASSED (2026-07-30).**
+  Defect: with >1 preview open, a hidden preview tab came back BLANK on reveal; renders completed
+  while hidden were never shown; closing one preview deleted every document's PNGs. Root cause
+  recorded as **AD-024** in this file's Decisions section. All 6 tasks committed, one atomic
+  commit per task on branch `fix/multi-tab-preview`: `d3c9403` (T99 — vscode-free
+  `PanelStateStore` + replay-on-ready wiring, `messageQueue.ts` retired, RED-first integration
+  repro recorded pre-fix as a TypeScript compile failure — `replayCount`, the fix's own
+  observability hook, doesn't exist without the store — confirmed by stashing `panel.ts`/
+  `activation.ts` back to HEAD and re-running `test:integration`), `a55551f` (T100 — six more
+  real-webview hidden-state scenarios in `multitab.test.ts`; two small test-observability
+  additions inside T99's seam: `lastConfigSent()` and wiring `markFileGone`'s `entry.fileGone`
+  into `lastApplied()` — the latter closed a pre-existing gap where `AppliedState.status` promised
+  `'fileGone'` but never returned it), `2ff9b07` (T101 — `webview-ui/panelStateCache.ts`
+  `vscode.setState`/`getState` cache, mirrors `viewmodel.ts`/`viewport.ts`'s vscode-free pattern),
+  `b9addf8` (T102 — per-doc PNG sweep via `pngTokenOf`, mirrors `PngWriter.kt:45`'s `tokenOf`
+  exactly, cross-language pin), `82b7bb2` (T103 — `## 1.0.3` CHANGELOG bullets; no `Release 1.0.3`
+  commit existed, so REL-04's patch bump still applies at release time), and this commit (T104 —
+  AD-024 + this Handoff + `spec.md`'s UX-06 traceability flip + `tasks.md` statuses).
+  **Interactive UAT PASSED (2026-07-30)** — user ran the Extension Development Host (real JDK/
+  engine path, not the fake-host harness) against `fixtures/gradle-sample`: two+ layouts open and
+  switching tabs repeatedly (every tab showed its content, pan/zoom kept); editing + saving a
+  hidden tab's file showed the fresh render on switch-back; saving `values/colors.xml` updated
+  every open dependent; closing one preview left the other displaying correctly through a later
+  hide/reveal; deleting a previewed file while hidden showed the file-gone notice on reveal — "everything worked perfectly."
+  Gates green throughout: extension unit 224/224 (206 baseline − 3 retired `messageQueue.test.ts`
+  + 21 new across `panelState.test.ts`/`panelStateCache.test.ts`), extension integration 33/33 (25
+  baseline + 8 new in `multitab.test.ts`), host `build test` + `engineTest` PASS (host untouched —
+  no-regression only, Gradle UP-TO-DATE), corpus 42/42 @ 0.000% diff. **Status: DF-6 COMPLETE.**
+  Ships as **patch 1.0.3** via REL-04 (same release as AD-023/DF-5) whenever the next release is
+  triggered. Next action: the always-on Verifier (author ≠ verifier) — spec-anchored outcome check
+  + discrimination sensor per the candidates listed in `spec.md`'s DF-6 verification note — appends
+  "Multi-Tab Preview Fix Verification" to `validation.md`.
 - **DF-5 AMENDMENT — T95–T97 EXECUTE COMPLETE (2026-07-29), T98 (this commit) closes out.** Root
   cause (verified to the pinned parser's jar, not assumed): a leading UTF-8 BOM survives disk
   ingestion (`File.readText()` doesn't strip U+FEFF), and `Preprocessor.validate`'s
