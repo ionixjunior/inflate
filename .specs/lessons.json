@@ -111,7 +111,13 @@
         "extension/webview-ui/main.ts (persistState()/getState() boot wiring, DF-6 UX-06 AC4) — dropping the wiring entirely left all 224 unit + 33 integration tests green (extension/webview-ui)"
       ],
       "created": "2026-07-30T12:00:00Z",
-      "last_seen": "2026-07-30T12:00:00Z"
+      "last_seen": "2026-07-30T13:00:00Z",
+      "resolution": {
+        "date": "2026-07-30",
+        "feature": "android-xml-preview",
+        "commit": "73e16f3",
+        "note": "This instance fixed in the same feature: extension/webview-ui/main.test.ts (jsdom, real acquireVsCodeApi stub + real panelShellHtml + real main.ts import) now covers the boot-time getState()/persistState() wiring; re-verification (2026-07-30) independently reproduced the original wiring-deletion mutation and confirmed it fails 3/5 tests. Status stays 'candidate' (recurrence 1/2 distinct features) — fixing this instance doesn't corroborate the general pattern from a second, unrelated feature."
+      }
     },
     {
       "id": "L-007",
@@ -129,7 +135,13 @@
         "extension/src/panel.ts:227-233 (ready handler replayCount, DF-6 UX-06 AC1/AC2/AC7) — gating the actual replay to first-ready-only while replayCount kept incrementing unconditionally left the dedicated RED-first-repro test green; only the unrelated AC5 config test happened to catch it (extension/panel)"
       ],
       "created": "2026-07-30T12:00:00Z",
-      "last_seen": "2026-07-30T12:00:00Z"
+      "last_seen": "2026-07-30T13:00:00Z",
+      "resolution": {
+        "date": "2026-07-30",
+        "feature": "android-xml-preview",
+        "commit": "101ffa8",
+        "note": "This instance fixed in the same feature: PanelEntry.replayPostedCount (extension/src/panel.ts) now increments only inside the actual post loop, and multitab.test.ts's revealA()/flagship repro test wait on it instead of replayCount. Re-verification (2026-07-30) independently re-applied the exact original mutation (guard the replay+post block behind `if (entry.replayCount === 1)` while leaving `entry.replayCount++` unconditional) and confirmed the flagship repro test now fails directly (timeout), along with 6 other revealA()-based scenarios, instead of being killed only incidentally via the unrelated AC5 test. Status stays 'candidate' (recurrence 1/2 distinct features) — fixing this instance doesn't corroborate the general pattern from a second, unrelated feature."
+      }
     }
   ]
 }

@@ -1036,3 +1036,84 @@ Two grounded `surviving_mutant` signals were produced (Discrimination Sensor: mu
 - **L-007** (`surviving_mutant`, scope `extension/panel`): don't increment a delivery/replay observability counter unconditionally in a handler — gate it to the branch that actually delivers, or assert the payload directly.
 
 Neither lesson is promotable yet (recurrence 1/2 distinct features, both logged under this same `android-xml-preview` feature folder) — they remain `candidate` until corroborated by a second, distinct feature.
+
+---
+
+## Re-Verification (fix iteration 1 closed, 2026-07-30)
+
+**Spec**: "Defect Amendment (2026-07-29): DF-6 — hidden preview tabs go blank" in `spec.md`, requirement **UX-06**
+**Diff range**: `44d1e4c..HEAD` (9 commits total: the 6 original T99-T104 commits `d3c9403`/`a55551f`/`2ff9b07`/`b9addf8`/`82b7bb2`/`a3e9ebe`, plus 3 fix-iteration-1 commits `73e16f3` (fix T105), `101ffa8` (fix T106), `4219ed5` (docs))
+**Verifier**: fresh independent sub-agent (author ≠ verifier; no prior-pass claim trusted without re-derivation)
+**Scope of this pass**: focused re-verification of the 2 Minor gaps left open by the "Multi-Tab Preview Fix Verification (2026-07-30)" section above (AC4 wiring coverage gap; weak-kill on the flagship AC1/AC2/AC7 repro test), plus a full from-scratch gate re-run and a diff-surface spot-check for regressions/weakened tests.
+
+### Gap 1 — AC4 wiring coverage gap (fix T105, commit `73e16f3`)
+
+**Fix reviewed**: `extension/webview-ui/main.test.ts` (new, 130 lines) — `@vitest-environment jsdom`, stubs `acquireVsCodeApi`, loads the real `panelShellHtml` markup from `../src/webview` (vscode-free), and `import('./main')` fresh per test (`vi.resetModules()` in `beforeEach`). 5 tests: boots blank with no cache; repaints a cached image and restores exact pan/zoom synchronously (`img.style.transform` checked against a computed `translate(...) scale(...)` string); restores a dimmed image for a cached error result; `persistState()` calls `vscode.setState` with the right shape on `setImage`; a replayed newer image supersedes what was cached at boot. This is a genuine test of `main.ts`'s own module-level code (the DOM assertions can only pass if the real entry script's boot sequence ran), not a re-test of `panelStateCache.ts`'s pure functions.
+
+**Independent discrimination check** (scratch-only): edited `extension/webview-ui/main.ts` — no-op'd `persistState()`'s body and deleted the boot-time `vscode.getState()`/`restoreState()` block entirely (the exact wiring the original sensor found uncovered) — then ran `cd extension && npx vitest run webview-ui/main.test.ts`.
+**Result**: ❌ **3/5 tests failed** (RED): the cached-image-restore test (`img.src`/`transform` mismatch), the cached-error-restore test (`img.style.opacity` mismatch), and the `persistState()`-on-`setImage` test (`setState` never called). 2/5 passed unaffected (the no-cache-boot test and the "replayed newer image supersedes boot cache" test, which don't depend on the mutated lines).
+Restored via `git checkout -- extension/webview-ui/main.ts`; `git status --short` and `git diff --stat` both returned empty — tree confirmed byte-identical to HEAD.
+
+**Verdict**: ✅ **Gap 1 is genuinely closed.** The wiring this gap flagged as uncovered now has a real, non-shallow, independently-reproduced kill.
+
+### Gap 2 — Weak-kill on the flagship AC1/AC2/AC7 repro test (fix T106, commit `101ffa8`)
+
+**Fix reviewed**: `extension/src/panel.ts` adds `PanelEntry.replayPostedCount` (and its `AppliedState` mirror), incremented only inside the replay `for` loop (`extension/src/panel.ts:251-254`), distinct from `replayCount` (incremented unconditionally at `extension/src/panel.ts:247` on every `ready`). `extension/src/test/integration/multitab.test.ts`'s `revealA()` helper (used by all 7 hide/reveal scenarios) and the flagship repro test now wait on/assert `replayPostedCount` instead of `replayCount`; the flagship test keeps a separate `replayCount === 1` assertion for the distinct "ready fires once" semantic and adds a new assertion (`postedAfterFirstOpen > 0`) — purely additive, nothing weakened or removed.
+
+**Independent discrimination check**: reproduced the prior Verifier's exact mutation in `extension/src/panel.ts`'s `handleWebviewMessage` — wrapped the replay-derive+post block in `if (entry.replayCount === 1) { ... }` while leaving `entry.replayCount++` unconditional (reproducing "only the first ready ever replays" — the original bug shape). Rebuilt (`npm run build && npm run compile-tests`) and ran `MOCHA_GREP="multi-tab preview" node ./out/test/integration/runTest.js`.
+**Result**: ❌ **7/8 tests in the suite failed**, including — critically — the flagship test itself: `revealing a hidden preview tab re-delivers its state instead of coming back blank (RED-first repro, AC1/AC2/AC7)` failed directly with `Error: condition not met within timeout` inside `revealA()`, because `replayPostedCount` never advances past the first open. This is a direct kill of the dedicated test, not an incidental one via AC5's `lastConfigSent` (which also failed, along with 5 other scenarios sharing `revealA()`).
+Restored via `git checkout -- extension/src/panel.ts`; `git status --short` and `git diff --stat` both returned empty. Rebuilt clean (`npm run build && npm run compile-tests`) before the full gate re-run below.
+
+**Verdict**: ✅ **Gap 2 is genuinely closed.** The flagship test now discriminates on its own; the original weak-kill trap is gone.
+
+### Full Gate Check (all re-run from scratch by this Verifier, not inferred from commit bodies)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Extension unit | `cd extension && npx vitest run` | ✅ **229/229 passed**, 0 failed (18 files). Prior baseline (iteration-0 close): 224. Delta: **224→229 (+5)** — all 5 new in `webview-ui/main.test.ts` |
+| Extension integration | `cd extension && npm run test:integration` | ✅ **33/33 passed**, 0 failed. Unchanged count vs. prior baseline (33) — `multitab.test.ts`'s scenario count didn't change, only its internal assertions were strengthened |
+| Host build+test | `cd host && ./gradlew build test` | ✅ **115 tests, 0 failures, 0 ignored** (`build/reports/tests/test/index.html`) — UP-TO-DATE (cached), matches prior baseline exactly; no-regression, host untouched by this diff (confirmed via `git diff 44d1e4c..HEAD --stat`, no `host/` path present) |
+| Host engineTest | `cd host && ./gradlew engineTest` | ✅ **64 tests, 0 failures, 0 ignored** (`build/reports/tests/engineTest/index.html`) — UP-TO-DATE (cached), matches prior baseline exactly |
+| Corpus | `npm run corpus` (repo root) | ✅ **42/42 passed**, 0.000% diff on every fixture — unchanged, no-regression |
+
+**Test count deltas**: extension unit 224→229 (+5, all new boot-wiring tests); extension integration 33→33 (unchanged count, assertions strengthened in-place); host unit 115/115 (unchanged); engineTest 64/64 (unchanged); corpus 42/42 (unchanged). No test was deleted, skipped, or weakened in this iteration — `git show 101ffa8 -- extension/src/test/integration/multitab.test.ts` confirms every changed assertion either got stricter (waits on `replayPostedCount`, a stronger-proof counter, instead of `replayCount`) or was added (`assert.ok(postedAfterFirstOpen > 0, ...)`); nothing was removed or made vaguer.
+
+### Diff-Surface Spot-Check (regressions / weakened tests)
+
+`git diff 44d1e4c..HEAD --stat` over the full 9-commit range shows only the files already accounted for by the two fix commits plus the original 6: `panel.ts` (+26/−15 net across both rounds), `panelState.ts`(+test), `activation.ts`, `messageQueue.ts`(+test, deleted, T99), `test/integration/multitab.test.ts`, `webview-ui/main.ts`, `webview-ui/main.test.ts` (new, T105), `webview-ui/panelStateCache.ts`(+test), `package.json`/`package-lock.json` (jsdom devDependency addition, T105), `CHANGELOG.md`, bookkeeping (`STATE.md`, `spec.md`, `tasks.md`, `validation.md`, `LESSONS.md`, `lessons.json`). Reviewed `git show --stat` for all 3 new commits individually: `73e16f3` is purely additive (new test file + devDependency); `101ffa8` touches only `panel.ts` (additive counter) and `multitab.test.ts` (strengthened, not weakened, per above); `4219ed5` is docs-only. No unrelated files touched, no scope creep, no "improvements" to untouched code.
+
+### Code Quality (re-checked for the 2 new commits)
+
+| Check | Pass? |
+| ----- | ----- |
+| No features beyond what was asked | ✅ — `replayPostedCount` and `main.test.ts` map directly to closing the 2 named gaps, nothing extra |
+| No abstractions for single-use code | ✅ — a plain counter field and a focused test file, no new indirection |
+| Only touched files required for task | ✅ — see diff-surface spot-check above |
+| Didn't "improve" unrelated code | ✅ |
+| Matches existing patterns/style | ✅ — `main.test.ts` follows the existing vitest/`@vitest-environment jsdom` convention already used elsewhere in the repo; `replayPostedCount` mirrors `replayCount`'s existing observation-hook idiom |
+| Would senior engineer approve? | ✅ — both fixes are minimal, surgical, and independently verified to discriminate |
+| Tests map to acceptance criteria and are non-shallow | ✅ — re-spot-checked both; see discrimination checks above |
+
+### Summary
+
+**Overall**: ✅ **PASS** — both Minor gaps from the prior verification pass are genuinely closed, independently re-derived (not inferred from commit messages or author claims). The full gate is green from a clean rebuild, with no test count regressions, no deleted/weakened assertions, and no unrelated changes. DF-6 (UX-06) is ready to ship as part of 1.0.3.
+
+**Spec-anchored check**: 7/7 numbered UX-06 ACs now cleanly covered — AC4's coverage gap (previously flagged) is closed by `main.test.ts`; AC1/AC2/AC7's weak-kill (previously flagged) is closed by `replayPostedCount`.
+**Gate**: extension unit 229/229 ✅ (+5 vs. 224 baseline), extension integration 33/33 ✅ (unchanged count, assertions strengthened), host build+test 115/115 ✅ (unchanged, no-regression), engineTest 64/64 ✅ (unchanged, no-regression), corpus 42/42 @ 0.000% ✅ (unchanged).
+**Sensor (re-verification, targeted)**: 2/2 gap-closing mutations independently reproduced and killed cleanly (main.ts wiring deletion → 3/5 new tests RED; panel.ts replay-gating regression → flagship repro test fails directly, 7/8 suite scenarios RED). Both scratch mutations reverted; real tree confirmed clean (`git status --short` empty) after each.
+
+**What works**: everything from the prior verification's "What works" section, plus: the webview's actual boot-time `getState()`/`persistState()` wiring is now under real, DOM-level automated test coverage that a future refactor cannot silently break without detection; and the flagship AC1/AC2/AC7 integration test now fails on its own if delivery is ever silently disabled, rather than relying on an unrelated test to catch it.
+
+**Issues found**: none remaining. Both issues from the prior pass are closed.
+
+**Next steps**: none required for DF-6 — ship 1.0.3 as planned. Fix→re-verify loop closes at iteration 1 (well within the 3-iteration bound).
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| UX-06 | ✅ Verified, with 2 non-blocking test-hardening gaps flagged | ✅ Verified — both gaps closed and independently re-derived, no open issues |
+
+### Lessons
+
+No new grounded signal was produced by this re-verification pass (both mutations injected were confirmatory re-checks of already-recorded lessons L-006/L-007, not new findings) — per this skill's rule ("a clean PASS with no signal → record nothing"), no new lesson entries were added. `scripts/lessons.py` is still not present at the repo root in this checkout (re-confirmed: `find . -iname lessons.py` → no match) — **using the documented no-script fallback again**, L-006 and L-007's existing entries in `.specs/lessons.json` and `.specs/LESSONS.md` were hand-annotated in place with a `resolution` note (fix commit, what changed, and why they remain `candidate` rather than being deleted or promoted): resolving one instance doesn't corroborate the general pattern from a second, distinct feature, so both stay `candidate` at recurrence 1/2 pending a future unrelated feature reproducing the same mistake shape. Stating this explicitly per the fallback's requirement: **this accounting is best-effort, hand-maintained, not script-verified.**
