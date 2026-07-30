@@ -29,6 +29,12 @@ interface PanelEntry {
   store: PanelStateStore;
   /** Incremented every time a `ready` message triggers a replay (test/observation hook, DF-6). */
   replayCount: number;
+  /** Cumulative count of messages actually POSTED to the webview during a replay (test/observation
+   * hook, DF-6). Unlike `replayCount` (incremented whenever a `ready` is handled, regardless of what
+   * happens next), this only advances inside the post loop itself, so a regression that still fires
+   * `ready` handling but skips the post loop (e.g. a queue-flush-only revert) can't leave it looking
+   * like delivery happened. */
+  replayPostedCount: number;
   /** The config object actually included in the most recent replay (test/observation hook, DF-6,
    * UX-06 AC5) — proves `deriveConfig` was re-invoked fresh at replay time rather than a stale
    * open-time copy being replayed. */
@@ -63,6 +69,10 @@ export interface AppliedState {
   /** Number of times this panel's state has been replayed on a `ready` signal — first load counts
    * as one (DF-6 observability hook: proves a hidden→revealed reload re-delivered state). */
   replayCount: number;
+  /** Cumulative count of messages actually posted to the webview during a replay (DF-6 observability
+   * hook) — advances only when a message is genuinely posted, unlike `replayCount` which advances on
+   * every `ready` regardless of what the replay computed. */
+  replayPostedCount: number;
 }
 
 /** A drawable config patch from the webview toolbar (state picker / size override). */
@@ -181,7 +191,13 @@ export class PreviewPanelManager {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return undefined;
     if (entry.fileGone) {
-      return { status: 'fileGone', hasStaleImage: entry.hasGoodImage, busy: entry.busy, replayCount: entry.replayCount };
+      return {
+        status: 'fileGone',
+        hasStaleImage: entry.hasGoodImage,
+        busy: entry.busy,
+        replayCount: entry.replayCount,
+        replayPostedCount: entry.replayPostedCount,
+      };
     }
     if (entry.hostError) {
       return {
@@ -190,6 +206,7 @@ export class PreviewPanelManager {
         errorMessage: entry.hostError,
         busy: entry.busy,
         replayCount: entry.replayCount,
+        replayPostedCount: entry.replayPostedCount,
       };
     }
     const r = entry.lastResponse;
@@ -205,6 +222,7 @@ export class PreviewPanelManager {
       warnings: warningsToVm(r.warnings),
       busy: entry.busy,
       replayCount: entry.replayCount,
+      replayPostedCount: entry.replayPostedCount,
     };
   }
 
@@ -230,7 +248,10 @@ export class PreviewPanelManager {
       const config = this.deriveConfig(docPath);
       entry.lastConfigSent = config;
       const replay = entry.store.replay(() => ({ type: 'setConfig', config }));
-      for (const m of replay) void entry.panel.webview.postMessage(m);
+      for (const m of replay) {
+        void entry.panel.webview.postMessage(m);
+        entry.replayPostedCount++;
+      }
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
     } else if (msg?.type === 'configChanged') {
@@ -267,6 +288,7 @@ export class PreviewPanelManager {
       fileGone: false,
       store: new PanelStateStore(),
       replayCount: 0,
+      replayPostedCount: 0,
       busy: false,
     };
     this.entries.set(key, entry);

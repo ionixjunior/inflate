@@ -109,10 +109,14 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
 
   /** Reveal A directly (a real tab click never goes through `inflate.openPreview` — that command
    * always dispatches an unconditional fresh render, which would contaminate every scenario below)
-   * and wait for its next replay. */
-  async function revealA(a: InflateApi, panelA: vscode.WebviewPanel, replaysBefore: number): Promise<void> {
+   * and wait for the reveal's replay to actually POST at least one message. Waits on
+   * `replayPostedCount` rather than `replayCount` — the latter advances on every `ready` regardless
+   * of what the replay computed, so a regression that still fires `ready` handling but skips the
+   * post loop (e.g. reverting to queue-flush-only) would leave `replayCount` looking correct while
+   * nothing was actually delivered; `replayPostedCount` only advances inside the post loop itself. */
+  async function revealA(a: InflateApi, panelA: vscode.WebviewPanel, postedBefore: number): Promise<void> {
     panelA.reveal(undefined, /* preserveFocus */ true);
-    await waitFor(() => (a.panelManager.lastApplied(fileA)?.replayCount ?? 0) > replaysBefore);
+    await waitFor(() => (a.panelManager.lastApplied(fileA)?.replayPostedCount ?? 0) > postedBefore);
   }
 
   test('revealing a hidden preview tab re-delivers its state instead of coming back blank (RED-first repro, AC1/AC2/AC7)', async function () {
@@ -121,18 +125,23 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
 
     const panelA = await openAThenHideWithB(a);
     const replaysAfterFirstOpen = a.panelManager.lastApplied(fileA)!.replayCount;
+    const postedAfterFirstOpen = a.panelManager.lastApplied(fileA)!.replayPostedCount;
     assert.strictEqual(replaysAfterFirstOpen, 1, 'the first open replays exactly once');
+    assert.ok(postedAfterFirstOpen > 0, 'the first open must actually POST at least one replayed message');
 
     // Reveal A again. Pre-fix: the reloaded webview's `ready` flushes an empty pending queue —
-    // replayCount never advances and the panel stays blank forever (this assertion is the RED repro,
+    // nothing is ever posted and the panel stays blank forever (this assertion is the RED repro,
     // recorded pre-fix in this task's commit body). Post-fix: the store replays A's full snapshot.
-    await revealA(a, panelA, replaysAfterFirstOpen);
+    // Waiting on `replayPostedCount` (not `replayCount`) means this assertion can only pass if a
+    // message was genuinely posted to the webview this reveal — `replayCount` alone would still
+    // advance even under a regression that fires `ready` handling but skips the post loop entirely.
+    await revealA(a, panelA, postedAfterFirstOpen);
 
     const applied = a.panelManager.lastApplied(fileA)!;
     assert.strictEqual(applied.status, 'ok', 'A must still show its last successful render after being revealed');
     assert.ok(
-      applied.replayCount > replaysAfterFirstOpen,
-      'revealing A must trigger a fresh replay — its webview context was destroyed and reloaded',
+      applied.replayPostedCount > postedAfterFirstOpen,
+      'revealing A must actually POST its replayed messages to the webview, not merely fire a ready event',
     );
   });
 
@@ -140,7 +149,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     this.timeout(30000);
     const a = await api();
     const panelA = await openAThenHideWithB(a);
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
     const beforeId = a.panelManager.lastApplied(fileA)!.responseId!;
 
     // A is hidden — the scheduler still renders on save (background/eager, user decision 2026-07-29);
@@ -193,7 +202,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     a.panelManager.deliverWebviewMessage(fileA, { type: 'configChanged', night: true });
     await waitFor(() => (a.panelManager.lastApplied(fileA)?.responseId ?? 0) > beforeId);
     assert.strictEqual(a.configStore.get(fileA).preview.night, true, 'ConfigStore must hold the new value');
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
 
     // Hide A behind B, then reveal it directly (no re-invocation of inflate.openPreview).
     await showEditor(fileB);
@@ -212,7 +221,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     this.timeout(30000);
     const a = await api();
     const panelA = await openAThenHideWithB(a); // A hidden, B visible
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
 
     // Simulates activation.ts's onDidDeleteFiles listener firing while A's tab is hidden.
     a.panelManager.markFileGone(fileA);
@@ -226,7 +235,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     this.timeout(30000);
     const a = await api();
     const panelA = await openAThenHideWithB(a); // A hidden, B visible
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
 
     a.panelManager.applyHostError(fileA, new Error('simulated host crash while hidden'));
 
@@ -242,7 +251,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     this.timeout(30000);
     const a = await api();
     const panelA = await openAThenHideWithB(a); // A hidden, B visible
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
 
     // A render is in flight for hidden A — recorded but never live-posted (dead webview context).
     a.panelManager.setBusy(fileA, 'Rendering…');
@@ -305,7 +314,7 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
 
     // A's tab keeps working through a later hide/reveal cycle — reopening B (a fresh panel) hides A
     // again; the replay URI still resolves against A's surviving PNG.
-    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayPostedCount;
     await showEditor(fileB);
     await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(fileB));
     await waitFor(() => a.panelManager.lastApplied(fileB)?.status === 'ok');
