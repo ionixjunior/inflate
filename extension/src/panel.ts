@@ -29,8 +29,15 @@ interface PanelEntry {
   store: PanelStateStore;
   /** Incremented every time a `ready` message triggers a replay (test/observation hook, DF-6). */
   replayCount: number;
+  /** The config object actually included in the most recent replay (test/observation hook, DF-6,
+   * UX-06 AC5) — proves `deriveConfig` was re-invoked fresh at replay time rather than a stale
+   * open-time copy being replayed. */
+  lastConfigSent?: HydratedConfig;
   lastResponse?: RenderResponse;
   hostError?: string;
+  /** True once the document's source file has been reported gone (test/observation hook, DF-6, so
+   * `lastApplied` can surface it — cleared by the next settled render or host error). */
+  fileGone: boolean;
   /** True once any successful image has been shown (survives a later error as the stale render). */
   hasGoodImage: boolean;
   /** True while engine prep / host start / a render is in progress (POLISH-02/03) — cleared the
@@ -166,6 +173,9 @@ export class PreviewPanelManager {
   lastApplied(docPath: string): AppliedState | undefined {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return undefined;
+    if (entry.fileGone) {
+      return { status: 'fileGone', hasStaleImage: entry.hasGoodImage, busy: entry.busy, replayCount: entry.replayCount };
+    }
     if (entry.hostError) {
       return {
         status: 'hostError',
@@ -191,6 +201,11 @@ export class PreviewPanelManager {
     };
   }
 
+  /** The config actually sent in the most recent replay (test/observation hook, DF-6, UX-06 AC5). */
+  lastConfigSent(docPath: string): HydratedConfig | undefined {
+    return this.entries.get(this.key(docPath))?.lastConfigSent;
+  }
+
   /**
    * Route a webview → extension message for a document. Public so the extension-side integration
    * loop (T18/T37 fake-host pattern) can drive the toolbar's config-change path without a live DOM.
@@ -205,7 +220,9 @@ export class PreviewPanelManager {
     if (msg?.type === 'ready') {
       entry.ready = true;
       entry.replayCount++;
-      const replay = entry.store.replay(() => ({ type: 'setConfig', config: this.deriveConfig(docPath) }));
+      const config = this.deriveConfig(docPath);
+      entry.lastConfigSent = config;
+      const replay = entry.store.replay(() => ({ type: 'setConfig', config }));
       for (const m of replay) void entry.panel.webview.postMessage(m);
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
@@ -236,7 +253,15 @@ export class PreviewPanelManager {
         localResourceRoots: [this.context.extensionUri, this.outputDir],
       },
     );
-    const entry: PanelEntry = { panel, ready: false, hasGoodImage: false, store: new PanelStateStore(), replayCount: 0, busy: false };
+    const entry: PanelEntry = {
+      panel,
+      ready: false,
+      hasGoodImage: false,
+      fileGone: false,
+      store: new PanelStateStore(),
+      replayCount: 0,
+      busy: false,
+    };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
     panel.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
@@ -262,6 +287,7 @@ export class PreviewPanelManager {
     if (!entry) return;
     entry.lastResponse = response;
     entry.hostError = undefined;
+    entry.fileGone = false;
     entry.busy = false;
 
     if (response.status === 'ok' && response.pngPath) {
@@ -304,6 +330,7 @@ export class PreviewPanelManager {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return;
     entry.hostError = error.message;
+    entry.fileGone = false;
     entry.busy = false;
     this.post(entry, { type: 'setError', message: `Render host error: ${error.message}`, warnings: [] });
   }
@@ -322,6 +349,8 @@ export class PreviewPanelManager {
   markFileGone(docPath: string): void {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return;
+    entry.fileGone = true;
+    entry.hostError = undefined;
     this.post(entry, { type: 'fileGone' });
   }
 
