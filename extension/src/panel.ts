@@ -13,17 +13,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { PendingMessageQueue } from './messageQueue';
+import { PanelStateStore, StoreMessage } from './panelState';
 import { RenderResponse, Warning } from './protocol';
 import { panelShellHtml } from './webview';
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
+  /** True while the webview is live and has signalled `ready` — false from the moment it's hidden
+   * (VS Code destroys its context, `retainContextWhenHidden: false`) until it reloads and signals
+   * `ready` again (DF-6). */
   ready: boolean;
-  /** Messages posted before the webview signals `ready`, flushed in original order once it does
-   * (FP-1 AC7) — replaces the single-slot `lastMessage` that used to lose every message but the
-   * last. */
-  pending: PendingMessageQueue;
+  /** Authoritative latest-wins snapshot of every message posted to this panel, replayed in full on
+   * EVERY `ready` (DF-6, UX-06 AC7) — replaces the old `PendingMessageQueue`, which only ever held
+   * messages posted before the FIRST ready and so left a reloaded (hidden→revealed) webview blank. */
+  store: PanelStateStore;
+  /** Incremented every time a `ready` message triggers a replay (test/observation hook, DF-6). */
+  replayCount: number;
   lastResponse?: RenderResponse;
   hostError?: string;
   /** True once any successful image has been shown (survives a later error as the stale render). */
@@ -48,6 +53,9 @@ export interface AppliedState {
   warnings?: Array<{ kind: string; message: string }>;
   /** True while a loading phase is in progress for this document (POLISH-02/03 observability). */
   busy?: boolean;
+  /** Number of times this panel's state has been replayed on a `ready` signal — first load counts
+   * as one (DF-6 observability hook: proves a hidden→revealed reload re-delivered state). */
+  replayCount: number;
 }
 
 /** A drawable config patch from the webview toolbar (state picker / size override). */
@@ -122,6 +130,11 @@ export class PreviewPanelManager {
     private readonly onConfigChanged: (docPath: string, patch: ConfigPatch) => void = () => {},
     /** A zoom-level change (T52) → persist into ConfigStore only; never re-renders by itself. */
     private readonly onZoomChanged: (docPath: string, zoom: ZoomSetting) => void = () => {},
+    /** Re-derives the document's persisted config fresh from ConfigStore (DF-6, UX-06 AC5) — called
+     * on EVERY `ready`, so a toolbar change made after open is never reverted by replaying a stale
+     * open-time copy. Replaces the old one-shot `hydrateConfig()` call activation used to make right
+     * after `openFor`. */
+    private readonly deriveConfig: (docPath: string) => HydratedConfig,
   ) {
     this.sweepPngs();
   }
@@ -154,7 +167,13 @@ export class PreviewPanelManager {
     const entry = this.entries.get(this.key(docPath));
     if (!entry) return undefined;
     if (entry.hostError) {
-      return { status: 'hostError', hasStaleImage: entry.hasGoodImage, errorMessage: entry.hostError, busy: entry.busy };
+      return {
+        status: 'hostError',
+        hasStaleImage: entry.hasGoodImage,
+        errorMessage: entry.hostError,
+        busy: entry.busy,
+        replayCount: entry.replayCount,
+      };
     }
     const r = entry.lastResponse;
     if (!r) return undefined;
@@ -168,6 +187,7 @@ export class PreviewPanelManager {
       matchedStateItem: r.matchedStateItem,
       warnings: warningsToVm(r.warnings),
       busy: entry.busy,
+      replayCount: entry.replayCount,
     };
   }
 
@@ -184,7 +204,9 @@ export class PreviewPanelManager {
   private handleWebviewMessage(entry: PanelEntry, docPath: string, msg: WebviewToExtensionMessage): void {
     if (msg?.type === 'ready') {
       entry.ready = true;
-      for (const m of entry.pending.flush()) void entry.panel.webview.postMessage(m);
+      entry.replayCount++;
+      const replay = entry.store.replay(() => ({ type: 'setConfig', config: this.deriveConfig(docPath) }));
+      for (const m of replay) void entry.panel.webview.postMessage(m);
     } else if (msg?.type === 'refresh') {
       this.onRefresh(docPath);
     } else if (msg?.type === 'configChanged') {
@@ -214,11 +236,18 @@ export class PreviewPanelManager {
         localResourceRoots: [this.context.extensionUri, this.outputDir],
       },
     );
-    const entry: PanelEntry = { panel, ready: false, hasGoodImage: false, pending: new PendingMessageQueue(), busy: false };
+    const entry: PanelEntry = { panel, ready: false, hasGoodImage: false, store: new PanelStateStore(), replayCount: 0, busy: false };
     this.entries.set(key, entry);
     panel.webview.html = this.shellHtml(panel.webview);
     panel.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(entry, doc.uri.fsPath, msg);
+    });
+    // A hidden tab's webview context is destroyed (`retainContextWhenHidden: false`) — marking the
+    // entry not-ready means every message recorded while hidden is still snapshotted (never live-
+    // posted to a dead webview) and gets replayed in full the next time this panel signals `ready`
+    // (DF-6, UX-06 AC1/AC2/AC7).
+    panel.onDidChangeViewState((e) => {
+      if (!e.webviewPanel.visible) entry.ready = false;
     });
     panel.onDidDispose(() => {
       this.entries.delete(key);
@@ -270,14 +299,6 @@ export class PreviewPanelManager {
     this.post(entry, { type: 'setThemes', themes });
   }
 
-  /** Hydrate the toolbar + viewport from the persisted per-file config (ConfigStore) — restores the
-   * toolbar's config controls and zoom level on preview reopen (CFG-05, P1-E AC5). */
-  hydrateConfig(docPath: string, config: HydratedConfig): void {
-    const entry = this.entries.get(this.key(docPath));
-    if (!entry) return;
-    this.post(entry, { type: 'setConfig', config });
-  }
-
   /** Apply a host-level failure (crash / timeout) — keeps the last good render dimmed. */
   applyHostError(docPath: string, error: Error): void {
     const entry = this.entries.get(this.key(docPath));
@@ -304,13 +325,11 @@ export class PreviewPanelManager {
     this.post(entry, { type: 'fileGone' });
   }
 
-  private post(entry: PanelEntry, message: unknown): void {
-    if (entry.ready) {
-      void entry.panel.webview.postMessage(message);
-    } else {
-      // Queued until the webview's 'ready' signal flushes every pending message in order.
-      entry.pending.push(message);
-    }
+  private post(entry: PanelEntry, message: StoreMessage): void {
+    // Always recorded, so a later replay (this panel's next `ready`) can redeliver it even if it
+    // arrives while hidden and is never live-posted (DF-6, UX-06 AC2/AC3).
+    entry.store.record(message);
+    if (entry.ready) void entry.panel.webview.postMessage(message);
   }
 
   /** Delete PNG files in the session output dir (activation + panel close, design component #9). */

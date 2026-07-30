@@ -20,7 +20,7 @@ import { singleFlight } from './gate';
 import { HostManager, HostState, buildJavaCommand } from './host';
 import { GuidedError, isGuidedError, JdkLocator } from './jdk';
 import { PHASE_PREPARING_ENGINE, PHASE_RENDERING, PHASE_STARTING_HOST, preparingEnginePhase } from './loadingPhases';
-import { PreviewPanelManager, ThemeOption } from './panel';
+import { HydratedConfig, PreviewPanelManager, ThemeOption } from './panel';
 import { Density, DocKind, ENGINE_PACKAGE_NAME, Orientation, parseThemeInfoList } from './protocol';
 import { defaultDeps as defaultRootsDeps, ResourceRootResolver } from './roots';
 import { RenderScheduler } from './scheduler';
@@ -148,6 +148,35 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   // defaultPreviewConfig() that used to live here; workspaceState persists it across reopens.
   const configStore = new ConfigStore(context.workspaceState);
 
+  /** Re-derive the persisted per-file config (ConfigStore) fresh — passed to `PreviewPanelManager`
+   * so it can re-hydrate the toolbar/viewport on EVERY webview `ready` (DF-6, UX-06 AC5), not just
+   * once at open time; ConfigStore is the source of truth, so replaying a stale open-time copy after
+   * a post-open toolbar change would revert it. Also tells the webview the document's kind (layout
+   * vs drawable) and any active custom device size, so an edge-drag resize (fix-pack POLISH-07)
+   * routes correctly and restores its "Custom (W×H dp)" picker entry on reopen. */
+  function hydratePanelConfig(docPath: string): HydratedConfig {
+    const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
+    const stored = configStore.get(docPath, manifestTheme);
+    // Mirrors the scheduler's own classify() mapping just below: unsupported documents preview as
+    // layouts (T60 convention).
+    const classified = classify(docPath);
+    const docKind: 'layout' | 'drawable' = classified.kind === 'layout' || classified.kind === 'unsupported' ? 'layout' : 'drawable';
+    return {
+      themeName: stored.preview.themeName,
+      isProjectTheme: stored.preview.isProjectTheme,
+      night: stored.preview.night,
+      deviceId: stored.preview.device.id,
+      orientation: stored.preview.orientation,
+      density: stored.preview.density,
+      zoom: stored.zoom,
+      docKind,
+      customSize:
+        stored.preview.device.id === 'custom'
+          ? { w: stored.preview.device.widthDp, h: stored.preview.device.heightDp }
+          : undefined,
+    };
+  }
+
   const scheduler = new RenderScheduler({
     host: {
       render: (req) => hostManager.render(req),
@@ -222,6 +251,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       // resulting pixel-scale escalation (sent as a separate configChanged) does (T52, UX-03).
       configStore.update(docPath, { zoom });
     },
+    hydratePanelConfig,
   );
 
   const api: InflateApi = { activationMs: 0, hostManager, panelManager, configStore };
@@ -233,34 +263,6 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   };
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateEligibility));
   updateEligibility(vscode.window.activeTextEditor);
-
-  /** Push the persisted per-file config to the toolbar/viewport so a reopened preview restores its
-   * theme/device/orientation/density/night/zoom exactly as last left (CFG-05, P1-E AC5). Also tells
-   * the webview the document's kind (layout vs drawable) and any active custom device size, so an
-   * edge-drag resize (fix-pack POLISH-07) routes correctly and restores its "Custom (W×H dp)" picker
-   * entry on reopen. */
-  function hydratePanelConfig(docPath: string): void {
-    const manifestTheme = rootsResolver.resolve(docPath).manifestTheme;
-    const stored = configStore.get(docPath, manifestTheme);
-    // Mirrors the scheduler's own classify() mapping just below: unsupported documents preview as
-    // layouts (T60 convention).
-    const classified = classify(docPath);
-    const docKind: 'layout' | 'drawable' = classified.kind === 'layout' || classified.kind === 'unsupported' ? 'layout' : 'drawable';
-    panelManager.hydrateConfig(docPath, {
-      themeName: stored.preview.themeName,
-      isProjectTheme: stored.preview.isProjectTheme,
-      night: stored.preview.night,
-      deviceId: stored.preview.device.id,
-      orientation: stored.preview.orientation,
-      density: stored.preview.density,
-      zoom: stored.zoom,
-      docKind,
-      customSize:
-        stored.preview.device.id === 'custom'
-          ? { w: stored.preview.device.widthDp, h: stored.preview.device.heightDp }
-          : undefined,
-    });
-  }
 
   /** Best-effort push of the project + bundled theme list to the toolbar's picker (CFG-04). Never
    * blocks or fails the render loop — a host that doesn't answer just leaves the picker unpopulated. */
@@ -279,8 +281,9 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   async function openPreviewFor(doc: vscode.TextDocument): Promise<void> {
     output.appendLine(`[preview] openPreview requested for ${doc.uri.fsPath}`);
     const docPath = doc.uri.fsPath;
+    // The panel's `ready` handler re-derives + delivers the persisted config itself on every reveal
+    // (DF-6, UX-06 AC5/AC7) — no explicit hydrate call needed here.
     api.lastPanel = panelManager.openFor(doc);
-    hydratePanelConfig(docPath);
     // guided setup message already shown on failure; "Preparing render engine…" mirrors into the
     // panel's busy indicator via onPhase (fix-pack POLISH-02).
     if (!(await ensureRealHostConfigured(docPath, (label) => panelManager.setBusy(docPath, label)))) return;
