@@ -804,3 +804,111 @@ No `.specs/scripts/lessons.py` exists in this repository (checked: `.specs/scrip
 
 - **Candidate lesson** (signal: documentation drift, not a test/AC gap — informational only, likely below the grounding bar for `lessons.py`'s signal table since it isn't an AC gap/surviving mutant/spec-precision gap/gate-fail): "When a spec assumption is corrected mid-execution (e.g., an amended AC), grep test fixtures' own comments for restatements of the superseded assumption, not just the spec/test-file prose — fixture XML comments are read as ground truth by future contributors and can silently drift from a corrected spec." Source: `fixtures/galleries/framework/res/layout/rootparams_wrap.xml:3` vs. the corrected LAY-08 AC4 in `spec.md`.
 - No `ac_gap`, `surviving_mutant`, `spec_precision_gap`, or `gate_fail` signals were produced by this verification — the run was a clean PASS on all mechanically-gated signal types, so no lesson is mandated by the strict `lessons.md` signal table. The item above is recorded for completeness only, not as a required entry.
+
+---
+
+## BOM Ingestion Fix Verification (2026-07-29)
+
+**Spec**: "Defect Amendment (2026-07-29): DF-5 — UTF-8 BOM'd XML files fail to preview" in `spec.md`, requirement **HOST-05**
+**Diff range**: `3142167..HEAD` (4 commits: `dead0a6` T95, `05a81fe` T96, `e4154a9` T97, `a91d319` T98)
+**Verifier**: independent sub-agent (author ≠ verifier; evidence-or-zero, re-derived)
+
+### Task Completion
+
+| Task | Status | Notes |
+| ---- | ------ | ----- |
+| T95 | ✅ Done | `preprocess/Bom.kt` (`Bom.strip`) + both ingestion sites wrapped; `BomTest` (4 tests) + `BomIngestionTest` AC1 (layout) present |
+| T96 | ✅ Done | `BomIngestionTest` extended: AC2 (error accuracy), AC3 (include), AC5 (warning parity), AC1 drawable leg, BOM-only edge — all present with byte-integrity guards |
+| T97 | ✅ Done | `## 1.0.3` section added above `## 1.0.2` in `extension/CHANGELOG.md`, user-facing language, no other sections touched |
+| T98 | ✅ Done | AD-023 recorded in `.specs/STATE.md`; HOST-05 traceability row flipped in `spec.md`; task statuses marked `[x]` in `tasks.md` |
+
+### Spec-Anchored Acceptance Criteria (HOST-05)
+
+| Criterion (WHEN X THEN Y) | Spec-defined outcome | `file:line` + assertion | Result |
+| -------------------------- | --------------------- | ------------------------ | ------ |
+| AC1: BOM'd layout/drawable renders `ok` with byte-identical PNG to BOM-less twin | `status == ok`, PNG bytes identical | `host/src/engineTest/kotlin/render/BomIngestionTest.kt:159-172` (layout) — `assertEquals(RenderStatus.ok, bom.status)`; `plainBytes.contentEquals(bomBytes)` — and `:240-252` (drawable leg) same pattern | ✅ PASS |
+| AC1 (identity/AC4 helper semantics): `Bom.strip` on no-BOM input | returned unchanged (identity) | `host/src/test/kotlin/preprocess/BomTest.kt:17-20` — `assertEquals(xml, Bom.strip(xml))` | ✅ PASS |
+| AC2: BOM'd file with a genuine syntax error surfaces the real error at its true line, never the PI artifact | `status == error`; message excludes `"PI must not start with xml"`; `line == 7` (real offending line) | `BomIngestionTest.kt:179-191` — `assertEquals(RenderStatus.error, r.status)`; `assertFalse(error.message.contains("PI must not start with xml"))`; `assertEquals(7, error.line)` | ✅ PASS |
+| AC3: BOM'd `<include>` target renders with content present; cycle-walk unaffected | render `ok`; dependency list contains the included path; no spurious cycle notice | `BomIngestionTest.kt:198-211` — `assertEquals(RenderStatus.ok, r.status)`; `r.dependencies.contains(includedPath)`; `r.warnings.none { ...message.contains("cycle") }` | ✅ PASS |
+| AC4: no leading BOM → identity pass-through; corpus stays 42/42 zero-diff | unchanged content; zero changed goldens | `BomTest.kt:17-20` (identity) + `npm run corpus` → 42/42 @ 0.000% (see Gate Check) — independently confirmed `grep -i bom corpus/manifest.json` returns zero matches, so no new fixture entered the manifest | ✅ PASS |
+| AC5: unknown res-auto attribute warning identical for BOM'd layout and BOM-less twin (strip point ahead of `MaterialAttrCheck`) | same warning count (1), same `detail`, same `message` for both twins | `BomIngestionTest.kt:218-233` — `assertEquals(1, plainWarnings.size)`; `assertEquals(1, bomWarnings.size)`; `assertEquals(plainWarnings.single().detail, bomWarnings.single().detail)`; `assertEquals(plainWarnings.single().message, bomWarnings.single().message)` | ✅ PASS |
+| Edge case: BOM-only (or BOM+whitespace) file errors with the existing empty/invalid-document message, not the PI artifact | `status == error`; message excludes `"PI must not start with xml"` | `BomIngestionTest.kt:259-265` — `assertEquals(RenderStatus.error, r.status)`; `assertFalse(error.message.contains("PI must not start with xml"))` | ✅ PASS |
+| Edge case: pathological multiple leading U+FEFF — exactly one stripped, remainder errors accurately | not directly asserted by a dedicated multi-BOM test | — | ⚠️ Spec-precision gap (not a defect: `Bom.strip` uses `removePrefix`, a single-application removal by construction, and `BomTest.kt:23-26` proves an interior/second U+FEFF is left untouched as ordinary content — the code path is provably correct by composition of the two proven properties, but no single test exercises a literal two-BOM-prefixed string end-to-end) |
+| Edge case: `.axml` files share the same ingestion path | strip applies identically | — | ⚠️ Spec-precision gap (no `.axml`-specific BOM fixture/test in the diff; correctness follows from the ingestion site being shared code for both extensions per `LayoutRenderer.kt`/`DrawableRenderer.kt`'s single `docFile.readText()` call regardless of extension, but not independently pinned by a dot-axml BOM test) |
+| Edge case: UTF-16/UTF-32 out of scope | unchanged, no test required | N/A — explicitly out of scope by spec text | ✅ PASS (scoped out, not applicable) |
+| Edge case: nine-patch N/A (PNG, no XML ingestion) | N/A | N/A — explicitly out of scope by spec text | ✅ PASS (scoped out, not applicable) |
+
+**Status**: ✅ All 5 numbered ACs covered with spec-exact assertions (line numbers, message content, byte-identity, warning parity all independently confirmed present and correct in the test file); 2 minor spec-precision gaps flagged on two of the five listed edge cases (multi-BOM literal test, `.axml`-specific fixture) — both are low-risk because the underlying properties they'd exercise are already proven by other passing assertions (composability of `removePrefix` + interior-BOM test; shared ingestion code path), not because of missing evidence of correctness, but no test cites them directly. Not blocking.
+
+### Discrimination Sensor (scratch-only; real tree confirmed clean via `git status --short`/`git diff --stat` before and after every mutation)
+
+| # | File:line | Mutation | Test run | Killed? |
+| - | --------- | -------- | -------- | ------- |
+| 1 | `LayoutRenderer.kt:59-70`, `DrawableRenderer.kt:79-83` | Removed the `Bom.strip(...)` wrapper at both ingestion sites (reverted to raw `request.inlineContent ?: docFile.readText()`) | `./gradlew engineTest --tests render.BomIngestionTest` | ✅ **Killed** — exactly 4/6 failed: AC1 (layout, `:163`), AC1 drawable leg (`:244`), AC5 (`:222`), AC2 (`:182`) — matching the spec's own prediction ("(a) remove the ingestion strip — the AC1/AC2/AC5 tests must go red with the PI artifact") plus the drawable leg. AC3 (include) and the BOM-only edge case correctly stayed green — AC3 exercises the engine's on-disk byte-sniff path (unaffected by host-string ingestion), and the BOM-only fixture has no `<?xml` after the BOM so it never triggers the PI-specific artifact either way; both are legitimate non-catches, not gaps |
+| 2 | `Preprocessor.kt:81-82` + reverted mutation 1's ingestion-site strip removal | Relocated the strip to run *inside* `Preprocessor.preprocess` (`val content = Bom.strip(content)` as the function's first line) instead of at the two ingestion call sites, simulating the spec's named "AC5 alone must kill it" placement risk (`MaterialAttrCheck.unknownAttrs(content)` in `LayoutRenderer.kt:142` runs against the *outer*, now-unstripped `content` variable, ahead of the call into `Preprocessor.preprocess`) | `./gradlew engineTest --tests render.BomIngestionTest` | ✅ **Killed** — exactly 1/6 failed: AC5 (`:231`, `bomWarnings.size` — the malformed-XML catch inside `MaterialAttrCheck` silently swallowed the warning for the still-BOM'd outer `content`). All 5 other tests (AC1 layout+drawable, AC2, AC3, BOM-only edge) passed, since `Preprocessor.preprocess` itself still saw stripped content internally. This is an exact match to the spec's own discrimination-candidate prediction: "(b) relocate the strip inside `Preprocessor.preprocess` — the AC5 warning-parity test alone must kill it" |
+| 3 | `fixtures/galleries/framework/res/layout/bom_twin.xml` (bytes) | Defanged the fixture by stripping its leading `EF BB BF` bytes (`tail -c +4`), leaving otherwise byte-identical content | `./gradlew engineTest --tests render.BomIngestionTest` | ✅ **Killed** — 1/6 failed: AC1 (`:147`), the `assertBomFixture` byte-integrity guard's own `assertTrue`, failing loudly with `"bom_twin.xml must start with the UTF-8 BOM (EF BB BF); got [...]"` rather than silently passing a now-neutralized regression test. Confirms the spec's escape-analysis tightening — "(c) defang a BOM fixture ... every BOM fixture carries an in-test byte-integrity guard" — actually works as designed |
+
+Each mutation was applied via `Edit`, run in isolation (`--tests render.BomIngestionTest`), then reverted via `git checkout -- <file>` back to the exact original; `git status --short`/`git diff --stat` and (for mutation 3) a byte-level `cmp` against a pre-mutation copy confirmed the real tree was left byte-identical to its pre-sensor state after every round-trip. No worktree/stash was needed since the tree was clean before and after each single/multi-file round-trip and each mutation was independent.
+
+**Sensor depth**: lightweight (3 mutations — exactly the 3 candidates the spec amendment itself named for the Verifier, covering the ingestion-strip removal, the placement-sensitivity risk that AC5 alone must catch, and the fixture-defanging guard).
+**Result**: **3/3 killed**, 0 survived.
+
+### Code Quality
+
+| Check | Pass? |
+| ----- | ----- |
+| No features beyond what was asked | ✅ — `Bom.strip` is exactly `content.removePrefix("﻿")`, wrapped at the two named ingestion lines; no other behavior added |
+| No abstractions for single-use code | ✅ — a single `object Bom { fun strip(...) }`, no interfaces/factories/config knobs |
+| No unnecessary "flexibility" added | ✅ |
+| Only touched files required for task | ✅ — `git diff 3142167..HEAD --stat` shows exactly: new `Bom.kt`, the 2 ingestion-site edits, new `BomTest.kt`/`BomIngestionTest.kt`, the enumerated new fixtures, `CHANGELOG.md`, and bookkeeping (`STATE.md`, `spec.md` traceability row, `tasks.md` statuses) — no extras |
+| Didn't "improve" unrelated code | ✅ — `LayoutRenderer.kt`/`DrawableRenderer.kt` diffs are minimal (add import + wrap one expression each); no unrelated reformatting |
+| Matches existing patterns/style | ✅ — reuses `LayoutRendererTest`'s `RenderRouting` + framework-gallery setup shape, `EngineTestSupport` fixture helpers, and the twin-comparison (render both, compare PNG bytes) technique already established by the LAY-08/DF-4 tests |
+| Would senior engineer approve? | ✅ |
+| Tests map to acceptance criteria and are non-shallow (spot-check one story) | ✅ — spot-checked AC2: asserts both the exact real line (`7`, not `1`) AND the absence of the PI artifact string, not merely "status is error" |
+| Spec-anchored outcome check | ✅ — see AC table above; all 5 numbered criteria assert spec-exact values (status, line number, byte-identity, warning count/detail/message) |
+| Per-layer Coverage Expectation met | ✅ — 1:1 per the Test Coverage Matrix (DF-5): `Bom` pure logic → host unit; executor ingestion live path → engineTest against the real Bridge; no domain layer left uncovered |
+| Every test in scope maps to a spec AC, listed edge case, or Done-when criterion | ✅ — every `BomTest`/`BomIngestionTest` `@Test` name cites its HOST-05 AC or edge case label directly |
+| Documented project quality/testing guidelines followed | Test Coverage Matrix (DF-5) and Gate Check Commands (DF-5) in `tasks.md`, followed as written; the byte-integrity-guard convention (first-3-bytes assertion) applied to every new BOM fixture, matching the escape-analysis tightening the amendment itself specifies |
+
+### Edge Cases
+
+- [x] BOM-only (or BOM + whitespace) file: errors with the existing empty/invalid-document message, not the PI artifact — pixel/message-verified (`bom_only.xml`, 3 bytes)
+- [x] Pathological multiple leading U+FEFF: exactly one stripped, remainder is content — proven by composition (`removePrefix` single-application + interior-BOM test), not by a dedicated multi-BOM literal test (flagged as spec-precision gap above, non-blocking)
+- [x] UTF-16/UTF-32 encoded files: correctly out of scope, unchanged — no test required, none added
+- [x] `.axml` files share the ingestion path: correct by shared-code-path construction; no dot-axml-specific fixture added (flagged as spec-precision gap above, non-blocking)
+- [x] Nine-patch previews: correctly N/A (PNG bytes, no XML ingestion) — no test required, none added
+
+### Gate Check (all re-run by this Verifier from a clean/rerun state, not inferred from the commit bodies)
+
+| Gate | Command | Result |
+| ---- | ------- | ------ |
+| Quick (build+test) | `cd host && ./gradlew test --rerun` | ✅ **115 testcases / 21 classes**, 0 failures, 0 errors — counts read directly from `build/test-results/test/TEST-*.xml`. Baseline (per the last recorded host-unit count, AD-016 close, 2026-07-20): **111**. Delta: **111→115 (+4, exactly `BomTest`'s 4 new tests)** — confirmed via `TEST-preprocess.BomTest.xml` (`tests="4" failures="0" errors="0"`) |
+| Engine | `cd host && ./gradlew engineTest --rerun` | ✅ **64 testcases / 24 classes**, 0 failures, 0 errors. Baseline (DF-4 close, this file's prior section): **58 testcases / 23 classes**. Delta: **58→64 (+6), 23→24 (+1 class)** — exactly `BomIngestionTest`'s 6 new tests in 1 new class; `TEST-render.BomIngestionTest.xml` shows all 6 passing (AC1 layout, AC1 drawable leg, AC2, AC3, AC5, BOM-only edge) |
+| Corpus | `npm run corpus` (repo root) | ✅ **42/42 passed**, 0.000% diff on every fixture x config — unchanged from baseline; `grep -i bom corpus/manifest.json` confirms zero BOM fixtures entered the explicit manifest, so AC4's identity/zero-regen guarantee holds structurally, not just empirically |
+| Extension sanity | `cd extension && npm test` | ✅ **206/206 passed**, 0 failed (16 files) — unchanged from baseline; no extension source in the diff, pure no-regression check |
+
+**Test count deltas**: host unit 111→115 (+4, `BomTest`); engineTest 58→64 (+6, `BomIngestionTest`, +1 class); corpus 42/42 unchanged; extension 206/206 unchanged. No test was deleted, skipped, or weakened anywhere in the diff.
+
+### Summary
+
+**Overall**: ✅ Ready — the DF-5 BOM ingestion fix is sound, minimally scoped, and its new tests genuinely discriminate the defect class and the placement risk the spec itself called out.
+
+**Spec-anchored check**: 5/5 numbered HOST-05 ACs matched their spec-defined outcome with exact-value assertions (status, real line number, byte-identity, warning parity); 2/5 listed edge cases flagged as spec-precision gaps (non-blocking — both are proven correct by composition of other passing assertions/shared code paths, just not independently pinned by a dedicated test).
+**Sensor**: 3 mutations injected (ingestion-strip removal, strip-relocation-into-Preprocessor placement risk, fixture byte-defanging), **3/3 killed**, 0 survived — all 3 were the exact candidates the spec amendment named for the Verifier, and each killed exactly the test(s) the spec predicted, no more and no fewer.
+**Gate**: Quick 115/115 ✅ (+4 vs. 111 baseline), Engine 64/64 ✅ (+6 vs. 58 baseline, +1 class), Corpus 42/42 @ 0.000% ✅ (unchanged), Extension 206/206 ✅ (unchanged).
+
+**What works**: the single choke-point strip (`Bom.strip`, wrapped around `request.inlineContent ?: docFile.readText()` at both `LayoutRenderer.kt:59` and `DrawableRenderer.kt:79`) is verified to run ahead of every downstream consumer including the pre-preprocess `MaterialAttrCheck.unknownAttrs(content)` call (confirmed by reading `LayoutRenderer.kt:142`, which uses the same post-strip `content` variable) — this is exactly the placement the spec's assumption log requires and the discrimination sensor's mutation 2 independently proves matters (relocating it one call-frame inward breaks AC5 alone). Byte-level fixture verification confirms every twin pair differs from its plain counterpart by exactly 3 bytes (`EF BB BF` prepended), and the byte-integrity guards genuinely fail loudly (not silently) when a fixture is defanged. Corpus stayed 42/42 zero-diff both because the strip is identity for BOM-free input (proven at the unit level) and because the manifest structurally excludes every new BOM fixture (proven by direct grep, not assumed).
+
+**Issues found**: none blocking. 2 non-blocking spec-precision gaps on two of the five *listed edge cases* (not the 5 numbered ACs) — a literal two-BOM-prefix end-to-end test and a `.axml`-extension-specific BOM fixture are not directly present, though both properties are provably true by composition of other passing tests / shared code paths.
+
+**Next steps**: none blocking; ships as planned (patch 1.0.3, REL-04 pipeline). Optional, low-priority: add a two-line `BomTest` case feeding a literal `"﻿﻿content"` string (already implied correct by existing tests, would just make it explicit), and/or a `.axml`-extension BOM fixture in the `dotnet` gallery for AD-001-tree parity, if a future contributor wants the edge-case list fully self-evidenced test-by-test rather than by code-path argument.
+
+### Requirement Traceability Update
+
+| Requirement | Previous Status | New Status |
+| ----------- | ---------------- | ---------- |
+| HOST-05 | Implemented (T95–T98, pending Verifier) | ✅ Verified |
+
+### Lessons
+
+Clean PASS — no `ac_gap`, `surviving_mutant`, `spec_precision_gap` (on the 5 numbered ACs; the 2 edge-case gaps above are noted but are provably-correct-by-composition, not real coverage gaps), or `gate_fail` signals were produced by this verification: all 3 discrimination-sensor mutations were killed exactly as the spec amendment predicted, all 4 gates passed with deltas matching expectations exactly, and no test was weakened or deleted. Per `lessons.md`, a clean run with no signal writes nothing — recording nothing here. (Note: `scripts/lessons.py` is not present at the repo root in this checkout, consistent with the prior DF-4 verification record's finding; the mechanical path was unavailable regardless, but is moot here since there is no signal to record.)

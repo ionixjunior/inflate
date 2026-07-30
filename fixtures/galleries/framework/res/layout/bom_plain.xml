@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DF-5 (HOST-05): the BOM-less twin of bom_twin.xml. bom_twin.xml is these exact bytes with a
+     leading EF BB BF BOM prepended — any change here must be mirrored there. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF2277DD">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="BOM twin"
+        android:textColor="@android:color/white" />
+</LinearLayout>

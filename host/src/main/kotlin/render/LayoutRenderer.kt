@@ -6,6 +6,7 @@ import engine.Degradation
 import engine.EngineAdapter
 import log.LogBridge
 import out.PngWriter
+import preprocess.Bom
 import preprocess.Preprocessor
 import rpc.RenderError
 import rpc.RenderRequest
@@ -55,16 +56,18 @@ class LayoutRenderer(
     val docFile = File(request.docPath)
     val roots = request.roots.map(::File)
 
-    val content = request.inlineContent ?: runCatching { docFile.readText() }.getOrElse {
-      return errorResponse(
-        request,
-        RenderError(message = "cannot read ${request.docPath}: ${it.message}", file = request.docPath),
-        warnings = emptyList(),
-        dependencies = emptyList(),
-        timings = RenderTimings(0, 0, 0, elapsedMs(totalStart)),
-        sessionRebuilt = false,
-      )
-    }
+    val content = Bom.strip(
+      request.inlineContent ?: runCatching { docFile.readText() }.getOrElse {
+        return errorResponse(
+          request,
+          RenderError(message = "cannot read ${request.docPath}: ${it.message}", file = request.docPath),
+          warnings = emptyList(),
+          dependencies = emptyList(),
+          timings = RenderTimings(0, 0, 0, elapsedMs(totalStart)),
+          sessionRebuilt = false,
+        )
+      },
+    )
 
     val pre = Preprocessor.preprocess(
       content = content,

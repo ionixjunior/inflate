@@ -3215,3 +3215,245 @@ distills it via `scripts/lessons.py`.
 | T92 | corpus goldens | golden diff | golden corpus | ✅ OK |
 | T93 | none (markdown content) | none — sanity gate only | none | ✅ OK |
 | T94 | none (bookkeeping) | none — full gate at close | none | ✅ OK |
+
+---
+
+## BOM Ingestion Fix Tasks (Amendment — 2026-07-29)
+
+> Defect fix DF-5: a previewed XML file saved with a UTF-8 BOM fails to render — the host's disk
+> read keeps the BOM (U+FEFF), and kxml2's Reader-path well-formedness parse rejects the shifted
+> `<?xml` declaration with `PI must not start with xml … @1:5` (a valid-XML file, wrongly
+> rejected; the misleading error also masks any real syntax error in the file) — see the "Defect
+> Amendment (2026-07-29): DF-5" section in `spec.md`, requirement **HOST-05**. Discovery is
+> recorded as **AD-023** at close-out (T98). The **Execution Protocol at the top of this file
+> applies unchanged**. Task numbering continues the feature's sequence: **T95–T98**, **phase 22**.
+> Ships as **patch release 1.0.3** (REL-04 pipeline, bump `patch`; 1.0.2 already shipped).
+> Verifier output is appended to `validation.md` as a dated section — prior records are never
+> rewritten.
+
+**Spec**: the "Defect Amendment (2026-07-29): DF-5" section in `spec.md` (HOST-05)
+**Context**: none needed — no gray areas: the fix shape is forced by the jar-verified root cause
+(the BOM must be gone before the first parser sees the string); the open choices are logged as
+assumptions in the spec amendment (user-confirmed 2026-07-29 at spec approval)
+**Status**: **Complete (2026-07-29)** — T95–T98 executed on branch `fix/bom-xml-files`, one atomic
+verb-first commit per task on gate pass: `dead0a6` (T95), `05a81fe` (T96), `e4154a9` (T97), this
+commit (T98 close-out). Discovery recorded as **AD-023** in `.specs/STATE.md`. Ships as patch
+**1.0.3** on release. Always-on Verifier runs next per the Execution Protocol.
+
+### Test Coverage Matrix (DF-5)
+
+> Inherited from the feature matrix. One tightening derived from this defect's escape analysis:
+> every BOM fixture must carry an **in-test byte-integrity guard** (assert its first 3 bytes are
+> `EF BB BF`) — the whole gate suite stayed green precisely because no ingested fixture ever had a
+> BOM, so a future editor/formatter silently stripping one would resurrect that blindness.
+> Baselines per the DF-4 Verifier record (2026-07-29): engineTest 58 testcases / 23 classes, corpus
+> 42/42, extension 206 unit / 25 integration — the executor re-baselines exact counts before T95;
+> counts only grow.
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| `Bom` helper (pure string logic) | host unit | strips exactly one leading U+FEFF; identity when absent; interior U+FEFF untouched; BOM-only → empty | `host/src/test/kotlin/preprocess/BomTest.kt` | `cd host && ./gradlew build test` |
+| Executor ingestion live path (layout, drawable, include, warning parity, error accuracy) | engineTest (real Bridge) | 1:1 to HOST-05 AC1–AC3, AC5 + the BOM-only and error-accuracy edges; every BOM fixture byte-guarded | `host/src/engineTest/kotlin/render/BomIngestionTest.kt` | `cd host && ./gradlew engineTest` |
+| Corpus goldens | golden diff | ZERO changed goldens (42/42 byte-identical) — HOST-05 AC4's identity outcome, asserted at every gate, never assumed | `fixtures/*/golden/*.png` via `corpus/run.ts` | `npm run corpus` (repo root) |
+| Extension (untouched) | no-regression sanity | 206 unit / 25 integration stay green | `extension/src/**/*.test.ts` | `cd extension && npm test` |
+
+### Gate Check Commands (DF-5)
+
+**Quick** = `cd host && ./gradlew build test` · **Engine** = `cd host && ./gradlew engineTest`
+(one-time `./gradlew fetchEngine` prerequisite on a fresh cache) · **Full** = Engine + `npm run
+corpus` (repo root) + `cd extension && npm test` (sanity). Extension code is untouched — its suite
+is a no-regression check only.
+
+### Execution Plan (DF-5)
+
+**Phase 22: BOM ingestion fix**
+
+```
+T95 → T96 → T97 → T98
+```
+
+4 tasks → single batch, executed inline (no sub-agent offer). Strictly sequential: T96 pins
+behaviors around T95's fix, T97 documents landed behavior (T81/T86/T93 precedent), T98 closes out.
+
+### Task Breakdown (DF-5)
+
+#### T95: Strip the leading BOM at render ingestion
+
+**What**: a named shared helper — new `host/src/main/kotlin/preprocess/Bom.kt`,
+`object Bom { fun strip(content: String): String }` = `content.removePrefix("\uFEFF")`, KDoc'd
+with the defect chain — applied at BOTH executor ingestion lines (`LayoutRenderer.kt:58`,
+`DrawableRenderer.kt:78`, wrapping `request.inlineContent ?: docFile.readText()`) so validation,
+`MaterialAttrCheck`, every preprocessing stage, and the overlay write all see BOM-free text
+regardless of origin. Unit tests for the helper semantics; the primary defect-killing engineTest —
+a BOM'd twin of a trivial framework layout renders `ok` with a PNG byte-identical to its BOM-less
+twin (AC1) — run RED first against the pre-fix code (reproducing the exact reported error), and
+the red run recorded in the task commit body.
+**Where**: new `preprocess/Bom.kt`; `render/LayoutRenderer.kt:58`; `render/DrawableRenderer.kt:78`;
+new `host/src/test/kotlin/preprocess/BomTest.kt`; new
+`host/src/engineTest/kotlin/render/BomIngestionTest.kt`; new fixtures
+`fixtures/galleries/framework/res/layout/bom_plain.xml` + `bom_twin.xml` (identical content, one
+BOM'd — authored byte-level, e.g. `printf '\xef\xbb\xbf' > bom_twin.xml && cat bom_plain.xml >>
+bom_twin.xml`; corpus manifest is an explicit list — new gallery files add NO corpus cases,
+verified).
+**Depends on**: None
+**Reuses**: `LayoutRendererTest`'s `RenderRouting` + framework-gallery setup shape;
+`EngineTestSupport` fixture helpers; the twin-comparison technique (render both, compare bytes).
+**Requirement**: HOST-05 (AC1; AC4 identity via `BomTest`)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] `BomTest`: single leading U+FEFF stripped; no-BOM input returned equal; interior U+FEFF
+      untouched; a string of `"\uFEFF"` alone → empty string
+- [x] `BomIngestionTest` pre-fix run reproduces the defect verbatim (status `error`, message
+      contains `PI must not start with xml`, line 1) — recorded in the commit body; post-fix the
+      BOM'd twin renders `ok` with a PNG byte-identical to the BOM-less twin's
+- [x] BOM fixture byte-integrity guard green (first 3 bytes `EF BB BF` asserted in-test)
+- [x] Corpus zero-diff: `npm run corpus` 42/42, no regenerated goldens
+- [x] Gates green: `cd host && ./gradlew build test` and `cd host && ./gradlew engineTest`
+
+**Tests**: host unit + engineTest — **Gate**: quick + engine (+ corpus zero-diff)
+**Status**: [x] complete
+
+---
+
+#### T96: Pin error accuracy, includes, warning parity, and the drawable leg
+
+**What**: engineTests (expected: NO further production code — if a pin fails, the fix stays inside
+T95's helper/ingestion seam and MUST preserve every T95 outcome) for: **AC2** — a BOM'd fixture
+with a genuine mid-file syntax error (modeled on the report's stray `a` after
+`android:layout_width="match_parent"`) surfaces the REAL error at its true 1-based line, never the
+`@1:5` PI artifact; **AC3** — a BOM'd `<include>` target renders (engine-side byte-sniff pinned
+against the real Bridge) and the include cycle-walk stays unaffected; **AC5** — a BOM'd androidx
+layout using an unknown res-auto attribute emits the same P1-B AC4 warning as its BOM-less twin
+(kills a Preprocessor-internal strip placement); **AC1 drawable leg** — a BOM'd `<shape>` drawable
+renders `ok` byte-identical to its twin; **BOM-only edge** — accurate empty/invalid-document
+error, not the PI artifact. **If the AC3 engine expectation proves false against the pinned Bridge
+(a BOM'd include fails at inflation), STOP: user files are never rewritten (design Q3), so the
+include fix shape is a spec decision — record the divergence and return to the amendment before
+coding.**
+**Where**: `host/src/engineTest/kotlin/render/BomIngestionTest.kt` (extend); new fixtures
+`bom_error.xml` (BOM + stray attribute character), `bom_include_host.xml` + BOM'd
+`bom_included.xml`, `bom_unknown_attr` twin pair (androidx gallery, one unknown `app:` attribute),
+`bom_shape.xml` twin pair (drawable gallery), `bom_only.xml` (BOM alone); every BOM fixture
+byte-guarded like T95's.
+**Depends on**: T95
+**Reuses**: `MaterialGalleryTest`/`LibraryResourcesTest` androidx setup (`libResDirs()`/
+`rPackages()`) for AC5; the drawable engineTest suite's fixture conventions for the `<shape>` leg;
+T95's twin-comparison technique.
+**Requirement**: HOST-05 (AC2, AC3, AC5, drawable AC1 leg, edge cases)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] Error-accuracy test asserts the true syntax error's line (the stray character's line, not 1)
+      and that the message does NOT contain `PI must not start with xml`
+- [x] BOM'd include renders with the included content present (pixel or dependency assertion);
+      cycle-detection suite untouched
+- [x] Warning parity: the unknown-res-auto warning is present and identical for the BOM'd and
+      BOM-less twins
+- [x] BOM'd `<shape>` renders `ok`, byte-identical to its BOM-less twin
+- [x] BOM-only file errors with the existing empty/invalid-document message, not the PI artifact
+- [x] Gates green: quick + engine; corpus 42/42 zero-diff
+
+**Tests**: engineTest — **Gate**: quick + engine (+ corpus zero-diff)
+**Status**: [x] complete
+
+---
+
+#### T97: Add the 1.0.3 changelog entry
+
+**What**: a `## 1.0.3` section at the top of the extension changelog documenting DF-5 in
+user-facing language: XML files saved with a UTF-8 BOM (common in legacy Windows/Xamarin-authored
+projects) now preview correctly instead of failing with `PI must not start with xml`; syntax
+errors in such files now point at the real line. No `package.json` version bump (REL-04 bumps at
+release — T81/T93 precedent).
+**Where**: `extension/CHANGELOG.md` (new section above `## 1.0.2`).
+**Depends on**: T96 (documents landed behavior, not intentions — T81/T86/T93 precedent)
+**Reuses**: the 1.0.2 section's tone/format; REL-01 AC2 already gates that `CHANGELOG.md` is
+packaged.
+**Requirement**: REL-01 (AC2 pattern — per-release section) in service of HOST-05
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] `## 1.0.3` section present above `## 1.0.2`, covering the BOM fix — no other sections
+      touched
+- [x] Extension no-regression sanity green: `cd extension && npm test`
+
+**Tests**: none (docs — no matrix layer for markdown content) — **Gate**: quick (extension sanity)
+**Status**: [x] complete
+
+---
+
+#### T98: Record AD-023 and close out the amendment
+
+**What**: bookkeeping — record **AD-023** in `.specs/STATE.md` Decisions (the ingestion-strip
+decision, the jar-verified kxml2 chain, the zero-BOM-fixture escape analysis and the
+byte-integrity-guard tightening), update the Handoff (commits, gate results,
+ships-as-1.0.3-pending-release), flip the spec's HOST-05 traceability row, and mark this section's
+task statuses. No interactive UAT is mandated — this defect class is fully assertable in
+engineTest (contrast AD-018's gesture class); a RECOMMENDED post-release smoke is the user
+re-opening the reported layout (after removing its stray `a`).
+**Where**: `.specs/STATE.md`; `.specs/features/android-xml-preview/spec.md` (traceability row
+only); this file (statuses).
+**Depends on**: T97
+**Reuses**: AD-021/AD-022 entry format; the T88/T94 close-out pattern.
+**Requirement**: HOST-05 (bookkeeping)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [x] AD-023 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
+      flipped; task statuses marked
+- [x] Full gate green at close: `cd host && ./gradlew build test && ./gradlew engineTest`,
+      `npm run corpus`, `cd extension && npm test`
+
+**Tests**: none (bookkeeping) — **Gate**: full
+**Status**: [x] complete
+
+### Phase Execution Map (DF-5)
+
+```
+Phase 22:  T95 ──→ T96 ──→ T97 ──→ T98
+```
+
+Execution is strictly sequential — 4 tasks → **single batch, inline** (no sub-agent offer), one
+atomic verb-first commit per task on gate pass. After T98's commit, the always-on **Verifier** runs
+(author ≠ verifier): spec-anchored outcome check + discrimination sensor (candidate mutations:
+remove the ingestion strip — the AC1/AC2/AC5 tests must go red with the PI artifact; relocate the
+strip inside `Preprocessor.preprocess` — the AC5 warning-parity test alone must kill it; defang a
+BOM fixture — its byte-integrity guard must fail) → results **appended to `validation.md`** as a
+dated "BOM Ingestion Fix Verification" section. If verification surfaces reusable guidance (e.g.
+the no-BOM-fixture blindness), the Verifier distills it via `scripts/lessons.py`.
+
+### Task Granularity Check (DF-5)
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T95: Ingestion BOM strip | 1 new ~5-line helper + 2 one-line call sites (+ derived tests/fixtures) | ✅ Granular |
+| T96: Error/include/warning/drawable pins | tests/fixtures only, one behavior family | ✅ Granular (cohesive — no production code expected) |
+| T97: 1.0.3 changelog entry | 1 doc section | ✅ Granular |
+| T98: Bookkeeping close-out | no code | ✅ Granular |
+
+### Diagram-Definition Cross-Check (DF-5)
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T95 | None | start of chain | ✅ Match |
+| T96 | T95 | T95 → T96 | ✅ Match |
+| T97 | T96 | T96 → T97 | ✅ Match |
+| T98 | T97 | T97 → T98 | ✅ Match |
+
+### Test Co-location Validation (DF-5)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T95 | `Bom` helper + executor ingestion | host unit + engineTest | host unit + engineTest | ✅ OK |
+| T96 | ingestion behaviors (no prod code expected) | engineTest | engineTest | ✅ OK |
+| T97 | none (markdown content) | none — sanity gate only | none | ✅ OK |
+| T98 | none (bookkeeping) | none — full gate at close | none | ✅ OK |

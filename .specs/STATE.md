@@ -156,8 +156,39 @@
 - **Date**: 2026-07-29
 - **Status**: active — ships as patch **1.0.2** via REL-04 (bump `patch`); live post-release verification (the user re-opening the two reported layouts against Android Studio) is a RECOMMENDED, not mandated, follow-up per the spec amendment's closure note.
 
+### AD-023 (post-release defect fix DF-5, 2026-07-29)
+- **Decision**: Both render executors (`LayoutRenderer.kt:58`, `DrawableRenderer.kt:78`) now strip exactly one leading UTF-8 BOM (U+FEFF) via a new shared `preprocess/Bom.kt` helper (`Bom.strip`) before any downstream consumer sees the ingested content — the single choke point ahead of well-formedness validation, `MaterialAttrCheck`, every preprocessing stage, and the overlay write, covering both `inlineContent` and disk-read origins alike. Every new BOM fixture (`bom_plain`/`bom_twin`, `bom_error`, `bom_include_host`/`bom_included`, `bom_unknown_attr_plain`/`bom_unknown_attr_twin`, `bom_shape_plain`/`bom_shape_twin`, `bom_only`) carries an in-test byte-integrity guard (asserts the first 3 bytes are `EF BB BF`) so a future editor/formatter pass can't silently neutralize this regression coverage.
+- **Reason**: Real-world report (2026-07-29): a BOM'd production layout failed to preview with `PI must not start with xml … @1:5` — root-caused to the pinned parser's jar (kxml2's Reader-path well-formedness parse has no BOM handling and demotes a BOM-shifted `<?xml …?>` declaration to an illegal `xml`-prefixed PI). Fixed per the "Defect Amendment (2026-07-29): DF-5" section in `spec.md` (requirement **HOST-05**). Escape analysis: a repo-wide byte-scan found zero BOM'd fixture/corpus XML files, so no prior gate ever exercised this path — the byte-integrity-guard tightening above closes that blindness. The pre-fix engineTest run reproduced the reported error verbatim (recorded in the T95 commit body) before the fix landed, confirming the RED→GREEN transition rather than assuming it.
+- **Trade-off**: none material — a pure ingestion-layer fix ahead of every consumer; no wire protocol, extension-side, scheduler, webview, or classifier change (host-only, per the spec amendment's assumption table). The pre-existing genuine syntax error in the originally-reported file (a stray `a` after `android:layout_width="match_parent"`) now surfaces truthfully at its real line instead of being masked — accepted as the correct, more faithful behavior (HOST-05 AC2).
+- **Scope**: `host/src/main/kotlin/preprocess/Bom.kt` (new), `host/src/main/kotlin/render/LayoutRenderer.kt`, `host/src/main/kotlin/render/DrawableRenderer.kt`, new engineTest coverage (`BomIngestionTest.kt`) + host unit coverage (`BomTest.kt`), new `bom_*` gallery fixtures (framework/material/drawables galleries), `extension/CHANGELOG.md` `## 1.0.3`, `HOST-05` traceability.
+- **Date**: 2026-07-29
+- **Status**: active — ships as patch **1.0.3** via REL-04 (bump `patch`); a RECOMMENDED (not mandated) post-release smoke is the user re-opening the originally reported layout after removing its stray `a`.
+
 ## Handoff
 
+- **DF-5 AMENDMENT — T95–T97 EXECUTE COMPLETE (2026-07-29), T98 (this commit) closes out.** Root
+  cause (verified to the pinned parser's jar, not assumed): a leading UTF-8 BOM survives disk
+  ingestion (`File.readText()` doesn't strip U+FEFF), and `Preprocessor.validate`'s
+  `KXmlParser.setInput(StringReader(…))` has no BOM sniffing, so it demotes the BOM-shifted
+  `<?xml …?>` declaration to an illegal `xml`-named PI → `PI must not start with xml … @1:5`.
+  Fixed per **AD-023** (a shared `preprocess/Bom.kt` helper stripping exactly one leading U+FEFF at
+  both executor ingestion lines). All 4 tasks committed, one atomic verb-first commit per task:
+  `dead0a6` (T95 — `Bom.kt` + both ingestion call sites + `BomTest` + `BomIngestionTest` AC1,
+  pre-fix RED run reproducing the exact reported error recorded in the commit body; post-fix host
+  unit 115/115, engineTest 59/59 across 24 classes, corpus 42/42 zero-diff), `05a81fe` (T96 —
+  `BomIngestionTest` extended with AC2 error-accuracy at the true line/no PI artifact, AC3 BOM'd
+  `<include>` target + untouched cycle detection, AC5 warning parity on a BOM'd androidx layout,
+  the AC1 drawable `<shape>` leg, and the BOM-only edge case; zero further production code, as
+  expected; engineTest 64/64 across 24 classes, corpus 42/42 zero-diff), `e4154a9` (T97 — the
+  `## 1.0.3` changelog entry; extension sanity 206/206 unchanged), and this commit (T98 —
+  bookkeeping: AD-023, this Handoff update, the `spec.md` HOST-05 traceability flip, `tasks.md`
+  statuses). Full gate at close: `cd host && ./gradlew build test && ./gradlew engineTest` green,
+  `npm run corpus` 42/42, `cd extension && npm test` 206/206. Ships as **patch 1.0.3** (REL-04, bump
+  `patch`) — the version bump itself happens at release, not in this phase (T81/T93 precedent). A
+  RECOMMENDED (not mandated) post-release smoke: the user re-opening the originally reported layout
+  (after removing its stray `a`) against Android Studio. Next action: dispatch the always-on
+  Verifier (spec-anchored check + discrimination sensor) per the tasks.md Execution Protocol;
+  results append to `validation.md` as a dated "BOM Ingestion Fix Verification" section.
 - **DF-4 AMENDMENT — T89–T93 EXECUTE COMPLETE (2026-07-29), T94 (this commit) closes out.** Root
   cause (verified to the pinned engine's bytecode, not assumed): `EngineAdapter.inflateOrNull`
   inflated with a **null parent**, so the root's LayoutParams were never generated; Paparazzi's

@@ -11,6 +11,7 @@ import engine.ConfigMapper
 import engine.EngineAdapter
 import log.LogBridge
 import out.PngWriter
+import preprocess.Bom
 import preprocess.Preprocessor
 import rpc.DocKind
 import rpc.DrawableState
@@ -75,9 +76,11 @@ open class DrawableRenderer(
     val docFile = File(request.docPath)
     val roots = request.roots.map(::File)
 
-    val content = request.inlineContent ?: runCatching { docFile.readText() }.getOrElse {
-      return error(request, "cannot read ${request.docPath}: ${it.message}", totalStart)
-    }
+    val content = Bom.strip(
+      request.inlineContent ?: runCatching { docFile.readText() }.getOrElse {
+        return error(request, "cannot read ${request.docPath}: ${it.message}", totalStart)
+      },
+    )
 
     val pre = Preprocessor.preprocess(
       content = content,

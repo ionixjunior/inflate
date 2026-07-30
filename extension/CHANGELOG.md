@@ -3,6 +3,15 @@
 Notable changes to the Inflate extension. Per-release notes (with merged PRs) are also published on
 the [GitHub Releases page](https://github.com/ionixjunior/inflate/releases).
 
+## 1.0.3
+
+Bug fixes — no new capability.
+
+- Fixed: XML files saved with a UTF-8 byte-order mark (BOM) — common in legacy Windows/Xamarin-
+  authored projects — failed to preview with a misleading `PI must not start with xml` error. Such
+  files now preview correctly; a genuine syntax error in a BOM'd file now points at its real line
+  instead.
+
 ## 1.0.2
 
 Bug fixes — no new capability.

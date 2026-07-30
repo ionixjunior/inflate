@@ -1184,3 +1184,128 @@ layoutlib defaulted root params. Placeholder visual styling for custom views (sc
 InfoMessageCard box color/position within its size) remains the AD-007/AD-013 accepted limitation —
 its mis-*position* was this defect and is covered by LAY-08 AC7. No wire protocol, extension-side,
 scheduler, or webview change; drawable rendering untouched.
+
+---
+
+## Defect Amendment (2026-07-29): DF-5 — UTF-8 BOM'd XML files fail to preview ("PI must not start with xml")
+
+> Found in real-world use (2026-07-29): a user opened a production `RelativeLayout` (pt-BR Android
+> app: toolbar `<include>`, a ScrollView list, a FAB `<include>`) and got an empty preview with the
+> error strip `PI must not start with xml (position:unknown ﻿@1:5 in java.io.StringReader@…)
+> (line 1:5)`. The file on disk starts with the UTF-8 byte-order mark (`EF BB BF`) — the exception's
+> own position echo contains the raw U+FEFF (visible as an invisible character in the report), and
+> `@1:5` is exactly one column right of where a document-start `<?xml` is accepted. A leading BOM is
+> **valid XML** (the spec requires processors to accept and discard it; the Android toolchain and
+> Studio handle such files), so this is an Inflate-only fidelity gap on every non-dirty render.
+> Fix tasks: **T95–T98 (phase 22)** in `tasks.md` ("BOM Ingestion Fix Tasks", drafted 2026-07-29,
+> **approved by the user 2026-07-29**); requirement **HOST-05** below; discovery to be recorded as **AD-023** in
+> `.specs/STATE.md` at close-out (T98). Ships as **patch release 1.0.3** (SemVer: bug fix, no new
+> capability; REL-04 pipeline, bump `patch` — 1.0.2 already shipped).
+>
+> The reported file ALSO contains a genuine well-formedness error the BOM failure currently masks —
+> a stray `a` after `android:layout_width="match_parent"` on the ScrollView's inner `LinearLayout`.
+> After this fix that exact file errors truthfully at that line until the stray character is
+> removed; a BOM'd file without it renders. AC2 pins this.
+
+**Root cause (code-verified down to the pinned parser's jar):**
+
+1. **Ingestion keeps the BOM.** Only `refresh` (dirty-buffer) renders carry `inlineContent`
+   (`extension/src/scheduler.ts:232`); every `save`/`depSave`/`config`/`reopen` render makes the
+   host read disk bytes — `docFile.readText()` at `host/src/main/kotlin/render/LayoutRenderer.kt:58`
+   and `render/DrawableRenderer.kt:78`. The JDK's UTF-8 decoder deliberately does not strip a BOM
+   (JDK-4508058, wontfix), so the content string begins with U+FEFF.
+2. **kxml2's Reader path rejects the shifted declaration.** `Preprocessor.validate`
+   (`preprocess/Preprocessor.kt:112-125`) feeds the string via `StringReader` to `KXmlParser` — the
+   one parser entry with **no BOM handling** (the byte-level `setInput(InputStream)` path sniffs and
+   skips BOMs; the Reader path cannot). kxml2 accepts the `<?xml …?>` declaration only at the
+   absolute start of input; anything before it — even the single BOM code point — demotes it to an
+   ordinary processing instruction, and PI targets starting with `xml` are illegal →
+   `PI must not start with xml` thrown at `@1:5` (`net.sf.kxml:kxml2:2.3.0` from the pinned engine
+   closure — error string verified in the cached jar's `KXmlParser.class`, and the thrown position
+   matches the report exactly, BOM echo included).
+3. **The truthful-error contract breaks with it.** The exception surfaces through the UX-04 syntax
+   path as a `RenderError` at line 1:5 — a misleading message about a file that is, per the XML
+   spec, perfectly valid. Flip-flop symptom: typing momentarily heals the preview (VS Code decodes
+   the BOM away from the editor buffer, and `refresh` sends that buffer inline), then the next
+   save/reopen re-reads the BOM'd bytes and fails again.
+4. **Silent secondary casualty.** `MaterialAttrCheck.unknownAttrs(content)`
+   (`render/LayoutRenderer.kt:139`) parses the same raw string, catches the same exception
+   internally, and returns an empty list — so P1-B AC4's unknown-res-auto-attribute warnings are
+   silently dropped for BOM'd files too. The same single strip fixes it (the check runs off the
+   ingested string, before preprocessing). Site inventory (evidence, not assumption): no other
+   host `readText`/`readBytes` call ingests user XML — `LayoutRenderer.kt:120` re-reads the
+   host-written overlay (BOM-free by construction once ingestion strips), `Structural.kt:104` is a
+   regex-only include-graph walk (position-independent, BOM-harmless), `EngineFetcher` reads a
+   non-XML sidecar, `FrameworkDelegateGenerator` reads jar bytes.
+
+**Why every gate passed:** a byte-scan of the repo (2026-07-29) finds **zero** fixture/corpus XML
+files beginning with `EF BB BF`; host unit tests feed Kotlin string literals; the 42/42 corpus is
+self-referentially BOM-free. No gate ever ingested a BOM — the first divergence had to come from a
+real-world tree. BOM'd resource XML is common in legacy Windows-authored projects — squarely the
+AD-001 .NET/Xamarin audience.
+
+### HOST-05: Render ingestion strips a leading UTF-8 BOM (restores P1-A/P1-C preview of BOM'd files and UX-04 error truthfulness)
+
+1. WHEN either XML render executor ingests previewed content (layout or drawable/color path;
+   `inlineContent` or the disk fallback) THEN the host SHALL strip exactly one leading U+FEFF
+   before ANY downstream consumer (well-formedness validation, `MaterialAttrCheck`, every
+   preprocessing stage, the overlay write), and a valid file differing from a BOM-less twin only by
+   the leading BOM SHALL render status `ok` with a byte-identical PNG.
+2. WHEN a BOM'd file contains a genuine XML syntax error THEN the surfaced error SHALL be that real
+   error at its real 1-based line/column (UX-04 contract) — never the
+   `PI must not start with xml … @1:5` artifact. (Covers the reporting file's stray `a` after
+   `android:layout_width="match_parent"`: truthful error at that line until corrected.)
+3. WHEN the previewed layout `<include>`s an on-disk layout file that itself starts with a BOM THEN
+   the render SHALL complete with the included content rendered — the engine parses on-disk
+   resource files through kxml2's byte-level `InputStream` path, which auto-detects BOMs (pinned by
+   an engineTest against the real Bridge, not assumed) — and Structural's include-graph walk (cycle
+   detection, regex-based) SHALL be unaffected.
+4. WHEN ingested content has no leading BOM THEN ingestion SHALL be an identity pass-through — a
+   U+FEFF at any position other than offset 0 is document content (zero-width no-break space) and
+   SHALL NOT be altered; the corpus SHALL stay 42/42 with zero golden byte-diffs and zero existing
+   assertion changes.
+5. WHEN a BOM'd layout uses a res-auto attribute unknown to the bundled Material closure THEN the
+   P1-B AC4 warning SHALL be emitted exactly as for its BOM-less twin (pins the strip point AHEAD
+   of `MaterialAttrCheck`, whose malformed-XML catch currently swallows those warnings).
+
+**Edge cases:**
+
+- WHEN the file is only a BOM (or BOM + whitespace) THEN the render SHALL error with the existing
+  empty/invalid-document message — accurate, not the PI artifact.
+- WHEN a file pathologically starts with more than one U+FEFF THEN exactly one SHALL be stripped;
+  the remainder is content and errors accurately (strict-parser behavior; Studio errors there too).
+- UTF-16/UTF-32 encoded files: out of scope — ingestion is UTF-8 (`readText()`); such files fail
+  today for unrelated decoding reasons and are unchanged by this amendment.
+- `.axml` files take the same shared ingestion path — the strip applies identically (AD-001 tree
+  parity).
+- Nine-patch previews: N/A — PNG bytes, no XML ingestion.
+
+**Assumptions (logged per closure gate):**
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | -------------- | --------- | ---------- |
+| Strip location | exactly one leading U+FEFF, at the two executor ingestion lines (`LayoutRenderer.kt:58`, `DrawableRenderer.kt:78`), via a named shared helper (`preprocess/Bom.kt`) | the single choke point ahead of EVERY consumer including the pre-preprocess `MaterialAttrCheck` (a Preprocessor-internal strip would leave the AC5 warning gap); applies to `inlineContent` too, removing any reliance on editor behavior | yes (2026-07-29, spec approval) |
+| No extension-side change | none — host-only fix | VS Code decodes the BOM away from editor buffers (its `utf8bom` handling re-adds it only on save), and `classifier.ts`'s root-element sniff regex is position-independent, so classification never breaks; the host strip defensively covers any inline BOM regardless | yes (2026-07-29, spec approval) |
+| Engine-side include parsing needs no code change | none expected | kxml2's `setInput(InputStream)` byte-sniffs BOMs (public 2.3.0 source; only the Reader path is BOM-blind) — AC3's engineTest pins this against the pinned Bridge instead of assuming; if it proves false, STOP: user files are never rewritten (design Q3), so the include fix shape returns to spec | yes (2026-07-29, spec approval) |
+| Corpus goldens | zero changed goldens expected (42/42 byte-identical) | the strip is identity for BOM-free input; asserted as an outcome at every gate, never assumed | yes (2026-07-29, spec approval) |
+| Release vehicle | patch 1.0.3 via REL-04 (bump `patch`) | pure bug fix, no new capability; 1.0.2 already shipped | yes (2026-07-29, spec approval) |
+
+**Verification note:** the new engineTests must be RED before the production change lands (the
+executor records the pre-fix failure reproducing the exact reported error). Discrimination
+candidates for the Verifier: (a) remove the ingestion strip — the AC1/AC2/AC5 tests must go red
+with the PI artifact; (b) relocate the strip inside `Preprocessor.preprocess` — the AC5
+warning-parity test alone must kill it; (c) defang a BOM fixture (strip its bytes) — every BOM
+fixture carries an in-test byte-integrity guard (first 3 bytes `EF BB BF`) so a future
+editor/formatter pass cannot silently neutralize the suite.
+
+### Requirement Traceability (DF-5)
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| HOST-05 | P1-A + P1-C (shared executor ingestion), in service of P1-I/UX-04 error truthfulness | Done | Implemented (T95–T98, phase 22, 2026-07-29) — `dead0a6`/`05a81fe`/`e4154a9` + close-out; recorded as **AD-023**; ships as patch **1.0.3** on release |
+
+**Unchanged:** UX-04's error contract stands as written — this amendment makes it truthful for
+BOM'd files (the error reported is now the file's real problem, or none). LAY-01..08, DRW-*, RES-*
+and both preview stories' ACs are untouched; no wire protocol, extension-side, scheduler, webview,
+or classifier change; overlay naming/writing untouched (overlays are written from the stripped
+string — they were never BOM'd, since validation failed first).
