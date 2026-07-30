@@ -3478,9 +3478,11 @@ tabs render in the background (eager); trigger stays on-save; no restart persist
 Remaining defaults (snapshot-replay mechanism, queue retirement, no burst prioritization, release
 vehicle) are assumption-logged pending spec approval — no separate context.md section needed.
 **Status**: ✅ **T99–T104 (phase 23) COMPLETE & VERIFIED — 2026-07-30.** All 6 tasks committed, one
-atomic commit per task (`d3c9403`, `a55551f`, `2ff9b07`, `b9addf8`, `82b7bb2`, this commit); AD-024
+atomic commit per task (`d3c9403`, `a55551f`, `2ff9b07`, `b9addf8`, `82b7bb2`, `a3e9ebe`); AD-024
 recorded in `.specs/STATE.md`; interactive UAT PASSED in a real VS Code Extension Development Host
-(2026-07-30); ships in patch **1.0.3**.
+(2026-07-30); ships in patch **1.0.3**. The always-on Verifier's first pass flagged 2 Minor
+discrimination-sensor gaps (fix→re-verify iteration 1: `73e16f3`, `101ffa8`, `4219ed5`) —
+**re-verified PASS** (`6dd0de1`), 7/7 UX-06 ACs cleanly covered. See `validation.md`.
 
 ### Test Coverage Matrix (DF-6)
 

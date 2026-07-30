@@ -201,11 +201,26 @@
   Gates green throughout: extension unit 224/224 (206 baseline − 3 retired `messageQueue.test.ts`
   + 21 new across `panelState.test.ts`/`panelStateCache.test.ts`), extension integration 33/33 (25
   baseline + 8 new in `multitab.test.ts`), host `build test` + `engineTest` PASS (host untouched —
-  no-regression only, Gradle UP-TO-DATE), corpus 42/42 @ 0.000% diff. **Status: DF-6 COMPLETE.**
-  Ships as **patch 1.0.3** via REL-04 (same release as AD-023/DF-5) whenever the next release is
-  triggered. Next action: the always-on Verifier (author ≠ verifier) — spec-anchored outcome check
-  + discrimination sensor per the candidates listed in `spec.md`'s DF-6 verification note — appends
-  "Multi-Tab Preview Fix Verification" to `validation.md`.
+  no-regression only, Gradle UP-TO-DATE), corpus 42/42 @ 0.000% diff.
+  **Verifier (author ≠ verifier) — ⚠️ ISSUES on the first pass (2026-07-30)**: 6/7 UX-06 ACs
+  cleanly covered, full gate green, but 2 Minor discrimination-sensor gaps — `webview-ui/main.ts`'s
+  actual `setState`/`getState` boot wiring had zero test coverage (only the extracted pure
+  `panelStateCache.ts` functions were tested), and the flagship AC1/AC2/AC7 "RED-first repro"
+  integration test weak-killed a mutation that reverted the reveal replay to queue-flush-only
+  (caught only incidentally, via an unrelated AC5 test). Fix→re-verify loop, iteration 1: `73e16f3`
+  (fix T105 — `webview-ui/main.test.ts`, jsdom-based, proves the real boot wiring), `101ffa8` (fix
+  T106 — `PanelEntry.replayPostedCount`, a delivery-gated counter distinct from `replayCount`, wired
+  into `multitab.test.ts`'s `revealA()` and the flagship test), `4219ed5` (records the first
+  Verifier pass). **Re-verified PASS (2026-07-30, commit `6dd0de1`)** — both gaps independently
+  confirmed closed (the re-verifier reproduced the exact original mutations against the fixed code
+  and confirmed each now fails cleanly and directly, not incidentally); full gate re-run from
+  scratch: extension unit 229/229, integration 33/33, host build+test 115/115, engineTest 64/64,
+  corpus 42/42 @ 0.000%. **7/7 UX-06 ACs cleanly covered. Status: DF-6 COMPLETE & VERIFIED.** Ships
+  as **patch 1.0.3** via REL-04 (same release as AD-023/DF-5) whenever the next release is
+  triggered. Lessons L-006/L-007 recorded (webview-ui wiring needs a real-webview/DOM assertion, not
+  just pure-module tests; a delivery/replay observability counter must be gated to the branch that
+  actually delivers) — both `candidate` status, not yet promotable (recurrence 1/2 distinct
+  features). No further action needed for DF-6.
 - **DF-5 AMENDMENT — T95–T97 EXECUTE COMPLETE (2026-07-29), T98 (this commit) closes out.** Root
   cause (verified to the pinned parser's jar, not assumed): a leading UTF-8 BOM survives disk
   ingestion (`File.readText()` doesn't strip U+FEFF), and `Preprocessor.validate`'s
