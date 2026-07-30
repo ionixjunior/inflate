@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { EXTENSION_ID } from './extensionId';
 import type { InflateApi } from '../../extension';
+import { pngTokenOf } from '../../panelState';
 import type { RenderResponse } from '../../protocol';
 
 /**
@@ -266,5 +267,51 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
 
     assert.strictEqual(a.panelManager.lastApplied(fileA)!.busy, false, 'settling must clear the busy phase — no stuck spinner');
     assert.strictEqual(a.panelManager.lastApplied(fileA)!.status, 'ok');
+  });
+
+  test("closing one preview sweeps only that document's PNGs — the other survives and keeps working (T102, AC6)", async function () {
+    this.timeout(30000);
+    const a = await api();
+    await pinZoom(a, fileA);
+    await pinZoom(a, fileB);
+
+    await showEditor(fileA);
+    await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(fileA));
+    await waitFor(
+      () => a.panelManager.lastApplied(fileA)?.status === 'ok' && (a.panelManager.lastApplied(fileA)?.replayCount ?? 0) >= 1,
+    );
+    const panelA = a.lastPanel!;
+
+    await showEditor(fileB);
+    await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(fileB));
+    await waitFor(() => a.panelManager.lastApplied(fileB)?.status === 'ok');
+    const panelB = a.lastPanel!;
+
+    // The fake host always points `pngPath` at the same fixed `media/hello.png` (fake-host.js never
+    // writes into outputDir) — seed real per-doc PNG files matching the host's naming convention
+    // (`<pngTokenOf(docPath)>__<renderId>.png`) so the sweep has something document-scoped to prove.
+    const outputDir = a.panelManager.outputDirPath();
+    fs.mkdirSync(outputDir, { recursive: true });
+    const pngA = path.join(outputDir, `${pngTokenOf(fileA)}__1.png`);
+    const pngB = path.join(outputDir, `${pngTokenOf(fileB)}__1.png`);
+    fs.writeFileSync(pngA, '');
+    fs.writeFileSync(pngB, '');
+
+    panelB.dispose();
+    await waitFor(() => !a.panelManager.hasPanel(fileB));
+
+    assert.ok(fs.existsSync(pngA), "closing B must leave A's PNGs on disk");
+    assert.ok(!fs.existsSync(pngB), "closing B must sweep B's own PNGs");
+
+    // A's tab keeps working through a later hide/reveal cycle — reopening B (a fresh panel) hides A
+    // again; the replay URI still resolves against A's surviving PNG.
+    const replaysBefore = a.panelManager.lastApplied(fileA)!.replayCount;
+    await showEditor(fileB);
+    await vscode.commands.executeCommand('inflate.openPreview', vscode.Uri.file(fileB));
+    await waitFor(() => a.panelManager.lastApplied(fileB)?.status === 'ok');
+    await revealA(a, panelA, replaysBefore);
+
+    assert.strictEqual(a.panelManager.lastApplied(fileA)!.status, 'ok', "A's tab must still work after B is closed and reopened");
+    assert.ok(fs.existsSync(pngA), "A's PNG must still be on disk after the later hide/reveal cycle");
   });
 });

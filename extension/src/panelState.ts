@@ -14,9 +14,21 @@
  * is cleared the moment a settling message (`setImage`/`setError`/`fileGone`) is recorded, so a
  * finished render never replays as a stuck spinner.
  */
+import * as path from 'path';
+
 export interface StoreMessage {
   type: string;
   [key: string]: unknown;
+}
+
+/**
+ * The PNG filename token for `docPath` (DF-6, UX-06 AC6) — mirrors the host's `PngWriter.kt:45`
+ * `tokenOf` EXACTLY (`docKey.replace(Regex("[^A-Za-z0-9]"), "_")` over the resolved path the
+ * scheduler sends as `RenderRequest.docPath`): naming is a de-facto cross-language protocol, so a
+ * drift here means the panel-close sweep (below) misses or wrongly deletes another document's PNGs.
+ */
+export function pngTokenOf(docPath: string): string {
+  return path.resolve(docPath).replace(/[^A-Za-z0-9]/g, '_');
 }
 
 export class PanelStateStore {

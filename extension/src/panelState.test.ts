@@ -1,5 +1,21 @@
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { PanelStateStore, StoreMessage } from './panelState';
+import { PanelStateStore, pngTokenOf, StoreMessage } from './panelState';
+
+describe('pngTokenOf — mirrors PngWriter.kt:45 tokenOf (DF-6, UX-06 AC6)', () => {
+  it('replaces every non-alphanumeric character with an underscore', () => {
+    // Cross-reference: PngWriter.kt:45 — docKey.replace(Regex("[^A-Za-z0-9]"), "_")
+    expect(pngTokenOf('/Users/dev/project/res/layout/main.xml')).toBe('_Users_dev_project_res_layout_main_xml');
+  });
+
+  it('resolves a relative path before tokenizing — matches the scheduler\'s resolved docPath key', () => {
+    expect(pngTokenOf('a.xml')).toBe(pngTokenOf(path.resolve('a.xml')));
+  });
+
+  it('two different doc paths never collide by coincidence in the ordinary case', () => {
+    expect(pngTokenOf('/res/layout/a.xml')).not.toBe(pngTokenOf('/res/layout/b.xml'));
+  });
+});
 
 describe('PanelStateStore — replay-on-ready snapshot (DF-6, UX-06 AC7)', () => {
   it('replays every message type recorded, in canonical order: config, themes, result, busy', () => {

@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { PanelStateStore, StoreMessage } from './panelState';
+import { PanelStateStore, pngTokenOf, StoreMessage } from './panelState';
 import { RenderResponse, Warning } from './protocol';
 import { panelShellHtml } from './webview';
 
@@ -169,6 +169,13 @@ export class PreviewPanelManager {
     return this.entries.has(this.key(docPath));
   }
 
+  /** The session PNG output dir's filesystem path (test/observation hook, DF-6, UX-06 AC6) — lets
+   * integration tests seed/assert PNG files matching the host's naming convention, since the fake
+   * host used in those tests never actually writes into it. */
+  outputDirPath(): string {
+    return this.outputDir.fsPath;
+  }
+
   /** The most recent state applied to a document's panel (test/observation hook). */
   lastApplied(docPath: string): AppliedState | undefined {
     const entry = this.entries.get(this.key(docPath));
@@ -276,7 +283,7 @@ export class PreviewPanelManager {
     });
     panel.onDidDispose(() => {
       this.entries.delete(key);
-      this.sweepPngs();
+      this.sweepPngs(doc.uri.fsPath);
     });
     return panel;
   }
@@ -361,17 +368,24 @@ export class PreviewPanelManager {
     if (entry.ready) void entry.panel.webview.postMessage(message);
   }
 
-  /** Delete PNG files in the session output dir (activation + panel close, design component #9). */
-  private sweepPngs(): void {
+  /**
+   * Delete PNG files in the session output dir. Called with no `docPath` once, at activation
+   * (sweep-all of a fresh session, unchanged) — with a `docPath`, only that document's PNGs
+   * (`<pngTokenOf(docPath)>__*.png`) are removed, so closing one preview never touches another's
+   * current/previous frames (DF-6, UX-06 AC6; the host's `PngWriter` already names + prunes files
+   * per-document — `keepPerDoc = 2`, `PngWriter.kt:11-45` — specifically so this scoping works).
+   */
+  private sweepPngs(docPath?: string): void {
     try {
       if (!fs.existsSync(this.outputDir.fsPath)) return;
+      const prefix = docPath !== undefined ? `${pngTokenOf(docPath)}__` : undefined;
       for (const name of fs.readdirSync(this.outputDir.fsPath)) {
-        if (name.endsWith('.png')) {
-          try {
-            fs.unlinkSync(path.join(this.outputDir.fsPath, name));
-          } catch {
-            /* best-effort sweep */
-          }
+        if (!name.endsWith('.png')) continue;
+        if (prefix !== undefined && !name.startsWith(prefix)) continue;
+        try {
+          fs.unlinkSync(path.join(this.outputDir.fsPath, name));
+        } catch {
+          /* best-effort sweep */
         }
       }
     } catch (e) {
