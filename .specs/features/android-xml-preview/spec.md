@@ -1309,3 +1309,144 @@ BOM'd files (the error reported is now the file's real problem, or none). LAY-01
 and both preview stories' ACs are untouched; no wire protocol, extension-side, scheduler, webview,
 or classifier change; overlay naming/writing untouched (overlays are written from the stripped
 string — they were never BOM'd, since validation failed first).
+
+## Defect Amendment (2026-07-29): DF-6 — hidden preview tabs go blank: webview state is lost when preview tabs share an editor group
+
+> Found in real-world use (2026-07-29): the user previews layout A (renders fine), then previews
+> layout B — B opens as a second tab in the same editor group, hiding A. Switching back to A shows a
+> **blank panel** (checkerboard stage, no image, empty toolbar pickers). The desired workflow — many
+> previews open at once, editing several XML files, switching tabs and seeing every preview current —
+> is broken at the panel layer only: the render pipeline (scheduler fan-out on save, dependency
+> invalidation, host, PNG output) already handles multiple documents correctly. Fix tasks:
+> **T99–T104 (phase 23)** in `tasks.md` ("Multi-Tab Preview Fix Tasks", drafted 2026-07-29);
+> requirement **UX-06** below; discovery to be recorded as **AD-024** in `.specs/STATE.md` at
+> close-out (T104). Ships in patch **1.0.3** via REL-04 (user decision 2026-07-29 — 1.0.3 is
+> drafted but not yet released; T103 updates its release notes; SemVer: bug fix — restores the
+> shipped P1-A/P1-F contract for >1 open preview; no new capability). **Spec + tasks approved by
+> the user 2026-07-29.**
+>
+> Three scope decisions were put to the user before this spec was drafted (2026-07-29, pre-spec
+> Q&A): hidden tabs keep rendering **in the background** (not lazily on reveal); the update trigger
+> stays **on save** (+ the manual refresh command) — no while-typing rendering; preview tabs do
+> **not** survive a VS Code window reload (deferred idea). All three are logged in the assumption
+> table below as user decisions.
+
+**Root cause (code-verified):**
+
+1. **Hidden webviews are destroyed and nothing re-hydrates them.** Every preview panel is created
+   with `retainContextWhenHidden: false` (`extension/src/panel.ts:213`), and ALL rendered state —
+   image, error, warnings, badges, toolbar contents — lives only in the webview's DOM, applied by
+   `postMessage` (`panel.ts` header contract; `webview-ui/main.ts` never calls
+   `vscode.setState`/`getState`, grep-verified). Both previews open with `ViewColumn.Beside`
+   (`panel.ts:203,210`), so they stack as tabs in the same group; when B opens, VS Code destroys A's
+   webview context. Revealing A reloads only the static shell HTML (`panelShellHtml` — `<img>` is
+   `display:none`), the script re-runs and posts `ready` (`webview-ui/main.ts:523`), and the
+   manager's `ready` handler (`panel.ts:185-187`) flushes an **empty** pending queue — the
+   `PendingMessageQueue` only ever holds messages posted before the FIRST ready
+   (`messageQueue.ts`); `entry.ready` stays `true` forever after. Nothing re-sends the image →
+   permanent blank.
+2. **Results delivered while a tab is hidden are silently dropped.** `Webview.postMessage` only
+   delivers to live webviews; with the context destroyed, every `setImage`/`setError`/`setThemes`/
+   `setConfig` posted while hidden (`panel.ts:307-314` posts directly because `ready` is still
+   `true`) is lost. The scheduler side is already correct — `notifyFileSaved`
+   (`scheduler.ts:160-169`) re-renders the saved document and every open dependent preview, hidden
+   or not, and `applyResult` updates the entry's `lastResponse`/`hasGoodImage` — but that tracked
+   state is never replayed to a reloaded webview.
+3. **Closing any one preview destroys every other preview's PNGs.** `panel.onDidDispose` →
+   `sweepPngs()` (`panel.ts:223-226`) deletes **all** `*.png` in the shared session output dir. The
+   host already scopes output per document (`PngWriter.kt:11-45`: `<docToken>__<renderId>.png`,
+   `keepPerDoc = 2` precisely so stale display works); the extension-side sweep-all defeats it —
+   after closing one of several previews, the surviving panels' current/previous PNGs are gone, so
+   any later webview reload of those tabs 404s its image.
+
+**Why every gate passed:** the integration suite (fake host) asserts `lastApplied` — the
+extension-side tracked state, which IS correctly updated for hidden panels — never the
+webview-delivered truth, and no test ever opened two previews in one group, hid one, and revealed
+it. The jsdom webview-ui suite exercises `main.ts` against a DOM that is never destroyed. This is
+the third first-real-use escape in the real-webview-behavior family (AD-017 resource-scheme 401,
+AD-018 native image drag): webview **lifecycle** is invisible to fake-webview/jsdom gates.
+Tightening: T100 drives REAL webview panels through hide/reveal in test-electron, and interactive
+UAT is mandatory at close-out (AD-018 rule extended to this class).
+
+### UX-06: Preview panels retain and refresh their content across tab visibility changes (multi-tab preview)
+
+1. WHEN a preview tab is hidden (any cause — another preview or editor takes its group slot) and
+   later revealed THEN the panel SHALL again display exactly the state it last applied — the
+   rendered image with its warnings/badges, or the error panel over the dimmed prior good image
+   with the stale chip, or the file-gone notice — with no manual refresh and no new render
+   required, for any number of open previews.
+2. WHEN a render settles for a document whose preview tab is hidden THEN the result SHALL be
+   recorded in that panel's tracked state and SHALL be what the tab shows when revealed
+   (background delivery — user decision 2026-07-29: hidden tabs render eagerly, never lazily on
+   reveal).
+3. WHEN a save re-renders several open previews (the saved file's own preview plus dependents, per
+   UX-02) THEN every affected panel — visible or hidden — SHALL end up showing its fresh result;
+   visible panels update live exactly as today.
+4. WHEN a preview tab is hidden and revealed THEN its viewport zoom AND pan position SHALL be what
+   they were at hide time (webview-local transients survive the reload).
+5. WHEN toolbar config is changed after open (e.g. night toggled), and the tab is then hidden and
+   revealed THEN the toolbar SHALL show the changed config — replay hydration re-derives from
+   ConfigStore at reveal time, never from an open-time copy.
+6. WHEN one preview panel is closed THEN only THAT document's PNGs (`<docToken>__*.png`) SHALL be
+   swept from the session output dir; every other open panel's current/previous PNGs SHALL remain
+   on disk and loadable (their tabs keep working through later hide/reveal cycles). The
+   activation-time sweep-all of a fresh session is unchanged.
+7. WHEN the webview signals `ready` — first load OR any reload after being hidden — THEN the panel
+   SHALL deliver the authoritative current state in one canonical sequence (config hydration, theme
+   list, then the current result [image / error with the prior good image for stale display /
+   file-gone], then the in-progress busy phase if any), and NO message posted while the webview was
+   not ready SHALL be lost. (FP-1 AC7's no-message-lost guarantee, restated over the snapshot store
+   that replaces the pending queue; delivery order becomes canonical rather than arrival-order —
+   outcome-equivalent, since later messages always superseded earlier UI state.)
+
+**Edge cases:**
+
+- WHEN a tab is revealed while its render is still in flight THEN the busy phase SHALL be shown and
+  SHALL settle into the result — no stuck spinner, no lost result.
+- WHEN engine-prep progress labels were posted while hidden THEN replay SHALL show only the latest
+  busy label, never a replayed stream of stale percentages.
+- WHEN the previewed file is deleted while its tab is hidden THEN reveal SHALL show the file-gone
+  notice.
+- WHEN a host-level failure settles while the tab is hidden THEN reveal SHALL show the error with
+  the prior good image dimmed + stale chip — identical to the visible-tab behavior.
+- WHEN two preview panels are simultaneously visible (separate editor groups) THEN both SHALL keep
+  updating live, as today — no regression.
+- PNG sweep tokens mirror the host's `PngWriter.tokenOf` sanitization; token collisions between
+  distinct doc paths are pre-existing host semantics (`prune` has the same property), unchanged.
+- VS Code window reload: preview tabs are NOT restored (no serializer registered today; user
+  decision 2026-07-29 — deferred idea, out of scope).
+
+**Assumptions (logged per closure gate):**
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | -------------- | --------- | ---------- |
+| Fix mechanism | extension-side authoritative state snapshot replayed on EVERY webview `ready`, + webview-side `vscode.setState`/`getState` cache of viewport transients and last image for instant repaint; `retainContextWhenHidden` stays `false` | the state is cheaply reconstructible (a PNG URI + toolbar state), and retention costs renderer memory per hidden panel — it scales against the stated "a lot of XML files" workflow; the plain one-line alternative (`retainContextWhenHidden: true`) is explicitly rejected for that linear memory growth; replay also lays the groundwork for the deferred restart-restore idea | yes (2026-07-29, spec approval) |
+| Hidden-tab render policy | background (eager) — scheduler untouched, it already fans out on save | user decision 2026-07-29 (pre-spec Q&A) | yes |
+| Update trigger | on save + manual refresh — UX-02 contract unchanged; no while-typing rendering | user decision 2026-07-29 (pre-spec Q&A) | yes |
+| Restart persistence | out of scope — tabs vanish on window reload as today; logged as a deferred idea | user decision 2026-07-29 (pre-spec Q&A); no webview serializer exists today | yes |
+| `PendingMessageQueue` | retired — absorbed by the snapshot store (single delivery mechanism) | every extension→webview message type (setConfig/setThemes/setImage/setError/fileGone/setBusy) is snapshot-representable; keeping both mechanisms double-delivers on re-ready; FP-1 AC7's observable guarantee is preserved and re-asserted against the store (AC7 above) | yes (2026-07-29, spec approval) |
+| Burst-save prioritization | none — sequential host queue with per-doc latest-wins coalescing, as today | a Save All across N previewed files queues N renders; bounded by open-preview count and already coalesced per doc; visible-first prioritization would be new scheduler machinery without evidence of need | yes (2026-07-29, spec approval — default accepted) |
+| Release vehicle | ships in the pending **1.0.3** (REL-04, bump `patch`); T103 updates the 1.0.3 release notes | user decision 2026-07-29; 1.0.3's changelog section exists but no `Release 1.0.3` commit does; version bumps happen at release, never in the fix branch (T81/T93 precedent) | yes (2026-07-29, user decision) |
+
+**Verification note:** the T99 integration repro (preview A → preview B → reveal A → assert replay
+delivery) must be RED against the pre-fix panel first, recorded in the task commit body.
+Discrimination candidates for the Verifier: (a) remove the re-ready replay (revert to
+queue-flush-only) — the reveal tests must go red reproducing the blank tab; (b) replay config from
+a cached open-time `HydratedConfig` instead of re-deriving via the hydration callback — the
+config-change-then-reveal test (AC5) alone must kill it; (c) revert the per-document sweep to
+sweep-all on dispose — the close-one-of-two PNG-survival test (AC6) alone must kill it; (d) drop
+the webview-side `setState` cache — the pan/zoom-survival jsdom test (AC4) alone must kill it;
+(e) drop the separate last-good-image slot from the store — the stale-replay test (AC1's
+error-over-dimmed-image leg) alone must kill it.
+
+### Requirement Traceability (DF-6)
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| UX-06 | P1-A + P1-F (preview loop / hot reload), in service of the multi-file preview workflow | Tasks | ✅ Verified — T99–T104 (phase 23) complete 2026-07-30, `fix/multi-tab-preview`; AD-024; interactive UAT PASSED; ships in patch 1.0.3 |
+
+**Unchanged:** the scheduler (UX-02 coalescing, dependency fan-out, latest-wins discipline — already
+correct for N documents), the wire protocol, the host (PngWriter's per-doc naming and
+`keepPerDoc = 2` are exactly what the fixed sweep relies on), the webview shell markup, UX-04's
+error/stale contract, and CFG-05 config persistence. FP-1 AC7 is restated (not weakened) per AC7
+above; no other shipped AC changes.

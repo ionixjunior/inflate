@@ -3457,3 +3457,320 @@ the no-BOM-fixture blindness), the Verifier distills it via `scripts/lessons.py`
 | T96 | ingestion behaviors (no prod code expected) | engineTest | engineTest | ✅ OK |
 | T97 | none (markdown content) | none — sanity gate only | none | ✅ OK |
 | T98 | none (bookkeeping) | none — full gate at close | none | ✅ OK |
+
+## Multi-Tab Preview Fix Tasks (Amendment — 2026-07-29)
+
+> Defect fix DF-6: with more than one preview open, a hidden preview tab goes blank when revealed —
+> the webview is destroyed on hide (`retainContextWhenHidden: false`) and nothing ever re-delivers
+> its state; results rendered while hidden are silently dropped; and closing any one preview sweeps
+> EVERY document's PNGs from the session output dir — see the "Defect Amendment (2026-07-29): DF-6"
+> section in `spec.md`, requirement **UX-06**. The render pipeline (scheduler fan-out, host, PNG
+> naming) is already multi-document-correct; this fix is extension-panel + webview-side only.
+> Discovery is recorded as **AD-024** at close-out (T104). The **Execution Protocol at the top of
+> this file applies unchanged**. Task numbering continues the feature's sequence: **T99–T104**,
+> **phase 23**. Ships in patch **1.0.3** (user decision 2026-07-29 — 1.0.3 is drafted but not yet
+> released; T103 updates its release notes). Verifier output is appended to `validation.md` as a
+> dated section — prior records are never rewritten.
+
+**Spec**: the "Defect Amendment (2026-07-29): DF-6" section in `spec.md` (UX-06)
+**Context**: user pre-spec Q&A (2026-07-29), logged in the amendment's assumption table: hidden
+tabs render in the background (eager); trigger stays on-save; no restart persistence (deferred).
+Remaining defaults (snapshot-replay mechanism, queue retirement, no burst prioritization, release
+vehicle) are assumption-logged pending spec approval — no separate context.md section needed.
+**Status**: ✅ **T99–T104 (phase 23) COMPLETE & VERIFIED — 2026-07-30.** All 6 tasks committed, one
+atomic commit per task (`d3c9403`, `a55551f`, `2ff9b07`, `b9addf8`, `82b7bb2`, `a3e9ebe`); AD-024
+recorded in `.specs/STATE.md`; interactive UAT PASSED in a real VS Code Extension Development Host
+(2026-07-30); ships in patch **1.0.3**. The always-on Verifier's first pass flagged 2 Minor
+discrimination-sensor gaps (fix→re-verify iteration 1: `73e16f3`, `101ffa8`, `4219ed5`) —
+**re-verified PASS** (`6dd0de1`), 7/7 UX-06 ACs cleanly covered. See `validation.md`.
+
+### Test Coverage Matrix (DF-6)
+
+> Inherited from the feature matrix. One tightening derived from this defect's escape analysis
+> (third real-webview-behavior escape after AD-017/AD-018): panel state that must survive a webview
+> reload gets REAL-webview lifecycle coverage — test-electron drives two panels through
+> hide/reveal — plus a mandatory interactive UAT at close-out; fake-webview `lastApplied`
+> assertions alone are structurally blind to this class. Baselines per the DF-5 close (2026-07-29):
+> extension 206 unit / 25 integration, engineTest 64/24 classes, corpus 42/42 — the executor
+> re-baselines exact counts before T99; counts only grow (minus the retired `messageQueue.test.ts`,
+> whose no-loss assertions move into `panelState.test.ts`, never weakened).
+
+| Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
+| ---------- | ------------------ | -------------------- | ---------------- | ----------- |
+| `PanelStateStore` (vscode-free snapshot/replay) | extension unit (vitest) | every message type recorded latest-wins; canonical replay order; separate last-good-image slot (stale replay); busy latest-label-only; FP-1 AC7 no-loss re-assertion; PNG token mirror pin | `extension/src/panelState.test.ts` | `cd extension && npm test` |
+| `panel.ts` visibility/replay wiring + per-doc sweep | test-electron integration (REAL webviews, fake host) | hide/reveal replay (RED-first repro); save-while-hidden; config-change-then-reveal; file-gone/host-error while hidden; close-one-of-two PNG survival | `extension/src/test/integration/multitab.test.ts` | `cd extension && npm test` |
+| webview-ui `setState` cache (viewport + image) | jsdom unit (vitest, webview-ui pattern) | state persisted on image/zoom/pan changes; boot-time synchronous restore; replay reconciliation supersedes cache | `extension/webview-ui/*.test.ts` | `cd extension && npm test` |
+| Host / corpus (untouched) | no-regression | engineTest + corpus stay green | — | `cd host && ./gradlew build test && ./gradlew engineTest`; `npm run corpus` |
+
+### Gate Check Commands (DF-6)
+
+**Quick** = `cd extension && npm test` (unit + integration) · **Full** (close-out) = Quick +
+`cd host && ./gradlew build test && ./gradlew engineTest` + `npm run corpus` (repo root). Host code
+is untouched — its suites are a no-regression check only.
+
+### Execution Plan (DF-6)
+
+**Phase 23: multi-tab preview fix**
+
+```
+T99 → T100 → T101 → T102 → T103 → T104
+```
+
+6 tasks → single batch, executed inline (no sub-agent offer). Strictly sequential: T99 lands the
+snapshot/replay mechanism with the RED-first repro, T100 pins the remaining hidden-state behaviors
+around it, T101 adds the webview-side transient cache, T102 scopes the sweep, T103 documents landed
+behavior, T104 closes out (bookkeeping + mandatory interactive UAT).
+
+### Task Breakdown (DF-6)
+
+#### T99: Replay authoritative panel state on every webview ready
+
+**What**: new vscode-free `extension/src/panelState.ts` — `PanelStateStore`: `record(msg)` merges
+every extension→webview message into a latest-wins snapshot (slots: config, themes, result —
+`setImage` XOR `setError` XOR `fileGone` — plus a SEPARATE last-good-image slot so an error replays
+as [image, error] reproducing the dimmed-stale display, busy flag/label); `replay(): unknown[]`
+returns the canonical sequence (config → themes → last-good-image if the result is an error →
+result/fileGone → busy-if-in-progress). `panel.ts`: `PanelEntry` swaps
+`pending: PendingMessageQueue` for the store; `post()` always `record()`s and live-posts only when
+`ready`; `openFor` subscribes `panel.onDidChangeViewState` — `visible === false` sets
+`entry.ready = false`; EVERY `'ready'` message sets `ready = true` and posts the replay, with the
+config slot re-derived at replay time through a new sync hydration callback (activation passes
+`hydratePanelConfig`) so a post-open toolbar change never reverts (ConfigStore is the truth — spec
+AC5). `messageQueue.ts` + `messageQueue.test.ts` retire; their FP-1 AC7 no-loss assertions move
+into `panelState.test.ts` (never weakened — every message type still provably arrives after a
+late/re- ready). Adds the replay observability hook (e.g. `AppliedState.replayCount` or an
+`onDidReplay` test event) for integration assertions. Integration repro test written FIRST and run
+RED against the unfixed panel (preview A → preview B same group → reveal A → replay hook asserts
+A's state was re-delivered; pre-fix: nothing re-delivered — the blank tab), red run recorded in the
+task commit body.
+**Where**: new `extension/src/panelState.ts` + `extension/src/panelState.test.ts`;
+`extension/src/panel.ts` (entry shape, `post()`, `openFor` view-state + ready handling, hydration
+callback param); `extension/src/activation.ts` (pass the hydration callback); new
+`extension/src/test/integration/multitab.test.ts` (repro case); delete
+`extension/src/messageQueue.ts` + `messageQueue.test.ts`.
+**Depends on**: None
+**Reuses**: `hydratePanelConfig` (activation.ts); the `AppliedState` observation-hook pattern; the
+skeleton/hotreload fake-host harness + `scheduler.settled` awaiting; `webview-resource.test.ts`'s
+real-webview precedent.
+**Requirement**: UX-06 (AC1, AC2, AC5, AC7 — mechanism + repro)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] `panelState.test.ts`: every message type recorded; canonical replay order; latest-wins (two
+      `setImage`s replay one, the newest); error-after-ok replays [last-good `setImage`, `setError`];
+      busy replays only the latest label and only while unsettled; no-loss (FP-1 AC7 heir): messages
+      recorded while not-ready are all represented in the replay
+- [ ] Integration repro: pre-fix RED run recorded in the commit body; post-fix, revealing A
+      re-delivers config + themes + image (replay hook + `lastApplied` agree)
+- [ ] Gates green: `cd extension && npm test` (unit + integration), zero skipped
+
+**Tests**: extension unit + integration — **Gate**: quick
+**Status**: [x] complete (commit `d3c9403`)
+
+---
+
+#### T100: Pin the remaining hidden-tab behaviors with real webviews
+
+**What**: extend `multitab.test.ts` (expected: NO further production code — if a pin fails, the fix
+stays inside T99's store/replay seam and MUST preserve every T99 outcome): **AC2/AC3** — save A's
+file while its tab is hidden (fake-host re-render lands, posts dropped webview-side), reveal →
+fresh result delivered; a save fanning out to two open previews leaves BOTH fresh (visible one
+live, hidden one on reveal); **AC5** — `deliverWebviewMessage` toggles night on A, hide, reveal →
+replayed config reflects ConfigStore truth (kills open-time-copy hydration); **edge** —
+`markFileGone` while hidden → reveal shows file-gone; **edge** — host-error settles while hidden →
+reveal replays [last-good image, error] (stale semantics); **edge** — reveal mid-render → busy
+phase then settles (no stuck spinner).
+**Where**: `extension/src/test/integration/multitab.test.ts` (extend).
+**Depends on**: T99
+**Reuses**: fake-host modes (hotreload/retry test patterns) for re-render and host-error
+scenarios; T99's replay observability hook.
+**Requirement**: UX-06 (AC2, AC3, AC5, hidden-state edge cases)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] All five scenarios green against real webview panels under test-electron
+- [ ] No production code changed — or, if a pin forced a fix, it is inside T99's seam with every
+      T99 Done-when still green
+- [ ] Gates green: quick
+
+**Tests**: extension integration — **Gate**: quick
+**Status**: [x] complete (commit `a55551f`)
+
+---
+
+#### T101: Cache viewport + image state webview-side for instant restore
+
+**What**: `webview-ui` — persist a small state object via `vscode.setState` on every applied image
+and zoom/pan change (`{ imageUri, width, height, zoom, panX, panY, resultKind }`); at script boot,
+`getState()` restores it synchronously — cached image + viewport repainted BEFORE the ready
+round-trip (kills the blank flash on tab reveal); the extension's replay then reconciles
+(same-URI re-apply is idempotent; a newer result supersedes the cache). Pins spec AC4: pan/zoom
+numerically survive a hide/reveal cycle. The `acquireVsCodeApi` declaration gains
+`getState`/`setState` typing.
+**Where**: `extension/webview-ui/main.ts`, `extension/webview-ui/viewport.ts` (+ their jsdom tests:
+extend `viewport.test.ts` / add cache coverage in the webview-ui test pattern with a stubbed
+`acquireVsCodeApi`).
+**Depends on**: T100 (replay contract pinned first; reconciliation tested against it)
+**Reuses**: webview-ui jsdom test harness (`panel.test.ts`/`viewport.test.ts` conventions);
+`viewport.ts`'s existing zoom/pan model.
+**Requirement**: UX-06 (AC4; AC1's no-blank-flash quality)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] jsdom: state written on image apply and on zoom/pan changes; boot with cached state repaints
+      image + restores exact zoom/pan before any message arrives; a replayed newer image supersedes
+      the cache
+- [ ] Gates green: quick
+
+**Tests**: webview-ui jsdom unit — **Gate**: quick
+**Status**: [x] complete (commit `2ff9b07`)
+
+---
+
+#### T102: Scope the panel-close PNG sweep to the closed document
+
+**What**: `panel.ts` dispose path sweeps only `${token}__*.png` for the closed document, where the
+TS token mirrors the host's `PngWriter.tokenOf` (`docKey.replace(/[^A-Za-z0-9]/g, '_')` over the
+resolved doc path — the same string the scheduler sends as `RenderRequest.docPath`); the
+activation-time sweep-all of a fresh session stays. Cross-language pin: a unit test hardcodes
+expected token literals with a comment cross-referencing `PngWriter.kt:45` (naming is de-facto
+protocol — drift means missed or wrong sweeps). Integration: two previews rendered, close B → A's
+PNGs still on disk (fs assert) and A still displays through a subsequent hide/reveal (replay URI
+loads; kills sweep-all regressions).
+**Where**: `extension/src/panel.ts` (`sweepPngs` gains a per-doc mode; `onDidDispose` uses it);
+token helper in `panelState.ts` (vscode-free); `extension/src/panelState.test.ts` (token pin);
+`extension/src/test/integration/multitab.test.ts` (extend — seed PNG files matching the naming if
+the fake host writes none).
+**Depends on**: T101
+**Reuses**: `PngWriter.kt` naming contract; T99's integration harness.
+**Requirement**: UX-06 (AC6)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Token pin green (literals match `PngWriter.tokenOf` semantics, cross-referenced)
+- [ ] Integration: closing one of two previews leaves the other's PNGs intact and its tab working
+      through a later hide/reveal; the closed doc's PNGs are gone
+- [ ] Gates green: quick
+
+**Tests**: extension unit + integration — **Gate**: quick
+**Status**: [x] complete (commit `b9addf8`)
+
+---
+
+#### T103: Update the 1.0.3 release notes
+
+**What**: user-facing bullets appended under the existing `## 1.0.3` changelog section (user
+decision 2026-07-29: DF-6 ships in 1.0.3, whose release notes are drafted but unreleased) —
+multiple preview tabs now keep their content when switching (previously a hidden tab came back
+blank); files edited while their preview is hidden show the fresh result on switch; closing one
+preview no longer breaks other open previews' images; zoom and pan survive tab switches. If,
+unexpectedly, a `Release 1.0.3` commit already exists on main when this executes, STOP and confirm
+the release vehicle with the user — never silently open a new section. No `package.json` bump
+(REL-04 bumps at release — T81/T93/T97 precedent).
+**Where**: `extension/CHANGELOG.md`.
+**Depends on**: T102 (documents landed behavior, not intentions — T81/T86/T93/T97 precedent)
+**Reuses**: the 1.0.3 section's tone/format; REL-01 AC2 already gates packaging.
+**Requirement**: REL-01 (AC2 pattern) in service of UX-06
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] Bullets present under `## 1.0.3`; no other sections touched
+- [ ] Extension no-regression sanity green: `cd extension && npm test`
+
+**Tests**: none (docs — no matrix layer for markdown content) — **Gate**: quick (extension sanity)
+**Status**: [x] complete (commit `82b7bb2`)
+
+---
+
+#### T104: Record AD-024, run the mandatory interactive UAT, and close out
+
+**What**: bookkeeping + UAT — record **AD-024** in `.specs/STATE.md` Decisions (snapshot-replay
+over `retainContextWhenHidden` with the memory rationale, queue retirement, per-doc sweep, the
+real-webview-lifecycle escape analysis — third in the AD-017/AD-018 family — and the
+REAL-webview-coverage tightening), update the Handoff (commits, gate results, release-vehicle
+state), flip the spec's UX-06 traceability row, mark this section's task statuses. **Interactive
+UAT is MANDATORY before close (AD-018 rule — webview lifecycle is exactly what jsdom/fake-webview
+gates cannot see; a "no display available" skip is not acceptable):** in a real VS Code window —
+preview two+ layouts; switch tabs repeatedly (every tab shows its content, pan/zoom kept); edit +
+save a hidden tab's file, switch to it (fresh render); save a `values` file, check dependents
+update; close one preview, verify the others still display through another hide/reveal; delete a
+previewed file while hidden, reveal shows file-gone. Results recorded in the Handoff (and the
+Verifier appends its section to `validation.md` after).
+**Where**: `.specs/STATE.md`; `.specs/features/android-xml-preview/spec.md` (traceability row
+only); this file (statuses).
+**Depends on**: T103
+**Reuses**: AD-022/AD-023 entry format; the T94/T98 close-out pattern.
+**Requirement**: UX-06 (bookkeeping + UAT evidence)
+
+**Tools**: MCP: NONE · Skill: NONE
+
+**Done when**:
+
+- [ ] AD-024 recorded; Handoff updated with commit hashes + gate evidence; spec traceability
+      flipped; task statuses marked
+- [ ] Interactive UAT checklist executed in a real VS Code window and its results recorded
+- [ ] Full gate green at close: `cd extension && npm test`,
+      `cd host && ./gradlew build test && ./gradlew engineTest`, `npm run corpus`
+
+**Tests**: none (bookkeeping) — **Gate**: full + interactive UAT
+**Status**: [x] complete (this commit; interactive UAT PASSED)
+
+### Phase Execution Map (DF-6)
+
+```
+Phase 23:  T99 ──→ T100 ──→ T101 ──→ T102 ──→ T103 ──→ T104
+```
+
+Execution is strictly sequential — 6 tasks → **single batch, inline** (no sub-agent offer), one
+atomic verb-first commit per task on gate pass. After T104's commit, the always-on **Verifier**
+runs (author ≠ verifier): spec-anchored outcome check + discrimination sensor (candidate
+mutations, from the spec's verification note: remove the re-ready replay — the reveal tests must
+go red with the blank-tab repro; hydrate config from an open-time copy — the AC5 test alone must
+kill it; revert sweep-all on dispose — the AC6 PNG-survival test alone must kill it; drop the
+webview `setState` cache — the AC4 jsdom test alone must kill it; drop the last-good-image slot —
+the stale-replay test alone must kill it) → results **appended to `validation.md`** as a dated
+"Multi-Tab Preview Fix Verification" section. If verification surfaces reusable guidance (e.g. the
+real-webview-lifecycle blindness), the Verifier distills it via `scripts/lessons.py`.
+
+### Task Granularity Check (DF-6)
+
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| T99: Snapshot store + replay-on-ready | 1 new small vscode-free module + panel wiring + RED-first repro (queue retired) | ✅ Granular |
+| T100: Hidden-state behavior pins | tests only, one behavior family (no prod code expected) | ✅ Granular |
+| T101: Webview-side transient cache | ~40 lines webview-ui + jsdom tests | ✅ Granular |
+| T102: Per-doc PNG sweep | 1 sweep-mode change + token mirror + pins | ✅ Granular |
+| T103: 1.0.3 release-notes entry | 1 doc section | ✅ Granular |
+| T104: Bookkeeping + UAT close-out | no code | ✅ Granular |
+
+### Diagram-Definition Cross-Check (DF-6)
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| ---- | ---------------------- | ------------- | ------ |
+| T99 | None | start of chain | ✅ Match |
+| T100 | T99 | T99 → T100 | ✅ Match |
+| T101 | T100 | T100 → T101 | ✅ Match |
+| T102 | T101 | T101 → T102 | ✅ Match |
+| T103 | T102 | T102 → T103 | ✅ Match |
+| T104 | T103 | T103 → T104 | ✅ Match |
+
+### Test Co-location Validation (DF-6)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| ---- | --------------------------- | --------------- | --------- | ------ |
+| T99 | `PanelStateStore` + panel wiring | extension unit + integration | extension unit + integration | ✅ OK |
+| T100 | hidden-tab behaviors (no prod code expected) | integration | integration | ✅ OK |
+| T101 | webview-ui cache | jsdom unit | jsdom unit | ✅ OK |
+| T102 | sweep scoping + token mirror | extension unit + integration | extension unit + integration | ✅ OK |
+| T103 | none (markdown content) | none — sanity gate only | none | ✅ OK |
+| T104 | none (bookkeeping) | none — full gate + UAT at close | none | ✅ OK |
