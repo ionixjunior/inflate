@@ -613,6 +613,13 @@ describe('ArtifactManager — old engine folders', () => {
   const currentHash = computeManifestHash(manifest);
 
   /** A folder under `engine/` holding one file, as an install leaves it. */
+  /** Sets the modification time of [dir] and of its direct children, as a past install left them. */
+  function lastWritten(dir: string, iso: string): void {
+    const at = new Date(iso);
+    for (const child of fs.readdirSync(dir)) fs.utimesSync(path.join(dir, child), at, at);
+    fs.utimesSync(dir, at, at);
+  }
+
   function seedEngineFolder(name: string, complete?: string): string {
     const dir = path.join(tempRoot, 'engine', name);
     fs.mkdirSync(path.join(dir, 'jars'), { recursive: true });
@@ -670,6 +677,7 @@ describe('ArtifactManager — old engine folders', () => {
     seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
     const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
     const olderDir = seedEngineFolder('older-hash');
+    lastWritten(olderDir, '2026-07-01T00:00:00.000Z');
     const manager = new ArtifactManager({
       manifest,
       globalStorageDir: tempRoot,
@@ -702,6 +710,7 @@ describe('ArtifactManager — old engine folders', () => {
     const partialDir = path.join(tempRoot, 'engine', 'partial-hash');
     fs.mkdirSync(path.join(partialDir, 'tmp'), { recursive: true });
     fs.writeFileSync(path.join(partialDir, 'tmp', 'layoutlib-runtime.part'), 'half');
+    lastWritten(partialDir, '2026-07-01T00:00:00.000Z');
     const manager = new ArtifactManager({
       manifest,
       globalStorageDir: tempRoot,
@@ -731,6 +740,26 @@ describe('ArtifactManager — old engine folders', () => {
     expect(fs.existsSync(path.join(currentDir, 'jars', 'layoutlib-14.0.11.jar'))).toBe(true);
     expect(fs.existsSync(path.join(tempRoot, 'renders', 'render__1.png'))).toBe(true);
     expect(fs.readdirSync(path.join(tempRoot, 'engine'))).toEqual([currentHash]);
+  });
+
+  it('keeps a folder written after the current one completed, finished or still downloading', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const newerDir = seedEngineFolder('newer-hash', '2026-11-05T00:00:00.000Z');
+    const downloadingDir = path.join(tempRoot, 'engine', 'downloading-hash');
+    fs.mkdirSync(path.join(downloadingDir, 'tmp'), { recursive: true });
+    fs.writeFileSync(path.join(downloadingDir, 'tmp', 'layoutlib-runtime.part'), 'half');
+    lastWritten(downloadingDir, '2026-11-07T12:00:00.000Z');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(newerDir)).toBe(true);
+    expect(fs.existsSync(path.join(downloadingDir, 'tmp', 'layoutlib-runtime.part'))).toBe(true);
   });
 
   it('logs a failed delete, still returns the engine paths and retries at the next setup', async () => {

@@ -194,6 +194,21 @@ export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch
   return manifest.artifacts.filter((a) => a.name !== 'layoutlib-runtime' || a.classifier === arch);
 }
 
+/** When a child of `engine/` was last written: its `.complete` time, or, when it has none (an
+ * install in progress or abandoned, a stray file), the latest modification time of it and its direct
+ * children. `NaN` when it cannot be read. */
+function lastWrittenAt(entry: string): number {
+  try {
+    const marker = path.join(entry, '.complete');
+    if (fs.existsSync(marker)) return Date.parse(fs.readFileSync(marker, 'utf8'));
+    const stat = fs.statSync(entry);
+    const children = stat.isDirectory() ? fs.readdirSync(entry).map((c) => fs.statSync(path.join(entry, c)).mtimeMs) : [];
+    return Math.max(stat.mtimeMs, ...children);
+  } catch {
+    return NaN;
+  }
+}
+
 /** Cache-directory key (design: "cache dir keyed by manifest hash"). */
 export function computeManifestHash(manifest: EngineManifest): string {
   return crypto.createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
@@ -383,16 +398,20 @@ export class ArtifactManager {
     return this.resolvePaths();
   }
 
-  /** Deletes every other child of `engine/` once the current `.complete` is at least
-   * {@link ENGINE_RETENTION_MS} old (AD-029). Best effort: a failed delete (a file in use on Windows)
-   * is logged and tried again at the next setup, and never fails the preview. */
+  /** Deletes every other child of `engine/` last written before the current `.complete`, once that
+   * `.complete` is at least {@link ENGINE_RETENTION_MS} old (AD-029). A newer folder is kept, so a
+   * window still on an older version never deletes a newer version's engine. Best effort: a failed
+   * delete (a file in use on Windows) is logged and tried again at the next setup, and never fails
+   * the preview. */
   private removeSupersededEngines(): void {
     const completedAt = Date.parse(fs.readFileSync(this.completeMarker(), 'utf8'));
     if (!(this.now() - completedAt >= ENGINE_RETENTION_MS)) return;
     for (const name of fs.readdirSync(this.enginesDir())) {
       if (name === this.manifestHash) continue;
+      const entry = path.join(this.enginesDir(), name);
+      if (!(lastWrittenAt(entry) < completedAt)) continue;
       try {
-        this.removeDir(path.join(this.enginesDir(), name));
+        this.removeDir(entry);
       } catch (e) {
         this.log(`[setup] could not remove old engine folder ${name}: ${(e as Error).message}`);
       }
