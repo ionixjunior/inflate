@@ -165,9 +165,19 @@ export interface ArtifactManagerOptions {
   javaBin?: string;
   hostJarPath?: string;
   generate?: GenerateFn;
+  /** Receives the `[setup]` lines engine setup writes to the "Inflate" output channel. */
+  log?: (line: string) => void;
+  /** Injectable clock: the `.complete` timestamp and the retention window (AD-029) read it. */
+  now?: () => number;
+  /** Injectable folder removal for superseded engine folders; defaults to a recursive `rmSync`. */
+  removeDir?: (dir: string) => void;
 }
 
 const MAX_ATTEMPTS = 3;
+
+/** AD-029: superseded `engine/<hash>/` folders are deleted once the current one is this old, so a
+ * window still running the previous version keeps its engine until it reloads. */
+const ENGINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function artifactKey(a: ManifestArtifact): string {
   return a.classifier ? `${a.group}:${a.name}:${a.version}:${a.classifier}` : `${a.group}:${a.name}:${a.version}`;
@@ -269,6 +279,9 @@ export class ArtifactManager {
   private readonly download: DownloadFn;
   private readonly unzip: UnzipFn;
   private readonly generate: GenerateFn;
+  private readonly log: (line: string) => void;
+  private readonly now: () => number;
+  private readonly removeDir: (dir: string) => void;
 
   constructor(private readonly opts: ArtifactManagerOptions) {
     this.relevant = selectRelevantArtifacts(opts.manifest, opts.arch);
@@ -276,10 +289,16 @@ export class ArtifactManager {
     this.download = opts.download ?? defaultDownload;
     this.unzip = opts.unzip ?? defaultUnzip;
     this.generate = opts.generate ?? defaultGenerate;
+    this.log = opts.log ?? (() => undefined);
+    this.now = opts.now ?? Date.now;
+    this.removeDir = opts.removeDir ?? ((dir) => fs.rmSync(dir, { recursive: true, force: true }));
   }
 
+  private enginesDir(): string {
+    return path.join(this.opts.globalStorageDir, 'engine');
+  }
   private engineDir(): string {
-    return path.join(this.opts.globalStorageDir, 'engine', this.manifestHash);
+    return path.join(this.enginesDir(), this.manifestHash);
   }
   private tmpDir(): string {
     return path.join(this.engineDir(), 'tmp');
@@ -336,6 +355,7 @@ export class ArtifactManager {
       throw new Error('Inflate cannot install the render engine on an unsupported platform.');
     }
     if (this.isReady()) {
+      this.removeSupersededEngines();
       return this.resolvePaths();
     }
 
@@ -355,12 +375,28 @@ export class ArtifactManager {
         }
       }
       this.runGeneration();
-      fs.writeFileSync(this.completeMarker(), new Date().toISOString());
+      fs.writeFileSync(this.completeMarker(), new Date(this.now()).toISOString());
     } finally {
       fs.rmSync(this.tmpDir(), { recursive: true, force: true });
     }
 
     return this.resolvePaths();
+  }
+
+  /** Deletes every other child of `engine/` once the current `.complete` is at least
+   * {@link ENGINE_RETENTION_MS} old (AD-029). Best effort: a failed delete (a file in use on Windows)
+   * is logged and tried again at the next setup, and never fails the preview. */
+  private removeSupersededEngines(): void {
+    const completedAt = Date.parse(fs.readFileSync(this.completeMarker(), 'utf8'));
+    if (!(this.now() - completedAt >= ENGINE_RETENTION_MS)) return;
+    for (const name of fs.readdirSync(this.enginesDir())) {
+      if (name === this.manifestHash) continue;
+      try {
+        this.removeDir(path.join(this.enginesDir(), name));
+      } catch (e) {
+        this.log(`[setup] could not remove old engine folder ${name}: ${(e as Error).message}`);
+      }
+    }
   }
 
   cacheState(): CacheReport {

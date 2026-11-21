@@ -598,6 +598,170 @@ describe('ArtifactManager — runtime per platform', () => {
   });
 });
 
+describe('ArtifactManager — old engine folders', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-retention-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const manifest: EngineManifest = { pinName: 'test-pin', artifacts: [] };
+  const currentHash = computeManifestHash(manifest);
+
+  /** A folder under `engine/` holding one file, as an install leaves it. */
+  function seedEngineFolder(name: string, complete?: string): string {
+    const dir = path.join(tempRoot, 'engine', name);
+    fs.mkdirSync(path.join(dir, 'jars'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'jars', 'layoutlib-14.0.11.jar'), 'jar');
+    if (complete) fs.writeFileSync(path.join(dir, '.complete'), complete);
+    return dir;
+  }
+
+  it('installs into engine/<new hash>/ and leaves the 1.0.x folder in place', async () => {
+    const oldDir = seedEngineFolder('0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903', '2026-07-30T00:00:00.000Z');
+    const bytes = Buffer.from('tiny-fake-layoutlib-jar-bytes');
+    const manager = new ArtifactManager({
+      manifest: {
+        pinName: 'test-pin',
+        artifacts: [
+          {
+            group: 'com.android.tools.layoutlib',
+            name: 'layoutlib',
+            version: '14.0.11',
+            kind: 'jar',
+            url: 'https://example.invalid/layoutlib.jar',
+            sha256: sha256(bytes),
+            sizeBytes: bytes.length,
+          },
+        ],
+      },
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      download: async (_url, dest) => fs.writeFileSync(dest, bytes),
+      now: () => Date.parse('2026-11-21T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(path.join(tempRoot, 'engine', manager.manifestHash, '.complete'))).toBe(true);
+    expect(fs.existsSync(path.join(oldDir, 'jars', 'layoutlib-14.0.11.jar'))).toBe(true);
+  });
+
+  it('deletes nothing when the current folder completed 6 days 23 hours ago', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-07T23:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(oldDir)).toBe(true);
+  });
+
+  it('deletes every other folder when the current folder completed exactly 7 days ago', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const olderDir = seedEngineFolder('older-hash');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(oldDir)).toBe(false);
+    expect(fs.existsSync(olderDir)).toBe(false);
+  });
+
+  it('does nothing when no other folder exists', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.readdirSync(path.join(tempRoot, 'engine'))).toEqual([currentHash]);
+  });
+
+  it('deletes an old folder holding only a tmp/ partial download', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const partialDir = path.join(tempRoot, 'engine', 'partial-hash');
+    fs.mkdirSync(path.join(partialDir, 'tmp'), { recursive: true });
+    fs.writeFileSync(path.join(partialDir, 'tmp', 'layoutlib-runtime.part'), 'half');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(partialDir)).toBe(false);
+  });
+
+  it('never deletes the current folder or anything outside engine/', async () => {
+    const currentDir = seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    fs.mkdirSync(path.join(tempRoot, 'renders'));
+    fs.writeFileSync(path.join(tempRoot, 'renders', 'render__1.png'), 'png');
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(path.join(currentDir, 'jars', 'layoutlib-14.0.11.jar'))).toBe(true);
+    expect(fs.existsSync(path.join(tempRoot, 'renders', 'render__1.png'))).toBe(true);
+    expect(fs.readdirSync(path.join(tempRoot, 'engine'))).toEqual([currentHash]);
+  });
+
+  it('logs a failed delete, still returns the engine paths and retries at the next setup', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const attempts: string[] = [];
+    const lines: string[] = [];
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+      log: (line) => lines.push(line),
+      removeDir: (dir) => {
+        attempts.push(dir);
+        throw new Error('EBUSY: resource busy or locked');
+      },
+    });
+
+    const paths = await manager.ensureInstalled();
+    await manager.ensureInstalled();
+
+    expect(paths.manifestHash).toBe(currentHash);
+    expect(lines).toEqual([
+      '[setup] could not remove old engine folder old-hash: EBUSY: resource busy or locked',
+      '[setup] could not remove old engine folder old-hash: EBUSY: resource busy or locked',
+    ]);
+    expect(attempts).toEqual([oldDir, oldDir]);
+  });
+});
+
 describe('defaultGenerate', () => {
   let tempRoot: string;
 

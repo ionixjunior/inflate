@@ -460,6 +460,7 @@ async function prepareRealHost(
     arch: hostArch,
     javaBin: jdkResult.javaBin,
     hostJarPath,
+    log: (line) => output.appendLine(line),
   });
 
   let enginePaths;
