@@ -14,6 +14,7 @@ import {
   computeManifestHash,
   hostArchFor,
   selectRelevantArtifacts,
+  unsupportedPlatformMessage,
 } from './artifacts';
 
 // ---- tiny local HTTP fixture server (real networking, real tiny artifacts — never the real ~170 MB engine) ----
@@ -555,16 +556,75 @@ describe('selectRelevantArtifacts', () => {
 });
 
 describe('hostArchFor', () => {
-  it('maps macOS to the classifier of its CPU architecture', () => {
-    expect(hostArchFor('darwin', 'arm64')).toBe('mac-arm');
-    expect(hostArchFor('darwin', 'x64')).toBe('mac');
+  it.each([
+    ['win32', 'x64', 'win'],
+    ['linux', 'x64', 'linux'],
+    ['darwin', 'arm64', 'mac-arm'],
+    ['darwin', 'x64', 'mac'],
+  ] as const)('maps %s/%s to %s', (platform, arch, classifier) => {
+    expect(hostArchFor(platform, arch)).toBe(classifier);
   });
 
-  it('maps Windows to the win classifier', () => {
-    expect(hostArchFor('win32', 'x64')).toBe('win');
+  it.each([
+    ['win32', 'arm64'],
+    ['linux', 'arm64'],
+    ['win32', 'ia32'],
+    ['freebsd', 'x64'],
+  ] as const)('maps %s/%s to unsupported', (platform, arch) => {
+    expect(hostArchFor(platform, arch)).toBeUndefined();
+  });
+});
+
+describe('unsupportedPlatformMessage', () => {
+  it('names Windows on arm64', () => {
+    expect(unsupportedPlatformMessage('win32', 'arm64')).toBe(
+      'Inflate does not support Windows on arm64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
   });
 
-  it('maps Linux to the linux classifier', () => {
-    expect(hostArchFor('linux', 'x64')).toBe('linux');
+  it('names Linux on arm64', () => {
+    expect(unsupportedPlatformMessage('linux', 'arm64')).toBe(
+      'Inflate does not support Linux on arm64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
+  });
+
+  it('names freebsd on x64', () => {
+    expect(unsupportedPlatformMessage('freebsd', 'x64')).toBe(
+      'Inflate does not support freebsd on x64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
+  });
+});
+
+describe('ArtifactManager — unsupported platform', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-unsupported-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const manifest: EngineManifest = { pinName: 'test-pin', artifacts: [] };
+
+  it('clears the current engine folder', () => {
+    const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
+    fs.mkdirSync(engineDir, { recursive: true });
+    fs.writeFileSync(path.join(engineDir, '.complete'), '2026-11-01T00:00:00.000Z');
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined });
+
+    manager.clear();
+
+    expect(fs.existsSync(engineDir)).toBe(false);
+  });
+
+  it('refuses to install', async () => {
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined });
+
+    await expect(manager.ensureInstalled()).rejects.toThrow(
+      'Inflate cannot install the render engine on an unsupported platform.',
+    );
+    expect(fs.existsSync(path.join(tempRoot, 'engine'))).toBe(false);
   });
 });

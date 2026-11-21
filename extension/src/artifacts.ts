@@ -34,13 +34,26 @@ export type ArtifactKind = 'jar' | 'aar' | 'unzip';
 /** Matches the layoutlib-runtime classifier values in engine-manifest.json. */
 export type HostArch = 'mac-arm' | 'mac' | 'win' | 'linux';
 
-/** Maps a Node `process.platform` + `process.arch` pair onto the layoutlib-runtime classifier.
- * Google publishes Windows and Linux natives for x64 only, so those platforms always map to their
- * x64 classifier. */
-export function hostArchFor(platform: NodeJS.Platform, arch: string): HostArch {
-  if (platform === 'win32') return 'win';
-  if (platform === 'linux') return 'linux';
-  return arch === 'arm64' ? 'mac-arm' : 'mac';
+const SUPPORTED_PLATFORMS = new Map<string, HostArch>([
+  ['win32/x64', 'win'],
+  ['linux/x64', 'linux'],
+  ['darwin/arm64', 'mac-arm'],
+  ['darwin/x64', 'mac'],
+]);
+
+/** Maps a Node `process.platform` + `process.arch` pair onto the layoutlib-runtime classifier, or
+ * `undefined` when Google publishes no natives for it (AD-028): Windows and Linux natives exist for
+ * x64 only, macOS natives for arm64 and x64. */
+export function hostArchFor(platform: NodeJS.Platform, arch: string): HostArch | undefined {
+  return SUPPORTED_PLATFORMS.get(`${platform}/${arch}`);
+}
+
+const PLATFORM_NAMES: Partial<Record<NodeJS.Platform, string>> = { win32: 'Windows', linux: 'Linux', darwin: 'macOS' };
+
+/** What the panel and the warning say when {@link hostArchFor} refuses a platform (AD-028). */
+export function unsupportedPlatformMessage(platform: NodeJS.Platform, arch: string): string {
+  const os = PLATFORM_NAMES[platform] ?? platform;
+  return `Inflate does not support ${os} on ${arch}: the rendering engine is published for Windows x64, Linux x64 and macOS only.`;
 }
 
 export interface ManifestArtifact {
@@ -137,7 +150,9 @@ export function defaultGenerate(ctx: GenerateContext): void {
 export interface ArtifactManagerOptions {
   manifest: EngineManifest;
   globalStorageDir: string;
-  arch: HostArch;
+  /** `undefined` on a platform {@link hostArchFor} refuses: the manager can still report and clear
+   * the cache (Doctor, Clear Engine Cache), but {@link ArtifactManager.ensureInstalled} refuses. */
+  arch: HostArch | undefined;
   download?: DownloadFn;
   unzip?: UnzipFn;
   /** JDK binary + bundled host fat-jar path — when BOTH are supplied, `ensureInstalled` also
@@ -162,7 +177,7 @@ function jarFileName(a: ManifestArtifact): string {
 
 /** Only one `layoutlib-runtime` classifier (the host's own OS/arch) is ever needed at runtime — the
  * manifest carries every classifier so a single bundled manifest works on every supported platform. */
-export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch): ManifestArtifact[] {
+export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch | undefined): ManifestArtifact[] {
   return manifest.artifacts.filter((a) => a.name !== 'layoutlib-runtime' || a.classifier === arch);
 }
 
@@ -314,6 +329,9 @@ export class ArtifactManager {
   }
 
   async ensureInstalled(onProgress?: (event: DownloadProgress) => void): Promise<EnginePaths> {
+    if (!this.opts.arch) {
+      throw new Error('Inflate cannot install the render engine on an unsupported platform.');
+    }
     if (this.isReady()) {
       return this.resolvePaths();
     }

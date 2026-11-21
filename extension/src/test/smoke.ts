@@ -20,7 +20,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ArtifactManager, EngineManifest, HostArch, hostArchFor } from '../artifacts';
+import { ArtifactManager, EngineManifest, hostArchFor, unsupportedPlatformMessage } from '../artifacts';
 import { buildJavaCommand } from '../host';
 import { isGuidedError, JdkLocator } from '../jdk';
 
@@ -116,7 +116,8 @@ async function main(): Promise<void> {
   log(`JDK found: ${jdkResult.home} (v${jdkResult.version}, source=${jdkResult.source})`);
 
   const manifest: EngineManifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_DIR, 'engine-manifest.json'), 'utf8'));
-  const arch: HostArch = hostArchFor(process.platform, process.arch);
+  const arch = hostArchFor(process.platform, process.arch);
+  if (!arch) throw new Error(unsupportedPlatformMessage(process.platform, process.arch));
   const cleanProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-smoke-clean-profile-'));
   log(`Simulated clean-profile globalStorage: ${cleanProfileDir}`);
 
