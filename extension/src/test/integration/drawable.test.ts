@@ -14,7 +14,7 @@ import type { InflateApi } from '../../extension';
  * is shown only for a state-sensitive drawable.
  */
 suite('Inflate drawable toolbar (T49)', () => {
-  const rootDir = path.join(os.tmpdir(), 'inflate-drawable-test');
+  const rootDir = vscode.Uri.file(path.join(os.tmpdir(), 'inflate-drawable-test')).fsPath;
   const drawableDir = path.join(rootDir, 'res', 'drawable');
   const selectorFile = path.join(drawableDir, 'sel.xml');
   const shapeFile = path.join(drawableDir, 'box.xml');

@@ -24,7 +24,7 @@ import type { RenderResponse } from '../../protocol';
  * scenario below under an unrelated, immediately-settling re-render.
  */
 suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
-  const rootDir = path.join(os.tmpdir(), 'inflate-multitab-test');
+  const rootDir = vscode.Uri.file(path.join(os.tmpdir(), 'inflate-multitab-test')).fsPath;
   const layoutDir = path.join(rootDir, 'res', 'layout');
   const valuesDir = path.join(rootDir, 'res', 'values');
   const fileA = path.join(layoutDir, 'a.xml');

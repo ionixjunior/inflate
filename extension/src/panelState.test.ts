@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { PanelStateStore, pngTokenOf, StoreMessage } from './panelState';
 
 describe('pngTokenOf — mirrors PngWriter.kt:45 tokenOf (DF-6, UX-06 AC6)', () => {
-  it('replaces every non-alphanumeric character with an underscore', () => {
+  it.runIf(process.platform !== 'win32')('replaces every non-alphanumeric character with an underscore', () => {
     // Cross-reference: PngWriter.kt:45 — docKey.replace(Regex("[^A-Za-z0-9]"), "_")
     expect(pngTokenOf('/Users/dev/project/res/layout/main.xml')).toBe('_Users_dev_project_res_layout_main_xml');
+  });
+
+  it.runIf(process.platform === 'win32')('replaces every non-alphanumeric character of a Windows path with an underscore', () => {
+    expect(pngTokenOf('C:\\Users\\dev\\project\\res\\layout\\main.xml')).toBe('C__Users_dev_project_res_layout_main_xml');
   });
 
   it('resolves a relative path before tokenizing — matches the scheduler\'s resolved docPath key', () => {
