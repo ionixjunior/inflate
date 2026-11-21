@@ -3,19 +3,21 @@
  * T60 clean-profile smoke test (P1-H Independent Test): "install VSIX -> open fixture layout ->
  * guided flow completes -> render appears; then disable network -> renders still work."
  *
- * A literal fresh macOS user account isn't available in this environment, so this exercises the
- * REAL production code path as closely as possible instead of faking it: a brand-new (temp)
- * globalStorage dir (no pre-existing engine cache, exactly like a clean profile), the REAL
- * JdkLocator (auto-detects this machine's JDK — no `inflate.javaHome` override), the REAL
- * ArtifactManager against the bundled `engine-manifest.json` and the REAL packaged `host.jar`
- * (built by `npm run package` at the repo root), doing a REAL download from Google Maven (~170 MB,
- * P1-H AC1), then a REAL render through the packaged fat-jar. It then re-runs `ensureInstalled()`
- * and renders again to prove the second run makes NO network calls at all (offline-capable,
- * P1-H AC1 "subsequent runs work offline") — the strongest proof available without literally
- * pulling the network cable.
+ * A literal fresh user account isn't available in CI, so this exercises the REAL production code
+ * path as closely as possible instead of faking it: a brand-new (temp) globalStorage dir (no
+ * pre-existing engine cache, exactly like a clean profile), the REAL JdkLocator (auto-detects this
+ * machine's JDK — no `inflate.javaHome` override), the REAL ArtifactManager against the bundled
+ * `engine-manifest.json` and the REAL packaged `host.jar` (built by `npm run package` at the repo
+ * root), doing a REAL download from Google Maven (~170 MB, P1-H AC1), then a REAL render through
+ * the packaged fat-jar. It then re-runs `ensureInstalled()` with a downloader that fails the run if
+ * it is ever called, and renders again (offline-capable, P1-H AC1 "subsequent runs work offline").
  *
- * Run manually (NOT part of the CI gate — a real ~170 MB download would make every CI run slow and
- * network-flaky): `cd extension && npx tsx src/test/smoke.ts` after `npm run package` at repo root.
+ * CI runs it on every runner (AD-028), after `npm run package` at the repo root:
+ * `cd extension && npm run compile-tests && node out/test/smoke.js`.
+ * - `INFLATE_SMOKE_PROFILE_PARENT`: the folder the clean profile is created in (default: the OS
+ *   temp folder); CI on Windows passes a long one.
+ * - `INFLATE_SMOKE_LONGEST_PATH_ABOVE`: fails the run unless the longest engine file path is longer
+ *   than this many characters.
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -118,8 +120,10 @@ async function main(): Promise<void> {
   const manifest: EngineManifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_DIR, 'engine-manifest.json'), 'utf8'));
   const arch = hostArchFor(process.platform, process.arch);
   if (!arch) throw new Error(unsupportedPlatformMessage(process.platform, process.arch));
-  const cleanProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-smoke-clean-profile-'));
-  log(`Simulated clean-profile globalStorage: ${cleanProfileDir}`);
+  const profileParent = process.env.INFLATE_SMOKE_PROFILE_PARENT || os.tmpdir();
+  fs.mkdirSync(profileParent, { recursive: true });
+  const cleanProfileDir = fs.mkdtempSync(path.join(profileParent, 'inflate-smoke-clean-profile-'));
+  log(`Simulated clean-profile globalStorage: ${cleanProfileDir} (${cleanProfileDir.length} characters)`);
 
   const artifactManager = new ArtifactManager({
     manifest,
@@ -135,6 +139,7 @@ async function main(): Promise<void> {
     if (e.totalBytes > 0 && e.bytesDownloaded === e.totalBytes) log(`  done: ${e.artifactKey} (${e.totalBytes} bytes)`);
   });
   log(`Run 1 install complete in ${Date.now() - t0}ms. classpathJars=${enginePaths.classpathJars.length} libraryPackages=${enginePaths.libraryPackages.length}`);
+  checkLongestEnginePath(path.join(cleanProfileDir, 'engine'));
 
   const outputDir = fs.mkdtempSync(path.join(cleanProfileDir, 'renders-'));
   const overlayDir = fs.mkdtempSync(path.join(cleanProfileDir, 'overlay-'));
@@ -179,18 +184,22 @@ async function main(): Promise<void> {
   if (result1.status !== 'ok' || !result1.pngPath || !fs.existsSync(result1.pngPath)) {
     throw new Error(`Run 1 render FAILED: ${JSON.stringify(result1)}`);
   }
-  log(`Run 1 render OK: ${result1.pngPath} (${fs.statSync(result1.pngPath).size} bytes)`);
+  log(`Run 1 render OK through the packaged host.jar: ${result1.pngPath} (${fs.statSync(result1.pngPath).size} bytes)`);
 
-  log('Run 2 ("offline" — proving no network round trip on a warm cache): re-running ensureInstalled()...');
-  const t1 = Date.now();
-  await artifactManager.ensureInstalled();
-  const secondRunMs = Date.now() - t1;
-  log(`Run 2 ensureInstalled() took ${secondRunMs}ms (Run 1 took ${Date.now() - t0}ms including the real ~170 MB download).`);
-  // A real network round trip against dl.google.com for ~170 MB cannot plausibly complete in under
-  // a second on any real connection — this proves Run 2 hit the ".complete" cache short-circuit
-  // (ArtifactManager.isReady()) and never touched the network, i.e. it is genuinely offline-capable
-  // (P1-H AC1 "subsequent runs work offline"), without needing to literally disable networking.
-  if (secondRunMs > 1000) throw new Error(`Run 2 took ${secondRunMs}ms — too slow to be the offline cache path`);
+  log('Run 2 ("offline"): re-running ensureInstalled() with a downloader that fails if called...');
+  const networkCalls: string[] = [];
+  const offlineManager = new ArtifactManager({
+    manifest,
+    globalStorageDir: cleanProfileDir,
+    arch,
+    download: async (url) => {
+      networkCalls.push(url);
+      throw new Error(`network call on a warm cache: ${url}`);
+    },
+  });
+  await offlineManager.ensureInstalled();
+  if (networkCalls.length > 0) throw new Error(`Run 2 made ${networkCalls.length} network call(s)`);
+  log('Run 2 ensureInstalled made no network call');
 
   const result2 = await spawnAndRender(jdkResult.javaBin, hostJarPath, args, initParams, { ...renderRequest, id: 2 });
   if (result2.status !== 'ok' || !result2.pngPath) {
@@ -199,6 +208,26 @@ async function main(): Promise<void> {
   log(`Run 2 (offline) render OK: ${result2.pngPath}`);
 
   log('SMOKE TEST PASSED: guided-flow-equivalent setup -> real download+render -> offline re-render, all green.');
+}
+
+/** Logs the longest file path under the engine folder and, when `INFLATE_SMOKE_LONGEST_PATH_ABOVE`
+ * is set, fails unless it is longer than that many characters (criterion 21: past Windows'
+ * 260-character MAX_PATH, so Node's own unzip is exercised on long paths). */
+function checkLongestEnginePath(engineDir: string): void {
+  let longest = '';
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (full.length > longest.length) longest = full;
+    }
+  };
+  walk(engineDir);
+  const above = Number(process.env.INFLATE_SMOKE_LONGEST_PATH_ABOVE || 0);
+  if (above > 0 && longest.length <= above) {
+    throw new Error(`longest engine file path is ${longest.length} characters, not above ${above}: ${longest}`);
+  }
+  log(`longest engine file path: ${longest.length} characters${above > 0 ? ` (above ${above})` : ''}: ${longest}`);
 }
 
 main().catch((e) => {
