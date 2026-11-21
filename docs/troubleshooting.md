@@ -7,10 +7,21 @@ Nothing in Doctor ever installs, downloads, or restarts anything — it only rep
 
 ## "No compatible JDK found"
 
-Inflate looks for a JDK in this order: `inflate.javaHome` setting → `JAVA_HOME` env var → `PATH` →
-platform-standard install locations (macOS: `/usr/libexec/java_home` registry, Homebrew, SDKMAN,
-Android Studio's bundled JBR, Microsoft OpenJDK install dirs). **JDK 17 or newer is required**
-(the engine pin's minimum — see AD-008 in `.specs/STATE.md`).
+Inflate looks for a JDK in this order, and the first place that holds a JDK 17 or newer wins:
+
+- **macOS**: `inflate.javaHome` setting → `JAVA_HOME` env var → `PATH` →
+  `/usr/libexec/java_home -V` → Homebrew (`/opt/homebrew/opt/openjdk*`, `/usr/local/opt/openjdk*`)
+  → SDKMAN (`~/.sdkman/candidates/java/*`) → Android Studio's bundled JBR
+  (`/Applications/Android Studio.app/Contents/jbr`) → `/Library/Java/JavaVirtualMachines/*`.
+- **Windows**: `inflate.javaHome` setting → `JAVA_HOME` env var → `PATH` (a folder holding
+  `java.exe`) → `%ProgramFiles%\Java\*` → `%ProgramFiles%\Microsoft\jdk-*` →
+  `%ProgramFiles%\Eclipse Adoptium\*` → `%ProgramFiles%\Zulu\*` →
+  `%ProgramFiles%\Android\Android Studio\jbr` (`C:\Program Files` when `%ProgramFiles%` is unset).
+- **Linux**: `inflate.javaHome` setting → `JAVA_HOME` env var → `PATH` → `/usr/lib/jvm/*` →
+  `~/.sdkman/candidates/java/*` → `/opt/android-studio/jbr` → `~/android-studio/jbr`.
+
+**JDK 17 or newer is required** (the engine pin's minimum — see AD-008 in `.specs/STATE.md`).
+`Inflate: Doctor` prints which of these places the JDK came from on its `source:` line.
 
 Inflate **never downloads a JVM for you** (a deliberate choice — see AD-003): if none of the above
 locations has a compatible JDK, you'll see a guided message with the minimum version and a download

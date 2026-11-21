@@ -137,8 +137,10 @@ currently wheel-gesture only, so silently leaving fit mode would strand the user
 - `tools:showIn` / render-in-parent-context and include-parent navigation are not supported.
 - No click-to-source selection sync, no hierarchy inspector, no animation playback — all tracked as
   post-v1 stories in the spec's P2/P3 backlogs.
-- Windows and Linux are not supported in v1 (macOS only, AD-004) — the underlying engine natives
-  are published for both and a fast-follow is planned, but v1 ships macOS-only.
+- Windows on Arm and Linux on Arm are not supported (AD-028): Google publishes the rendering
+  engine's natives for those systems on x64 only (checked up to layoutlib 17.0.4). Inflate says so
+  in the preview and in a notification before downloading anything. An x64 VS Code running under
+  emulation on Windows on Arm passes that check and then fails when the engine starts.
 - Within macOS, **Apple Silicon is the primary, CI-verified architecture; Intel Macs are supported
   best-effort** (AD-004 amendment via AD-019, 2026-07-26): Intel users still receive the correct
   x64 engine natives at first run (the `mac` classifier of the pinned layoutlib runtime), but no
