@@ -1,12 +1,19 @@
 /**
  * JdkLocator (T14, design component #6, SETUP-01/AD-003/AD-008). Finds a JDK >= 17 via the
- * macOS detection chain below, in precedence order, and NEVER downloads a JVM:
+ * detection chain of the running OS below, in precedence order, and NEVER downloads a JVM:
  *
- *   `inflate.javaHome` setting > `JAVA_HOME` env > `PATH` > `/usr/libexec/java_home -V` >
+ *   macOS: `inflate.javaHome` setting > `JAVA_HOME` env > `PATH` > `/usr/libexec/java_home -V` >
  *   Homebrew (`/opt/homebrew/opt/openjdk*`, `/usr/local/opt/openjdk*`) >
  *   SDKMAN (`~/.sdkman/candidates/java/*`) > Android Studio JBR
  *   (`/Applications/Android Studio.app/Contents/jbr`) > `/Library/Java/JavaVirtualMachines/*`
  *   (incl. `microsoft-*`).
+ *
+ *   Windows: `inflate.javaHome` > `JAVA_HOME` > `PATH` (`java.exe`) > `%ProgramFiles%\Java\*` >
+ *   `%ProgramFiles%\Microsoft\jdk-*` > `%ProgramFiles%\Eclipse Adoptium\*` > `%ProgramFiles%\Zulu\*` >
+ *   `%ProgramFiles%\Android\Android Studio\jbr` (`%ProgramFiles%` unset: `C:\Program Files`).
+ *
+ *   Linux: `inflate.javaHome` > `JAVA_HOME` > `PATH` > `/usr/lib/jvm/*` >
+ *   SDKMAN (`~/.sdkman/candidates/java/*`) > `/opt/android-studio/jbr` > `~/android-studio/jbr`.
  *
  * The version of a candidate home is read from `<home>/release` (the `JAVA_VERSION="..."` line)
  * — never by spawning `java -version`. The first source (in the precedence order above) whose
@@ -35,7 +42,13 @@ export type JdkSource =
   | 'homebrew'
   | 'sdkman'
   | 'android-studio-jbr'
-  | 'library-java-vms';
+  | 'library-java-vms'
+  | 'program-files-java'
+  | 'program-files-microsoft'
+  | 'program-files-adoptium'
+  | 'program-files-zulu'
+  | 'usr-lib-jvm'
+  | 'user-android-studio-jbr';
 
 export interface JdkInfo {
   javaBin: string;
@@ -58,6 +71,8 @@ export function isGuidedError(value: JdkInfo | GuidedError): value is GuidedErro
 
 /** Injectable I/O surface — see module doc. [defaultDeps] wires the real filesystem/process. */
 export interface JdkLocatorDeps {
+  /** Selects the source list, the path flavour (`\` on Windows) and the `java`/`java.exe` name. */
+  platform: NodeJS.Platform;
   env: Record<string, string | undefined>;
   homeDir: string;
   existsSync: (p: string) => boolean;
@@ -70,6 +85,7 @@ export interface JdkLocatorDeps {
 
 export function defaultDeps(): JdkLocatorDeps {
   return {
+    platform: process.platform,
     env: process.env,
     homeDir: os.homedir(),
     existsSync: (p) => fs.existsSync(p),
@@ -113,16 +129,26 @@ export function parseMajorVersion(releaseContent: string): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
+/** The path functions of the OS being searched, so Windows paths are built with `\` everywhere. */
+function pathsOf(deps: JdkLocatorDeps): path.PlatformPath {
+  return deps.platform === 'win32' ? path.win32 : path.posix;
+}
+
+function javaExecutable(deps: JdkLocatorDeps): string {
+  return deps.platform === 'win32' ? 'java.exe' : 'java';
+}
+
 function tryReadVersion(home: string, source: JdkSource, deps: JdkLocatorDeps): JdkInfo | undefined {
+  const p = pathsOf(deps);
   let content: string;
   try {
-    content = deps.readFileSync(path.join(home, 'release'));
+    content = deps.readFileSync(p.join(home, 'release'));
   } catch {
     return undefined;
   }
   const version = parseMajorVersion(content);
   if (version === undefined) return undefined;
-  return { javaBin: path.join(home, 'bin', 'java'), home, version, source };
+  return { javaBin: p.join(home, 'bin', javaExecutable(deps)), home, version, source };
 }
 
 function safeReaddir(deps: JdkLocatorDeps, dir: string): string[] {
@@ -135,11 +161,12 @@ function safeReaddir(deps: JdkLocatorDeps, dir: string): string[] {
 }
 
 function pathCandidates(deps: JdkLocatorDeps): string[] {
+  const p = pathsOf(deps);
   const pathEnv = deps.env.PATH;
   if (!pathEnv) return [];
-  for (const dir of pathEnv.split(path.delimiter)) {
+  for (const dir of pathEnv.split(p.delimiter)) {
     if (!dir) continue;
-    const javaBin = path.join(dir, 'java');
+    const javaBin = p.join(dir, javaExecutable(deps));
     if (deps.existsSync(javaBin)) {
       let real = javaBin;
       try {
@@ -148,7 +175,7 @@ function pathCandidates(deps: JdkLocatorDeps): string[] {
         // fall through with the unresolved path
       }
       // <home>/bin/java -> <home>
-      return [path.dirname(path.dirname(real))];
+      return [p.dirname(p.dirname(real))];
     }
   }
   return [];
@@ -159,41 +186,65 @@ function homebrewCandidates(deps: JdkLocatorDeps): string[] {
   const result: string[] = [];
   for (const base of bases) {
     for (const entry of safeReaddir(deps, base).filter((e) => e.startsWith('openjdk'))) {
-      result.push(path.join(base, entry, 'libexec/openjdk.jdk/Contents/Home'));
+      result.push(path.posix.join(base, entry, 'libexec/openjdk.jdk/Contents/Home'));
     }
   }
   return result;
 }
 
 function sdkmanCandidates(deps: JdkLocatorDeps): string[] {
-  const base = path.join(deps.homeDir, '.sdkman/candidates/java');
+  const base = path.posix.join(deps.homeDir, '.sdkman/candidates/java');
   return safeReaddir(deps, base)
     .filter((e) => e !== 'current')
-    .map((e) => path.join(base, e));
+    .map((e) => path.posix.join(base, e));
 }
 
-function androidStudioJbrCandidates(): string[] {
+function androidStudioJbrCandidates(deps: JdkLocatorDeps): string[] {
+  if (deps.platform === 'win32') return [path.win32.join(programFiles(deps), 'Android', 'Android Studio', 'jbr')];
+  if (deps.platform === 'linux') return ['/opt/android-studio/jbr'];
   const base = '/Applications/Android Studio.app/Contents/jbr';
   // Recent Android Studio bundles a full macOS app-style JBR (an extra Contents/Home nesting);
   // older ones use the jbr dir directly as home. tryReadVersion silently skips whichever is absent.
-  return [path.join(base, 'Contents/Home'), base];
+  return [path.posix.join(base, 'Contents/Home'), base];
 }
 
 function libraryJavaVmsCandidates(deps: JdkLocatorDeps): string[] {
   const base = '/Library/Java/JavaVirtualMachines';
-  return safeReaddir(deps, base).map((e) => path.join(base, e, 'Contents/Home'));
+  return safeReaddir(deps, base).map((e) => path.posix.join(base, e, 'Contents/Home'));
 }
 
-const PRECEDENCE: JdkSource[] = [
-  'inflate.javaHome',
-  'JAVA_HOME',
-  'PATH',
-  'java_home',
-  'homebrew',
-  'sdkman',
-  'android-studio-jbr',
-  'library-java-vms',
-];
+/** `%ProgramFiles%`, or `C:\Program Files` where the variable is unset. */
+function programFiles(deps: JdkLocatorDeps): string {
+  return deps.env.ProgramFiles || 'C:\\Program Files';
+}
+
+/** Every entry of `%ProgramFiles%\<vendor>` (whose name starts with [prefix]) as a JDK home. */
+function programFilesCandidates(deps: JdkLocatorDeps, vendor: string, prefix = ''): string[] {
+  const base = path.win32.join(programFiles(deps), vendor);
+  return safeReaddir(deps, base)
+    .filter((e) => e.startsWith(prefix))
+    .map((e) => path.win32.join(base, e));
+}
+
+function usrLibJvmCandidates(deps: JdkLocatorDeps): string[] {
+  const base = '/usr/lib/jvm';
+  return safeReaddir(deps, base).map((e) => path.posix.join(base, e));
+}
+
+const COMMON_PRECEDENCE: JdkSource[] = ['inflate.javaHome', 'JAVA_HOME', 'PATH'];
+
+const PRECEDENCE: Partial<Record<NodeJS.Platform, JdkSource[]>> = {
+  darwin: [...COMMON_PRECEDENCE, 'java_home', 'homebrew', 'sdkman', 'android-studio-jbr', 'library-java-vms'],
+  win32: [
+    ...COMMON_PRECEDENCE,
+    'program-files-java',
+    'program-files-microsoft',
+    'program-files-adoptium',
+    'program-files-zulu',
+    'android-studio-jbr',
+  ],
+  linux: [...COMMON_PRECEDENCE, 'usr-lib-jvm', 'sdkman', 'android-studio-jbr', 'user-android-studio-jbr'],
+};
 
 function candidateHomesFor(source: JdkSource, configuredJavaHome: string | undefined, deps: JdkLocatorDeps): string[] {
   switch (source) {
@@ -210,9 +261,21 @@ function candidateHomesFor(source: JdkSource, configuredJavaHome: string | undef
     case 'sdkman':
       return sdkmanCandidates(deps);
     case 'android-studio-jbr':
-      return androidStudioJbrCandidates();
+      return androidStudioJbrCandidates(deps);
     case 'library-java-vms':
       return libraryJavaVmsCandidates(deps);
+    case 'program-files-java':
+      return programFilesCandidates(deps, 'Java');
+    case 'program-files-microsoft':
+      return programFilesCandidates(deps, 'Microsoft', 'jdk-');
+    case 'program-files-adoptium':
+      return programFilesCandidates(deps, 'Eclipse Adoptium');
+    case 'program-files-zulu':
+      return programFilesCandidates(deps, 'Zulu');
+    case 'usr-lib-jvm':
+      return usrLibJvmCandidates(deps);
+    case 'user-android-studio-jbr':
+      return [path.posix.join(deps.homeDir, 'android-studio/jbr')];
   }
 }
 
@@ -220,7 +283,7 @@ function candidateHomesFor(source: JdkSource, configuredJavaHome: string | undef
 export function resolveJdk(configuredJavaHome: string | undefined, deps: JdkLocatorDeps): JdkInfo | GuidedError {
   let overallBest: JdkInfo | undefined;
 
-  for (const source of PRECEDENCE) {
+  for (const source of PRECEDENCE[deps.platform] ?? COMMON_PRECEDENCE) {
     let bestForSource: JdkInfo | undefined;
     for (const home of candidateHomesFor(source, configuredJavaHome, deps)) {
       const info = tryReadVersion(home, source, deps);
