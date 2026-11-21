@@ -66,13 +66,19 @@ tasks.test {
   useJUnitPlatform()
 }
 
+// The dev-time engine cache: host/.engine-cache/, or INFLATE_ENGINE_CACHE_DIR when set (CI puts it
+// under a long path on Windows, AD-028).
+val engineCacheDir = System.getenv("INFLATE_ENGINE_CACHE_DIR")?.takeIf { it.isNotEmpty() }
+  ?.let { layout.projectDirectory.dir(it) }
+  ?: layout.projectDirectory.dir(".engine-cache")
+
 // --- T3: dev-time engine artifact fetch (downloads ~170 MB into host/.engine-cache/) ---
 tasks.register<JavaExec>("fetchEngine") {
   group = "engine"
   description = "Downloads pinned layoutlib/tools/androidx artifacts into host/.engine-cache/."
   classpath = sourceSets.main.get().runtimeClasspath
   mainClass.set("engine.EngineFetcherKt")
-  args(layout.projectDirectory.dir(".engine-cache").asFile.absolutePath)
+  args(engineCacheDir.asFile.absolutePath)
 }
 
 // --- T15: engine-manifest.json generation (design §D4/§D6/§Data Models, AD-011) ---
@@ -170,8 +176,6 @@ tasks.register<JavaExec>("generateEngineManifest") {
     args(resolvedTsv.absolutePath, outputManifest.absolutePath)
   }
 }
-
-val engineCacheDir = layout.projectDirectory.dir(".engine-cache")
 
 // --- T39: bundled androidx/Material library artifacts for engineTest ---
 // Real Material rendering (P1-B, LAY-05) needs the AAR classes on the engine classpath and their
