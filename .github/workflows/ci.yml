@@ -121,3 +121,95 @@ jobs:
           path: |
             corpus/report.html
           if-no-files-found: warn
+
+  # Same pipeline on Windows and Linux (x64 only: Google publishes no Arm natives for either).
+  build-and-test-multi-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, ubuntu-26.04]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Checked-in scripts (gradlew) and fixtures must keep LF endings on Windows.
+      - name: Keep LF line endings on checkout
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Keyed per OS: the cache holds that OS's unzipped natives.
+      - name: Restore engine artifact cache
+        uses: actions/cache/restore@v4
+        with:
+          path: host/.engine-cache
+          key: engine-cache-${{ runner.os }}-${{ hashFiles('extension/engine-manifest.json') }}
+
+      - name: Install extension dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      - name: Extension unit tests
+        working-directory: extension
+        run: npm test
+
+      - name: Fetch engine artifacts (skipped if cache restored)
+        working-directory: host
+        run: ./gradlew fetchEngine --console=plain
+
+      - name: Save engine artifact cache (trusted refs only — never from a PR-merge gate)
+        if: ${{ !startsWith(inputs.ref, 'refs/pull/') }}
+        uses: actions/cache/save@v4
+        with:
+          path: host/.engine-cache
+          key: engine-cache-${{ runner.os }}-${{ hashFiles('extension/engine-manifest.json') }}
+
+      - name: Extension integration tests
+        working-directory: extension
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            command -v xvfb-run >/dev/null || { sudo apt-get update && sudo apt-get install -y xvfb; }
+            xvfb-run -a npm run test:integration
+          else
+            npm run test:integration
+          fi
+
+      - name: Host build + unit tests
+        working-directory: host
+        run: ./gradlew build test --console=plain
+
+      - name: Host engine integration tests
+        working-directory: host
+        run: ./gradlew engineTest --console=plain
+
+      - name: Install corpus dependencies
+        working-directory: corpus
+        run: npm ci
+
+      - name: Golden-image corpus
+        run: npm run corpus
+
+      - name: Upload corpus report (always, so a pass is inspectable too)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-report-${{ runner.os }}
+          path: |
+            corpus/report.html
+          if-no-files-found: warn
