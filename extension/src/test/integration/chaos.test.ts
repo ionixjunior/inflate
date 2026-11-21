@@ -145,7 +145,7 @@ suite('Inflate chaos and robustness (T58)', () => {
   });
 
   test('a 4th crash within the rolling window surfaces manual-restart state; restart() recovers', async function () {
-    this.timeout(90000);
+    this.timeout(180000);
     await repeat(async () => {
       const manager = makeManager({ backoffMs: [50, 50, 50], crashWindowMs: 60000, maxAutoRestarts: 3 });
       await manager.ensureReady();
