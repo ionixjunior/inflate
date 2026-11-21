@@ -5,7 +5,7 @@
  * pending" rather than guessing.
  */
 
-import { CacheReport, EngineManifest } from './artifacts';
+import { CacheReport, EngineManifest, HostArch, hostArchFor } from './artifacts';
 import { HostState } from './host';
 import { GuidedError, JdkInfo, isGuidedError } from './jdk';
 
@@ -17,6 +17,13 @@ export interface DoctorJdkSection {
   /** Present iff `found` is false (P1-H AC3 guided message, surfaced read-only here). */
   guidedMessage?: string;
   downloadUrl?: string;
+}
+
+export interface DoctorPlatformSection {
+  platform: NodeJS.Platform;
+  arch: string;
+  /** The layoutlib-runtime classifier this platform downloads; absent when it is not supported. */
+  natives?: HostArch;
 }
 
 export interface DoctorHostSection {
@@ -49,6 +56,7 @@ export interface EnginePinMatrix {
 }
 
 export interface DoctorReport {
+  platform: DoctorPlatformSection;
   jdk: DoctorJdkSection;
   cache: CacheReport;
   host: DoctorHostSection;
@@ -67,6 +75,8 @@ export interface DoctorHostManagerView {
 }
 
 export interface DoctorDeps {
+  /** Defaults to `process.platform`/`process.arch`. */
+  platform?: { platform: NodeJS.Platform; arch: string };
   jdkResult: JdkInfo | GuidedError;
   cacheReport: CacheReport;
   hostManager: DoctorHostManagerView;
@@ -125,7 +135,9 @@ function rootsSection(): DoctorRootsSection {
  * mutates anything; callers gather `deps` from the already-running managers. */
 export function assembleDoctorReport(deps: DoctorDeps): DoctorReport {
   const now = deps.now ?? Date.now;
+  const { platform, arch } = deps.platform ?? { platform: process.platform, arch: process.arch };
   return {
+    platform: { platform, arch, natives: hostArchFor(platform, arch) },
     jdk: jdkSection(deps.jdkResult),
     cache: deps.cacheReport,
     host: hostSection(deps.hostManager, deps.hostReadySince, now),
@@ -139,6 +151,9 @@ export function assembleDoctorReport(deps: DoctorDeps): DoctorReport {
 /** Renders the report as plain lines for the "Inflate" output channel / Doctor command. */
 export function formatDoctorReport(report: DoctorReport): string[] {
   const lines: string[] = ['=== Inflate Doctor ==='];
+
+  const p = report.platform;
+  lines.push('-- Platform --', `  ${p.platform} ${p.arch}: ${p.natives ? `supported (natives: ${p.natives})` : 'not supported'}`);
 
   lines.push('-- JDK --');
   if (report.jdk.found) {

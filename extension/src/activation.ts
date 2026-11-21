@@ -359,6 +359,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
         arch: hostArchFor(api.platform.platform, api.platform.arch),
       });
       const report = assembleDoctorReport({
+        platform: api.platform,
         jdkResult: jdkLocator.locate(vscode.workspace.getConfiguration('inflate').get<string>('javaHome') || undefined),
         cacheReport: artifactManager.cacheState(),
         hostManager,

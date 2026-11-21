@@ -152,3 +152,44 @@ describe('formatDoctorReport', () => {
     expect(lines).toContain('Inflate output channel'); // log pointers
   });
 });
+
+describe('formatDoctorReport — platform', () => {
+  it('prints darwin arm64: supported (natives: mac-arm) under -- Platform --', () => {
+    const report = assembleDoctorReport({
+      platform: { platform: 'darwin', arch: 'arm64' },
+      jdkResult: HEALTHY_JDK,
+      cacheReport: { manifestHash: 'abc123', ready: true, artifacts: [] },
+      hostManager: fakeHostManager(),
+      manifest: MANIFEST,
+      logPointers: [],
+    });
+    const lines = formatDoctorReport(report);
+
+    expect(lines.slice(1, 3)).toEqual(['-- Platform --', '  darwin arm64: supported (natives: mac-arm)']);
+  });
+
+  it('prints win32 arm64: not supported and every other section', () => {
+    const report = assembleDoctorReport({
+      platform: { platform: 'win32', arch: 'arm64' },
+      jdkResult: HEALTHY_JDK,
+      cacheReport: { manifestHash: 'abc123', ready: false, artifacts: [] },
+      hostManager: fakeHostManager({ getState: () => 'stopped', getChildPid: () => undefined }),
+      manifest: MANIFEST,
+      lastRenderTimings: { prepareMs: 1, inflateMs: 2, renderMs: 3, totalMs: 6 },
+      logPointers: ['Inflate output channel'],
+    });
+    const lines = formatDoctorReport(report);
+
+    expect(lines.slice(1, 3)).toEqual(['-- Platform --', '  win32 arm64: not supported']);
+    expect(lines.filter((l) => l.startsWith('-- '))).toEqual([
+      '-- Platform --',
+      '-- JDK --',
+      '-- Engine cache --',
+      '-- Host --',
+      '-- Resource roots --',
+      '-- Last render timings --',
+      '-- Engine pin --',
+      '-- Logs --',
+    ]);
+  });
+});
