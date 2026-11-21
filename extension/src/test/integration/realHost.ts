@@ -35,7 +35,12 @@ export const HOST_PACKAGE_NAME = 'com.inflate.preview';
 /** Runs `./gradlew writeCorpusClasspath` (unless a config already exists) and returns it parsed. */
 export function ensureHostLaunchConfig(force = false): HostLaunchConfig {
   if (force || !fs.existsSync(LAUNCH_CONFIG_PATH)) {
-    execFileSync('./gradlew', ['writeCorpusClasspath', '--console=plain'], { cwd: HOST_DIR, stdio: 'pipe' });
+    const isWindows = process.platform === 'win32';
+    execFileSync(isWindows ? 'gradlew.bat' : './gradlew', ['writeCorpusClasspath', '--console=plain'], {
+      cwd: HOST_DIR,
+      stdio: 'pipe',
+      shell: isWindows,
+    });
   }
   return JSON.parse(fs.readFileSync(LAUNCH_CONFIG_PATH, 'utf8')) as HostLaunchConfig;
 }

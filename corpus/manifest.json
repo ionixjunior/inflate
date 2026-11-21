@@ -1,5 +1,5 @@
 {
-  "$comment": "T54/T55 golden-image corpus manifest (NFR-07). Paths are repo-root-relative. Each fixture renders once per entry in 'configs'; the golden lives at fixtures/<goldenDir>/golden/<fixtureId>__<configId>.png (fixtureId slashes -> dashes). packageName is always com.inflate.preview (see corpus/src/hostClient.ts doc \u2014 the fixed Bridge-registered namespace) regardless of the fixture's own manifest package.",
+  "$comment": "T54/T55 golden-image corpus manifest (NFR-07). Paths are repo-root-relative. Each fixture renders once per entry in 'configs'; the golden lives at fixtures/<goldenDir>/golden/<fixtureId>__<configId>.png (fixtureId slashes -> dashes); a fixture with goldenOf uses that fixture id's golden instead and never writes one. packageName is always com.inflate.preview (see corpus/src/hostClient.ts doc \u2014 the fixed Bridge-registered namespace) regardless of the fixture's own manifest package.",
   "fixtures": [
     {
       "id": "gradle/main",
@@ -724,6 +724,47 @@
         "fixtures/dotnet-gallery/Resources"
       ],
       "goldenDir": "fixtures/dotnet-gallery",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "fonts/custom",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/galleries/fonts/res/layout/custom_fonts.xml",
+      "roots": [
+        "fixtures/galleries/fonts/res"
+      ],
+      "goldenDir": "fixtures/galleries/fonts",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
+    },
+    {
+      "id": "line-endings/crlf",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/line-endings/res/layout/main.xml",
+      "roots": [
+        "fixtures/gradle-sample/app/src/main/res"
+      ],
+      "goldenDir": "fixtures/gradle-sample",
+      "goldenOf": "gradle/main",
       "configs": [
         {
           "id": "default",

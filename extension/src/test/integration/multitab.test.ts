@@ -24,7 +24,7 @@ import type { RenderResponse } from '../../protocol';
  * scenario below under an unrelated, immediately-settling re-render.
  */
 suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
-  const rootDir = path.join(os.tmpdir(), 'inflate-multitab-test');
+  const rootDir = vscode.Uri.file(path.join(os.tmpdir(), 'inflate-multitab-test')).fsPath;
   const layoutDir = path.join(rootDir, 'res', 'layout');
   const valuesDir = path.join(rootDir, 'res', 'values');
   const fileA = path.join(layoutDir, 'a.xml');
@@ -40,8 +40,9 @@ suite('Inflate multi-tab preview (DF-6, UX-06)', () => {
     fs.writeFileSync(colorsFile, '<resources><color name="bg">#FFFFFF</color></resources>');
   });
 
-  suiteTeardown(() => {
-    fs.rmSync(rootDir, { recursive: true, force: true });
+  suiteTeardown(async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   async function api(): Promise<InflateApi> {

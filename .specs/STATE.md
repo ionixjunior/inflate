@@ -32,7 +32,7 @@
 - **Trade-off**: Excludes the large Windows .NET audience at launch.
 - **Scope**: Packaging, CI matrix, artifact fetching.
 - **Date**: 2026-07-19
-- **Status**: active
+- **Status**: superseded by AD-028
 - **Amendment (2026-07-26, via AD-019)**: within macOS, **arm64 is the primary, CI-verified architecture; x64 (Intel) is best-effort** — the `smoke-x64` CI job was dropped (it exercised no architecture-specific path: extension unit tests are pure Node and host `gradlew test` excludes the native `engineTest`/corpus layers) and Intel hosted runners are being retired upstream (`macos-15-intel` is the last free label). Intel users still fetch the correct `mac`-classifier natives at first run. Documented in `docs/limitations.md`.
 
 ### AD-005
@@ -171,6 +171,23 @@
 - **Scope**: `extension/src/panelState.ts` (new) + `.test.ts`, `extension/src/panel.ts`, `extension/src/activation.ts`, `extension/webview-ui/panelStateCache.ts` (new) + `.test.ts`, `extension/webview-ui/main.ts`, `extension/src/test/integration/multitab.test.ts` (new), retires `extension/src/messageQueue.ts` + `.test.ts`, `extension/CHANGELOG.md` `## 1.0.3`, `UX-06` traceability. Host/scheduler/wire-protocol untouched (already multi-document-correct).
 - **Date**: 2026-07-30
 - **Status**: active — ships as patch **1.0.3** via REL-04 (bump `patch`, same release as AD-023/DF-5); interactive UAT recorded in this Handoff.
+
+### AD-028 (multi-platform support, 2026-11-20)
+- **Decision**: Inflate supports macOS (arm64 and x64), Windows x64 and Linux x64. The extension maps `process.platform` + `process.arch` to the `layoutlib-runtime` classifier (`mac-arm`, `mac`, `win`, `linux`); every other pair (Windows or Linux on Arm, 32-bit, other OSes) is refused before the JDK lookup and the download, with a panel error and a warning notification without buttons. `engine-manifest.json` lists all four runtime classifiers and the cache folder stays named by the SHA-256 of the whole manifest, so every existing install downloads the engine once more. CI gates every run and every release on the pinned runners `macos-26`, `windows-2025` and `ubuntu-26.04`, including the clean-profile smoke through the packaged `host.jar`.
+- **Reason**: GitHub issue #7: on Windows the extension downloaded the Intel Mac natives and layoutlib failed with `Failed to init Bridge`. CI run 44854949195 showed the pinned engine renders all 42 goldens at 0.000% on Windows and Linux once the right natives are selected. Google publishes no Arm natives for Windows or Linux (verified up to layoutlib 17.0.4). User answers (2026-11-20): Arm "1a" (refuse before download, no buttons), pinned runners "windows-2025 and ubuntu-26.04", smoke "Every CI run", release "5a" (normal minor).
+- **Trade-off**: Windows on Arm and Linux on Arm users cannot use Inflate; every 1.0.x user downloads about 170 MB once after updating; each CI run downloads the engine three times for the smoke.
+- **Scope**: `extension/src/artifacts.ts` (`hostArchFor`), `extension/src/activation.ts`, `extension/src/jdk.ts`, `extension/src/doctor.ts`, `host/src/main/kotlin/engine/EngineArtifacts.kt`, `host/build.gradle.kts` (manifest notations, fat jar), `extension/engine-manifest.json`, `.github/workflows/ci.yml`, docs and store README. Plan: `.specs/features/multi-platform-support/plan.md`.
+- **Date**: 2026-11-20
+- **Status**: active (supersedes AD-004)
+
+### AD-029 (engine cache retention, 2026-11-20)
+- **Decision**: At the first preview whose current `globalStorage/engine/<hash>/.complete` timestamp is at least 7 days old, `ArtifactManager` deletes every other child of `globalStorage/engine/`, never the current folder and nothing outside `engine/`. A failed delete (for example a file in use on Windows) is logged as `[setup] could not remove old engine folder <folder name>: <error message>`, never fails the preview, and is retried at the next engine setup.
+- **Reason**: The manifest change in AD-028 leaves the previous ~300 MB engine folder behind, and nothing deleted old folders before. User chose to delete them ("2a"), with the priority "It's important the extension not broke, even if the problem is solved reloading VS Code": a VS Code window still running the previous version keeps reading the old folder until it reloads, so deleting right after install could break it. User confirmed the 7-day grace (2026-11-20).
+- **Trade-off**: The old folder's disk space comes back 7 days after the update instead of right away; a window left open and never reloaded for more than 7 days on the old version can still lose its engine files.
+- **Scope**: `extension/src/artifacts.ts` (`ArtifactManager`). First code path that deletes cache without a user command.
+- **Date**: 2026-11-20
+- **Status**: active
+- **Amendment (2026-11-21)**: only folders last written before the current `.complete` are deleted (their own `.complete` time, or their latest change when they have none); a newer folder, finished or still downloading, is never deleted. Reason: the independent Verifier showed that a window still running an older version, left open across an update, would delete the newer version's folder at its next preview and keep doing so after every re-download. User: "Delete only older folders".
 
 ## Handoff
 

@@ -26,8 +26,8 @@ size (~39 MB) sits at the top of that range. `minimize()` (Shadow's dead-code st
 shrink it further but broke the real engine twice when smoke-tested (stripped `kotlin-reflect`, then
 `gnu.trove.THashMap` — both needed via reflection/ServiceLoader paths minimize's static analysis
 can't see). Rather than ship an unverified minimized jar, only specific, well-understood exclusions
-are applied (the Google-Maven artifacts downloaded separately per-user, Android Studio's analytics
-protobuf schema, and Windows-only JNA bindings — irrelevant on the macOS-only v1, AD-004). See the
+are applied (the Google-Maven artifacts downloaded separately per-user and Android Studio's analytics
+protobuf schema; since 1.1.0 the jar keeps JNA's Windows bindings, AD-028). See the
 comment above `tasks.shadowJar` in `host/build.gradle.kts` for the full reasoning.
 
 **Icon note (RESOLVED 2026-07-26):** the original placeholder was replaced with real artwork in
@@ -90,9 +90,9 @@ profile smoke" requirement and is the strongest evidence available in this envir
 `activation.ts` calls), but does NOT drive it through the real VS Code `activate()` /
 `vscode.window.withProgress` / guided-setup-message UI layer (that layer is exercised separately by
 the `test:integration` suite using the scripted fake host, since a real ~170 MB download on every
-CI/test run would be prohibitively slow and network-flaky). Re-run `extension/src/test/smoke.ts`
-manually before each real release to keep this evidence current — it is intentionally NOT part of
-`npm run test:integration` or CI.
+CI/test run would be prohibitively slow and network-flaky). Since 1.1.0, CI runs
+`extension/src/test/smoke.ts` on every run, on macOS, Windows and Linux, after `npm run package`
+(AD-028); it is still not part of `npm run test:integration`.
 
 ## Debt #1 closure summary (T60)
 

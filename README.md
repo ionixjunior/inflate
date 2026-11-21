@@ -16,6 +16,8 @@ the XML/resource-tree conventions both ecosystems share, not off either build sy
 - **Light/dark, device, density, orientation.** Preview any config combination from a toolbar, no
   manifest edits.
 
+Inflate runs on macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Windows on Arm and Linux on Arm are not supported.
+
 ## Install
 
 1. Install the **Inflate** extension from the VS Code Marketplace (or a `.vsix` — see
@@ -41,7 +43,8 @@ If Inflate can't find a compatible JDK, it shows a guided setup message with a d
 
 1. Open any file under `res/layout/`, `res/drawable/`, `Resources/layout/`, or `Resources/drawable/`
    (`.xml` or `.axml`).
-2. Right-click → **Inflate: Open Preview** (or `Cmd+P` → **Inflate: Open Preview**).
+2. Right-click → **Inflate: Open Preview**, or run **Inflate: Open Preview** from the Command
+   Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows and Linux).
 3. Edit and save — the preview updates in place, without stealing focus from your editor.
 4. Use the toolbar to flip day/night, change device/density/orientation, or (for drawables) pick a
    state (pressed, checked, disabled, …) and inspect it against the checkerboard stage — or drag

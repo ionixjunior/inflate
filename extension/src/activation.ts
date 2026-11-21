@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ArtifactManager, EngineManifest, HostArch } from './artifacts';
+import { ArtifactManager, EngineManifest, HostArch, hostArchFor, unsupportedPlatformMessage } from './artifacts';
 import { classify, isEligible } from './classifier';
 import { ConfigStore, PreviewConfigPatch } from './config';
 import { assembleDoctorReport, DoctorRenderTimings, formatDoctorReport } from './doctor';
@@ -37,6 +37,11 @@ export interface InflateApi {
   panelManager: PreviewPanelManager;
   /** The per-file config store (test hook: assert persistence/restore, T50/T53). */
   configStore: ConfigStore;
+  /** The OS and CPU every engine decision reads (AD-028); `process.platform`/`process.arch`, which
+   * integration tests may replace to drive an unsupported platform on a supported runner. */
+  platform: { platform: NodeJS.Platform; arch: string };
+  /** The last setup warning shown, with its buttons (test hook: the refusal shows none). */
+  lastSetupNotice?: { text: string; actions: string[] };
 }
 
 const OUTPUT_CHANNEL_NAME = 'Inflate';
@@ -100,9 +105,15 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
   // a render landing mid-download joins the running install instead of racing a second one. A
   // settled (including failed) attempt is never memoized — the next call always re-runs setup, so a
   // no-JDK/offline failure retries on the next request rather than sticking forever.
-  const configureRealHostGated = singleFlight((onPhase?: (label: string) => void) =>
-    prepareRealHost(context, output, hostManager, jdkLocator, onPhase),
+  const configureRealHostGated = singleFlight((hostArch: HostArch, onPhase?: (label: string) => void) =>
+    prepareRealHost(context, output, hostManager, jdkLocator, hostArch, onPhase),
   );
+
+  function showSetupNotice(message: string, actions: string[]): Thenable<string | undefined> {
+    const text = `Inflate: ${message}`;
+    api.lastSetupNotice = { text, actions };
+    return vscode.window.showWarningMessage(text, ...actions);
+  }
 
   /** Runs {@link prepareRealHost} (gated, no-op under the fake-host test harness) and, on failure,
    * shows the guided JDK setup message with download/re-check actions (P1-H AC2/AC3) instead of
@@ -114,12 +125,22 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
    * clear to the error state, not spin forever") — omitted by callers with no specific panel (e.g.
    * `inflate.restartHost`). */
   async function ensureRealHostConfigured(docPath?: string, onPhase?: (label: string) => void): Promise<boolean> {
+    // AD-028: a platform with no published natives stops here, before the JDK lookup and the
+    // download (and before the fake-host shortcut, so the integration suite can drive it).
+    const hostArch = hostArchFor(api.platform.platform, api.platform.arch);
+    if (!hostArch) {
+      const message = unsupportedPlatformMessage(api.platform.platform, api.platform.arch);
+      output.appendLine(`[setup] ${message}`);
+      if (docPath) panelManager.applyHostError(docPath, new Error(message));
+      void showSetupNotice(message, []);
+      return false;
+    }
     if (isFakeHostMode) return true;
-    const result = await configureRealHostGated(onPhase);
+    const result = await configureRealHostGated(hostArch, onPhase);
     if (result.ok) return true;
     if (docPath) panelManager.applyHostError(docPath, new Error(result.guidedMessage));
     const actions = result.downloadUrl ? ['Open Download Page', 'Re-check'] : ['Re-check'];
-    void vscode.window.showWarningMessage(`Inflate: ${result.guidedMessage}`, ...actions).then((choice) => {
+    void showSetupNotice(result.guidedMessage, actions).then((choice) => {
       if (choice === 'Open Download Page' && result.downloadUrl) {
         void vscode.env.openExternal(vscode.Uri.parse(result.downloadUrl));
       } else if (choice === 'Re-check') {
@@ -254,7 +275,13 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
     hydratePanelConfig,
   );
 
-  const api: InflateApi = { activationMs: 0, hostManager, panelManager, configStore };
+  const api: InflateApi = {
+    activationMs: 0,
+    hostManager,
+    panelManager,
+    configStore,
+    platform: { platform: process.platform, arch: process.arch },
+  };
 
   void vscode.commands.executeCommand('setContext', 'inflate:eligibleDocument', false);
 
@@ -329,9 +356,11 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       const artifactManager = new ArtifactManager({
         manifest,
         globalStorageDir: context.globalStorageUri.fsPath,
-        arch: detectHostArch(),
+        arch: hostArchFor(api.platform.platform, api.platform.arch),
+        log: (line) => output.appendLine(line),
       });
       const report = assembleDoctorReport({
+        platform: api.platform,
         jdkResult: jdkLocator.locate(vscode.workspace.getConfiguration('inflate').get<string>('javaHome') || undefined),
         cacheReport: artifactManager.cacheState(),
         hostManager,
@@ -352,7 +381,8 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
       const artifactManager = new ArtifactManager({
         manifest,
         globalStorageDir: context.globalStorageUri.fsPath,
-        arch: detectHostArch(),
+        arch: hostArchFor(api.platform.platform, api.platform.arch),
+        log: (line) => output.appendLine(line),
       });
       artifactManager.clear();
       output.appendLine('[clearEngineCache] done — the next preview re-downloads and re-verifies the engine.');
@@ -381,12 +411,6 @@ function resolveHostCommandOrDeferred(output: vscode.OutputChannel): { command: 
     // host's crash path rather than throwing during activation (NFR-02: activation stays cheap).
     return { command: process.execPath, args: ['-e', `process.stderr.write(${JSON.stringify((e as Error).message)});process.exit(1);`] };
   }
-}
-
-/** Detects the current process's macOS architecture as the `HostArch` the manifest/ArtifactManager
- * understand (AD-004: macOS arm64/x64 only in v1). */
-function detectHostArch(): HostArch {
-  return process.arch === 'arm64' ? 'mac-arm' : 'mac';
 }
 
 /** The bundled engine manifest (T15/AD-011) — read once; a small, static JSON file shipped in the
@@ -418,6 +442,7 @@ async function prepareRealHost(
   output: vscode.OutputChannel,
   hostManager: HostManager,
   jdkLocator: JdkLocator,
+  hostArch: HostArch,
   onPhase?: (label: string) => void,
 ): Promise<PrepareRealHostResult> {
   const config = vscode.workspace.getConfiguration('inflate');
@@ -434,9 +459,10 @@ async function prepareRealHost(
   const artifactManager = new ArtifactManager({
     manifest,
     globalStorageDir: context.globalStorageUri.fsPath,
-    arch: detectHostArch(),
+    arch: hostArch,
     javaBin: jdkResult.javaBin,
     hostJarPath,
+    log: (line) => output.appendLine(line),
   });
 
   let enginePaths;

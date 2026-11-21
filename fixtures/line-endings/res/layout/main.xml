@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Semantic layout shared (byte-for-byte apart from .axml casing) with dotnet-sample's
+     Resources/Layout/Main.axml. Exercises every reference kind used by Phase 4 engineTests:
+     @color (root background), @dimen (padding), @string (text), @style (widget style),
+     @drawable (child background). The root FrameLayout background fills the canvas, so the
+     center pixel always reports @color/background — the phone (blue) vs night (green) vs
+     library-shadowed (red, lower priority) discriminator used by T24/T25. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:padding="@dimen/pad">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        style="@style/Body"
+        android:text="@string/hello" />
+
+    <View
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/box" />
+</FrameLayout>

@@ -20,8 +20,7 @@ the XML/resource-tree conventions both ecosystems share, not off either build sy
 
 ## Requirements
 
-- **macOS** (v1 is macOS-only; Apple Silicon is the primary tested platform, Intel Macs are
-  supported best-effort).
+- Inflate runs on macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Windows on Arm and Linux on Arm are not supported.
 - **VS Code 1.90+**.
 - **A JDK 17 or newer** on your machine (Android Studio's bundled JBR, Microsoft OpenJDK,
   Homebrew/SDKMAN `openjdk`, or any standard JDK install all work). Inflate finds it automatically —
@@ -39,7 +38,8 @@ after that previews keep working fully offline.
 
 1. Open any file under `res/layout/`, `res/drawable/`, `Resources/layout/`, or
    `Resources/drawable/` (`.xml` or `.axml`).
-2. Right-click → **Inflate: Open Preview** (or `Cmd+P` → **Inflate: Open Preview**).
+2. Right-click → **Inflate: Open Preview**, or run **Inflate: Open Preview** from the Command
+   Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows and Linux).
 3. Edit and save — the preview updates in place, without stealing focus from your editor.
 4. Use the toolbar to flip day/night, change device/density/orientation, pick a drawable state —
    or drag the preview's edges to resize the render canvas.

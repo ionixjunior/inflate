@@ -21,7 +21,9 @@ the code (e.g. `host/build.gradle.kts` is never shipped or run on an end user's 
 
 - **JDK 17+** (for building/testing `host/`)
 - **Node 20+** (for `extension/` and `corpus/`)
-- macOS (arm64 or x64) — v1's only supported development/target platform (AD-004)
+- macOS (arm64 or x64), Windows x64 or Linux x64 (AD-028). The commands below and the npm scripts
+  are POSIX shell: on Windows run them in Git Bash, with `npm config set script-shell` pointing at
+  Git Bash's `bash.exe`, as CI does
 
 ## Building from source
 

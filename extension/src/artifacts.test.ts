@@ -9,11 +9,18 @@ import {
   ArtifactManager,
   EngineManifest,
   GenerateContext,
+  HostArch,
   ManifestArtifact,
   OfflineError,
   computeManifestHash,
+  defaultGenerate,
+  hostArchFor,
   selectRelevantArtifacts,
+  unsupportedPlatformMessage,
 } from './artifacts';
+
+/** For the managers whose test does not read the `[setup]` log. */
+const ignoreLog = (): void => undefined;
 
 // ---- tiny local HTTP fixture server (real networking, real tiny artifacts — never the real ~170 MB engine) ----
 
@@ -153,7 +160,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     server = fresh.server;
     const manifest = fresh.manifest;
 
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     expect(manager.isReady()).toBe(false);
 
     const paths = await manager.ensureInstalled();
@@ -176,7 +183,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     const fixture = await startFullFixture();
     server = fixture.server;
 
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     await manager.ensureInstalled();
     const countsAfterFirst = { ...fixture.requestCounts };
 
@@ -204,7 +211,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
       ],
     };
 
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toThrow(/checksum mismatch/);
     expect(fixture.requestCounts['/bad.jar']).toBe(3); // discarded + retried up to the retry cap
@@ -237,7 +244,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toThrow();
 
@@ -262,7 +269,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toBeInstanceOf(OfflineError);
   });
@@ -282,7 +289,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
     fs.mkdirSync(path.join(engineDir, 'jars'), { recursive: true });
     fs.writeFileSync(path.join(engineDir, 'jars', 'already-installed-1.0.jar'), 'x');
@@ -296,7 +303,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('clear() removes the whole engine cache directory', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     await manager.ensureInstalled();
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(fixture.manifest));
     expect(fs.existsSync(engineDir)).toBe(true);
@@ -329,7 +336,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await manager.ensureInstalled();
 
@@ -340,7 +347,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('reports a res-bearing AAR as installed after extraction, unchanged (regression, HOST-04 AC5)', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await manager.ensureInstalled();
 
@@ -351,7 +358,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('reports an AAR as not installed before it is ever extracted (HOST-04 AC5)', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     const status = manager.cacheState().artifacts.find((a) => a.key.includes('material'));
     expect(status?.installed).toBe(false);
@@ -372,7 +379,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
     fs.mkdirSync(path.join(engineDir, 'jars'), { recursive: true });
     fs.writeFileSync(path.join(engineDir, 'jars', 'half-1.0.jar'), 'x'); // artifact file present...
@@ -458,6 +465,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     server = fixture.server;
     const calls: GenerateContext[] = [];
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -483,6 +491,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     server = fixture.server;
     const calls: GenerateContext[] = [];
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -498,6 +507,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     const fixture = await startFixtureAndManifest();
     server = fixture.server;
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -516,6 +526,318 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     expect(paths.classpathJars.some((p) => p.endsWith('R-classes.jar'))).toBe(true);
     expect(paths.classpathJars.some((p) => p.endsWith('framework-delegates.jar'))).toBe(true);
     expect(paths.libraryPackages).toContain('com.example.withrtxt');
+  });
+});
+
+const BUNDLED_MANIFEST: EngineManifest = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'engine-manifest.json'), 'utf8'),
+);
+
+describe('engine-manifest.json', () => {
+  it('lists exactly the mac-arm, mac, win and linux layoutlib-runtime entries', () => {
+    const runtimes = BUNDLED_MANIFEST.artifacts.filter((a) => a.name === 'layoutlib-runtime');
+
+    expect(runtimes.map((a) => a.classifier)).toEqual(['mac-arm', 'mac', 'win', 'linux']);
+  });
+
+  it('pins layoutlib-runtime-14.0.11-win.jar at 75218785 bytes and SHA-256 3e26acb000bd2c10bf44da72303622e059febbdd5f9facb461ea77f4151e63bd', () => {
+    const win = BUNDLED_MANIFEST.artifacts.find((a) => a.name === 'layoutlib-runtime' && a.classifier === 'win');
+
+    expect(win).toMatchObject({
+      url: 'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-win.jar',
+      sizeBytes: 75218785,
+      sha256: '3e26acb000bd2c10bf44da72303622e059febbdd5f9facb461ea77f4151e63bd',
+    });
+  });
+
+  it('has a hash other than the 1.0.x engine folder 0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903', () => {
+    expect(computeManifestHash(BUNDLED_MANIFEST)).not.toBe('0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903');
+  });
+});
+
+describe('ArtifactManager — runtime per platform', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-platform-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  /** Installs every artifact of the bundled manifest with a recording downloader (each download
+   * writes the same few bytes, whose SHA-256 replaces the real one) and returns the runtime URLs. */
+  async function runtimeUrlsDownloadedOn(arch: HostArch): Promise<string[]> {
+    const bytes = Buffer.from('tiny-fake-artifact');
+    const manifest: EngineManifest = {
+      ...BUNDLED_MANIFEST,
+      artifacts: BUNDLED_MANIFEST.artifacts.map((a) => ({ ...a, sha256: sha256(bytes) })),
+    };
+    const urls: string[] = [];
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch,
+      download: async (url, dest) => {
+        urls.push(url);
+        fs.writeFileSync(dest, bytes);
+      },
+      unzip: () => undefined,
+    });
+
+    await manager.ensureInstalled();
+
+    return urls.filter((u) => u.includes('/layoutlib-runtime/'));
+  }
+
+  it('downloads layoutlib-runtime-14.0.11-win.jar and no other runtime on win', async () => {
+    expect(await runtimeUrlsDownloadedOn('win')).toEqual([
+      'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-win.jar',
+    ]);
+  });
+
+  it('downloads layoutlib-runtime-14.0.11-linux.jar and no other runtime on linux', async () => {
+    expect(await runtimeUrlsDownloadedOn('linux')).toEqual([
+      'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-linux.jar',
+    ]);
+  });
+});
+
+describe('ArtifactManager — old engine folders', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-retention-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const manifest: EngineManifest = { pinName: 'test-pin', artifacts: [] };
+  const currentHash = computeManifestHash(manifest);
+
+  /** A folder under `engine/` holding one file, as an install leaves it. */
+  /** Sets the modification time of [dir] and of its direct children, as a past install left them. */
+  function lastWritten(dir: string, iso: string): void {
+    const at = new Date(iso);
+    for (const child of fs.readdirSync(dir)) fs.utimesSync(path.join(dir, child), at, at);
+    fs.utimesSync(dir, at, at);
+  }
+
+  function seedEngineFolder(name: string, complete?: string): string {
+    const dir = path.join(tempRoot, 'engine', name);
+    fs.mkdirSync(path.join(dir, 'jars'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'jars', 'layoutlib-14.0.11.jar'), 'jar');
+    if (complete) fs.writeFileSync(path.join(dir, '.complete'), complete);
+    return dir;
+  }
+
+  it('installs into engine/<new hash>/ and leaves the 1.0.x folder in place', async () => {
+    const oldDir = seedEngineFolder('0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903', '2026-07-30T00:00:00.000Z');
+    const bytes = Buffer.from('tiny-fake-layoutlib-jar-bytes');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest: {
+        pinName: 'test-pin',
+        artifacts: [
+          {
+            group: 'com.android.tools.layoutlib',
+            name: 'layoutlib',
+            version: '14.0.11',
+            kind: 'jar',
+            url: 'https://example.invalid/layoutlib.jar',
+            sha256: sha256(bytes),
+            sizeBytes: bytes.length,
+          },
+        ],
+      },
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      download: async (_url, dest) => fs.writeFileSync(dest, bytes),
+      now: () => Date.parse('2026-11-21T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(path.join(tempRoot, 'engine', manager.manifestHash, '.complete'))).toBe(true);
+    expect(fs.existsSync(path.join(oldDir, 'jars', 'layoutlib-14.0.11.jar'))).toBe(true);
+  });
+
+  it('deletes nothing when the current folder completed 6 days 23 hours ago', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-07T23:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(oldDir)).toBe(true);
+  });
+
+  it('deletes every other folder when the current folder completed exactly 7 days ago', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const olderDir = seedEngineFolder('older-hash');
+    lastWritten(olderDir, '2026-07-01T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(oldDir)).toBe(false);
+    expect(fs.existsSync(olderDir)).toBe(false);
+  });
+
+  it('does nothing when no other folder exists', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.readdirSync(path.join(tempRoot, 'engine'))).toEqual([currentHash]);
+  });
+
+  it('deletes an old folder holding only a tmp/ partial download', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const partialDir = path.join(tempRoot, 'engine', 'partial-hash');
+    fs.mkdirSync(path.join(partialDir, 'tmp'), { recursive: true });
+    fs.writeFileSync(path.join(partialDir, 'tmp', 'layoutlib-runtime.part'), 'half');
+    lastWritten(partialDir, '2026-07-01T00:00:00.000Z');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(partialDir)).toBe(false);
+  });
+
+  it('never deletes the current folder or anything outside engine/', async () => {
+    const currentDir = seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    fs.mkdirSync(path.join(tempRoot, 'renders'));
+    fs.writeFileSync(path.join(tempRoot, 'renders', 'render__1.png'), 'png');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(path.join(currentDir, 'jars', 'layoutlib-14.0.11.jar'))).toBe(true);
+    expect(fs.existsSync(path.join(tempRoot, 'renders', 'render__1.png'))).toBe(true);
+    expect(fs.readdirSync(path.join(tempRoot, 'engine'))).toEqual([currentHash]);
+  });
+
+  it('keeps a folder written after the current one completed, finished or still downloading', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const newerDir = seedEngineFolder('newer-hash', '2026-11-05T00:00:00.000Z');
+    const downloadingDir = path.join(tempRoot, 'engine', 'downloading-hash');
+    fs.mkdirSync(path.join(downloadingDir, 'tmp'), { recursive: true });
+    fs.writeFileSync(path.join(downloadingDir, 'tmp', 'layoutlib-runtime.part'), 'half');
+    lastWritten(downloadingDir, '2026-11-07T12:00:00.000Z');
+    const manager = new ArtifactManager({
+      log: ignoreLog,
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-12-01T00:00:00.000Z'),
+    });
+
+    await manager.ensureInstalled();
+
+    expect(fs.existsSync(newerDir)).toBe(true);
+    expect(fs.existsSync(path.join(downloadingDir, 'tmp', 'layoutlib-runtime.part'))).toBe(true);
+  });
+
+  it('logs a failed delete, still returns the engine paths and retries at the next setup', async () => {
+    seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
+    const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
+    const attempts: string[] = [];
+    const lines: string[] = [];
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch: 'mac-arm',
+      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+      log: (line) => lines.push(line),
+      removeDir: (dir) => {
+        attempts.push(dir);
+        throw new Error('EBUSY: resource busy or locked');
+      },
+    });
+
+    const paths = await manager.ensureInstalled();
+    await manager.ensureInstalled();
+
+    expect(paths.manifestHash).toBe(currentHash);
+    expect(lines).toEqual([
+      '[setup] could not remove old engine folder old-hash: EBUSY: resource busy or locked',
+      '[setup] could not remove old engine folder old-hash: EBUSY: resource busy or locked',
+    ]);
+    expect(attempts).toEqual([oldDir, oldDir]);
+  });
+});
+
+describe('defaultGenerate', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-generate-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('runs FrameworkDelegateGeneratorKt and RClassGeneratorKt with windowsHide', () => {
+    const calls: Array<{ mainClass: string; windowsHide: boolean | undefined }> = [];
+
+    defaultGenerate(
+      {
+        javaBin: 'java',
+        hostJarPath: 'host.jar',
+        layoutlibJarPath: 'layoutlib.jar',
+        rTxtDir: 'rtxt',
+        workDir: path.join(tempRoot, 'work'),
+        rClassesJarPath: 'R-classes.jar',
+        rPackagesPath: 'r-packages.txt',
+        frameworkDelegatesJarPath: 'framework-delegates.jar',
+        rClassToolsJars: [],
+      },
+      (_file, args, options) => calls.push({ mainClass: args[2], windowsHide: options.windowsHide }),
+    );
+
+    expect(calls).toEqual([
+      { mainClass: 'engine.FrameworkDelegateGeneratorKt', windowsHide: true },
+      { mainClass: 'engine.RClassGeneratorKt', windowsHide: true },
+    ]);
   });
 });
 
@@ -550,5 +872,79 @@ describe('selectRelevantArtifacts', () => {
     const relevant = selectRelevantArtifacts(manifest, 'mac-arm');
     expect(relevant).toHaveLength(2);
     expect(relevant.find((a) => a.name === 'layoutlib-runtime')?.classifier).toBe('mac-arm');
+  });
+});
+
+describe('hostArchFor', () => {
+  it.each([
+    ['win32', 'x64', 'win'],
+    ['linux', 'x64', 'linux'],
+    ['darwin', 'arm64', 'mac-arm'],
+    ['darwin', 'x64', 'mac'],
+  ] as const)('maps %s/%s to %s', (platform, arch, classifier) => {
+    expect(hostArchFor(platform, arch)).toBe(classifier);
+  });
+
+  it.each([
+    ['win32', 'arm64'],
+    ['linux', 'arm64'],
+    ['win32', 'ia32'],
+    ['freebsd', 'x64'],
+  ] as const)('maps %s/%s to unsupported', (platform, arch) => {
+    expect(hostArchFor(platform, arch)).toBeUndefined();
+  });
+});
+
+describe('unsupportedPlatformMessage', () => {
+  it('names Windows on arm64', () => {
+    expect(unsupportedPlatformMessage('win32', 'arm64')).toBe(
+      'Inflate does not support Windows on arm64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
+  });
+
+  it('names Linux on arm64', () => {
+    expect(unsupportedPlatformMessage('linux', 'arm64')).toBe(
+      'Inflate does not support Linux on arm64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
+  });
+
+  it('names freebsd on x64', () => {
+    expect(unsupportedPlatformMessage('freebsd', 'x64')).toBe(
+      'Inflate does not support freebsd on x64: the rendering engine is published for Windows x64, Linux x64 and macOS only.',
+    );
+  });
+});
+
+describe('ArtifactManager — unsupported platform', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-unsupported-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const manifest: EngineManifest = { pinName: 'test-pin', artifacts: [] };
+
+  it('clears the current engine folder', () => {
+    const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
+    fs.mkdirSync(engineDir, { recursive: true });
+    fs.writeFileSync(path.join(engineDir, '.complete'), '2026-11-01T00:00:00.000Z');
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined, log: ignoreLog });
+
+    manager.clear();
+
+    expect(fs.existsSync(engineDir)).toBe(false);
+  });
+
+  it('refuses to install', async () => {
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined, log: ignoreLog });
+
+    await expect(manager.ensureInstalled()).rejects.toThrow(
+      'Inflate cannot install the render engine on an unsupported platform.',
+    );
+    expect(fs.existsSync(path.join(tempRoot, 'engine'))).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 package engine
 
-/** Host CPU architecture — selects the layoutlib-runtime native classifier (AD-004: macOS only in v1). */
-enum class HostArch { MAC_ARM, MAC_X64 }
+/** Host OS + CPU architecture — selects the layoutlib-runtime native classifier. */
+enum class HostArch { MAC_ARM, MAC_X64, WINDOWS_X64, LINUX_X64 }
 
 /**
  * A single pinned Google-Maven artifact in the engine download set (design §D6/§Q4).
@@ -48,15 +48,21 @@ object EngineArtifacts {
   fun runtimeClassifier(arch: HostArch): String = when (arch) {
     HostArch.MAC_ARM -> "mac-arm"
     HostArch.MAC_X64 -> "mac"
+    HostArch.WINDOWS_X64 -> "win"
+    HostArch.LINUX_X64 -> "linux"
   }
 
-  /** Map a JVM `os.arch` value onto a supported [HostArch] (arm64 vs x86_64). */
-  fun detectArch(osArch: String = System.getProperty("os.arch").orEmpty()): HostArch =
-    if (osArch.equals("aarch64", ignoreCase = true) || osArch.contains("arm", ignoreCase = true)) {
-      HostArch.MAC_ARM
-    } else {
-      HostArch.MAC_X64
-    }
+  /** Map the JVM `os.arch` + `os.name` values onto a [HostArch]. Google publishes Windows and Linux
+   * natives for x86_64 only, so those platforms always map to their x64 classifier. */
+  fun detectArch(
+    osArch: String = System.getProperty("os.arch").orEmpty(),
+    osName: String = System.getProperty("os.name").orEmpty(),
+  ): HostArch = when {
+    osName.startsWith("Windows", ignoreCase = true) -> HostArch.WINDOWS_X64
+    osName.startsWith("Linux", ignoreCase = true) -> HostArch.LINUX_X64
+    osArch.equals("aarch64", ignoreCase = true) || osArch.contains("arm", ignoreCase = true) -> HostArch.MAC_ARM
+    else -> HostArch.MAC_X64
+  }
 
   /** layoutlib jar (bridge+framework classes) + per-arch runtime (natives) + framework resources. */
   fun layoutlibTriple(arch: HostArch, version: String = LAYOUTLIB_VERSION): List<EngineArtifact> = listOf(

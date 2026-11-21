@@ -13,7 +13,7 @@ import type { InflateApi } from '../../extension';
  * itself is covered host-side (engineTest, T35); here we prove the extension-side loop.
  */
 suite('Inflate hot reload (T37)', () => {
-  const rootDir = path.join(os.tmpdir(), 'inflate-hotreload-test');
+  const rootDir = vscode.Uri.file(path.join(os.tmpdir(), 'inflate-hotreload-test')).fsPath;
   const layoutDir = path.join(rootDir, 'res', 'layout');
   const valuesDir = path.join(rootDir, 'res', 'values');
   const mainFile = path.join(layoutDir, 'main.xml');
@@ -28,8 +28,9 @@ suite('Inflate hot reload (T37)', () => {
     fs.writeFileSync(colorsFile, '<resources><color name="bg">#FFFFFF</color></resources>');
   });
 
-  suiteTeardown(() => {
-    fs.rmSync(rootDir, { recursive: true, force: true });
+  suiteTeardown(async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   async function api(): Promise<InflateApi> {

@@ -32,6 +32,26 @@
     },
     {
       "group": "com.android.tools.layoutlib",
+      "name": "layoutlib-runtime",
+      "version": "14.0.11",
+      "classifier": "win",
+      "kind": "unzip",
+      "url": "https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-win.jar",
+      "sha256": "3e26acb000bd2c10bf44da72303622e059febbdd5f9facb461ea77f4151e63bd",
+      "sizeBytes": 75218785
+    },
+    {
+      "group": "com.android.tools.layoutlib",
+      "name": "layoutlib-runtime",
+      "version": "14.0.11",
+      "classifier": "linux",
+      "kind": "unzip",
+      "url": "https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-linux.jar",
+      "sha256": "3811fac81ad279ac1b7c998d199ff62cace4a36b10fc259b80eb4da40f8b0aea",
+      "sizeBytes": 76695759
+    },
+    {
+      "group": "com.android.tools.layoutlib",
       "name": "layoutlib-resources",
       "version": "14.0.11",
       "kind": "unzip",

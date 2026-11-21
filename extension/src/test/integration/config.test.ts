@@ -20,7 +20,7 @@ import type { InflateApi } from '../../extension';
  * half of P1-E AC1-AC3 — it only demonstrates that the extension asked for the right thing.
  */
 suite('Inflate config toolbar (T53)', () => {
-  const rootDir = path.join(os.tmpdir(), 'inflate-config-test');
+  const rootDir = vscode.Uri.file(path.join(os.tmpdir(), 'inflate-config-test')).fsPath;
   const layoutDir = path.join(rootDir, 'res', 'layout');
   const valuesDir = path.join(rootDir, 'res', 'values');
   const valuesNightDir = path.join(rootDir, 'res', 'values-night');

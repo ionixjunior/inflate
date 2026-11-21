@@ -48,9 +48,11 @@ export interface HostLaunchConfig {
 export function ensureHostLaunchConfig(force = false): HostLaunchConfig {
   if (force || !fs.existsSync(LAUNCH_CONFIG_PATH)) {
     try {
-      execFileSync('./gradlew', ['writeCorpusClasspath', '--console=plain'], {
+      const isWindows = process.platform === 'win32';
+      execFileSync(isWindows ? 'gradlew.bat' : './gradlew', ['writeCorpusClasspath', '--console=plain'], {
         cwd: HOST_DIR,
         stdio: 'pipe',
+        shell: isWindows,
       });
     } catch (e) {
       const err = e as { stdout?: Buffer; stderr?: Buffer; message: string };

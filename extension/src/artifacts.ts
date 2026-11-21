@@ -22,7 +22,7 @@
  */
 
 import AdmZip from 'adm-zip';
-import { execFileSync } from 'child_process';
+import { ExecFileSyncOptions, execFileSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -31,8 +31,30 @@ import * as path from 'path';
 
 export type ArtifactKind = 'jar' | 'aar' | 'unzip';
 
-/** Matches the layoutlib-runtime classifier values in engine-manifest.json (AD-004: macOS only). */
-export type HostArch = 'mac-arm' | 'mac';
+/** Matches the layoutlib-runtime classifier values in engine-manifest.json. */
+export type HostArch = 'mac-arm' | 'mac' | 'win' | 'linux';
+
+const SUPPORTED_PLATFORMS = new Map<string, HostArch>([
+  ['win32/x64', 'win'],
+  ['linux/x64', 'linux'],
+  ['darwin/arm64', 'mac-arm'],
+  ['darwin/x64', 'mac'],
+]);
+
+/** Maps a Node `process.platform` + `process.arch` pair onto the layoutlib-runtime classifier, or
+ * `undefined` when Google publishes no natives for it (AD-028): Windows and Linux natives exist for
+ * x64 only, macOS natives for arm64 and x64. */
+export function hostArchFor(platform: NodeJS.Platform, arch: string): HostArch | undefined {
+  return SUPPORTED_PLATFORMS.get(`${platform}/${arch}`);
+}
+
+const PLATFORM_NAMES: Partial<Record<NodeJS.Platform, string>> = { win32: 'Windows', linux: 'Linux', darwin: 'macOS' };
+
+/** What the panel and the warning say when {@link hostArchFor} refuses a platform (AD-028). */
+export function unsupportedPlatformMessage(platform: NodeJS.Platform, arch: string): string {
+  const os = PLATFORM_NAMES[platform] ?? platform;
+  return `Inflate does not support ${os} on ${arch}: the rendering engine is published for Windows x64, Linux x64 and macOS only.`;
+}
 
 export interface ManifestArtifact {
   group: string;
@@ -114,21 +136,26 @@ export interface GenerateContext {
 
 export type GenerateFn = (ctx: GenerateContext) => void;
 
+export type ExecFileSyncFn = (file: string, args: string[], options: ExecFileSyncOptions) => unknown;
+
 /** Real default generator: spawns the bundled host fat-jar's own generator entry points (T38b/T39
  * moved to setup time — the ASM/AGP-symbol machinery is host-side Kotlin; the extension can't run it
  * itself). Synchronous (`execFileSync`) — this runs once, during the one-time engine setup, never on
  * the render hot path. */
-export function defaultGenerate(ctx: GenerateContext): void {
-  execFileSync(ctx.javaBin, ['-cp', ctx.hostJarPath, 'engine.FrameworkDelegateGeneratorKt', ctx.layoutlibJarPath, ctx.frameworkDelegatesJarPath]);
+export function defaultGenerate(ctx: GenerateContext, exec: ExecFileSyncFn = execFileSync): void {
+  const options: ExecFileSyncOptions = { windowsHide: true };
+  exec(ctx.javaBin, ['-cp', ctx.hostJarPath, 'engine.FrameworkDelegateGeneratorKt', ctx.layoutlibJarPath, ctx.frameworkDelegatesJarPath], options);
   fs.mkdirSync(ctx.workDir, { recursive: true });
   const rClassCp = [ctx.hostJarPath, ...ctx.rClassToolsJars].join(path.delimiter);
-  execFileSync(ctx.javaBin, ['-cp', rClassCp, 'engine.RClassGeneratorKt', ctx.rTxtDir, ctx.workDir, ctx.rClassesJarPath, ctx.rPackagesPath]);
+  exec(ctx.javaBin, ['-cp', rClassCp, 'engine.RClassGeneratorKt', ctx.rTxtDir, ctx.workDir, ctx.rClassesJarPath, ctx.rPackagesPath], options);
 }
 
 export interface ArtifactManagerOptions {
   manifest: EngineManifest;
   globalStorageDir: string;
-  arch: HostArch;
+  /** `undefined` on a platform {@link hostArchFor} refuses: the manager can still report and clear
+   * the cache (Doctor, Clear Engine Cache), but {@link ArtifactManager.ensureInstalled} refuses. */
+  arch: HostArch | undefined;
   download?: DownloadFn;
   unzip?: UnzipFn;
   /** JDK binary + bundled host fat-jar path — when BOTH are supplied, `ensureInstalled` also
@@ -138,9 +165,19 @@ export interface ArtifactManagerOptions {
   javaBin?: string;
   hostJarPath?: string;
   generate?: GenerateFn;
+  /** Receives the `[setup]` lines engine setup writes to the "Inflate" output channel. */
+  log: (line: string) => void;
+  /** Injectable clock: the `.complete` timestamp and the retention window (AD-029) read it. */
+  now?: () => number;
+  /** Injectable folder removal for superseded engine folders; defaults to a recursive `rmSync`. */
+  removeDir?: (dir: string) => void;
 }
 
 const MAX_ATTEMPTS = 3;
+
+/** AD-029: superseded `engine/<hash>/` folders are deleted once the current one is this old, so a
+ * window still running the previous version keeps its engine until it reloads. */
+const ENGINE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function artifactKey(a: ManifestArtifact): string {
   return a.classifier ? `${a.group}:${a.name}:${a.version}:${a.classifier}` : `${a.group}:${a.name}:${a.version}`;
@@ -151,10 +188,25 @@ function jarFileName(a: ManifestArtifact): string {
   return a.classifier ? `${base}-${a.classifier}.jar` : `${base}.jar`;
 }
 
-/** Only one `layoutlib-runtime` classifier (the host's own arch) is ever needed at runtime — the
- * manifest carries both so a single bundled manifest works on either Mac architecture (AD-004). */
-export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch): ManifestArtifact[] {
+/** Only one `layoutlib-runtime` classifier (the host's own OS/arch) is ever needed at runtime — the
+ * manifest carries every classifier so a single bundled manifest works on every supported platform. */
+export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch | undefined): ManifestArtifact[] {
   return manifest.artifacts.filter((a) => a.name !== 'layoutlib-runtime' || a.classifier === arch);
+}
+
+/** When a child of `engine/` was last written: its `.complete` time, or, when it has none (an
+ * install in progress or abandoned, a stray file), the latest modification time of it and its direct
+ * children. `NaN` when it cannot be read. */
+function lastWrittenAt(entry: string): number {
+  try {
+    const marker = path.join(entry, '.complete');
+    if (fs.existsSync(marker)) return Date.parse(fs.readFileSync(marker, 'utf8'));
+    const stat = fs.statSync(entry);
+    const children = stat.isDirectory() ? fs.readdirSync(entry).map((c) => fs.statSync(path.join(entry, c)).mtimeMs) : [];
+    return Math.max(stat.mtimeMs, ...children);
+  } catch {
+    return NaN;
+  }
 }
 
 /** Cache-directory key (design: "cache dir keyed by manifest hash"). */
@@ -242,6 +294,9 @@ export class ArtifactManager {
   private readonly download: DownloadFn;
   private readonly unzip: UnzipFn;
   private readonly generate: GenerateFn;
+  private readonly log: (line: string) => void;
+  private readonly now: () => number;
+  private readonly removeDir: (dir: string) => void;
 
   constructor(private readonly opts: ArtifactManagerOptions) {
     this.relevant = selectRelevantArtifacts(opts.manifest, opts.arch);
@@ -249,10 +304,16 @@ export class ArtifactManager {
     this.download = opts.download ?? defaultDownload;
     this.unzip = opts.unzip ?? defaultUnzip;
     this.generate = opts.generate ?? defaultGenerate;
+    this.log = opts.log;
+    this.now = opts.now ?? Date.now;
+    this.removeDir = opts.removeDir ?? ((dir) => fs.rmSync(dir, { recursive: true, force: true }));
   }
 
+  private enginesDir(): string {
+    return path.join(this.opts.globalStorageDir, 'engine');
+  }
   private engineDir(): string {
-    return path.join(this.opts.globalStorageDir, 'engine', this.manifestHash);
+    return path.join(this.enginesDir(), this.manifestHash);
   }
   private tmpDir(): string {
     return path.join(this.engineDir(), 'tmp');
@@ -305,7 +366,11 @@ export class ArtifactManager {
   }
 
   async ensureInstalled(onProgress?: (event: DownloadProgress) => void): Promise<EnginePaths> {
+    if (!this.opts.arch) {
+      throw new Error('Inflate cannot install the render engine on an unsupported platform.');
+    }
     if (this.isReady()) {
+      this.removeSupersededEngines();
       return this.resolvePaths();
     }
 
@@ -325,12 +390,32 @@ export class ArtifactManager {
         }
       }
       this.runGeneration();
-      fs.writeFileSync(this.completeMarker(), new Date().toISOString());
+      fs.writeFileSync(this.completeMarker(), new Date(this.now()).toISOString());
     } finally {
       fs.rmSync(this.tmpDir(), { recursive: true, force: true });
     }
 
     return this.resolvePaths();
+  }
+
+  /** Deletes every other child of `engine/` last written before the current `.complete`, once that
+   * `.complete` is at least {@link ENGINE_RETENTION_MS} old (AD-029). A newer folder is kept, so a
+   * window still on an older version never deletes a newer version's engine. Best effort: a failed
+   * delete (a file in use on Windows) is logged and tried again at the next setup, and never fails
+   * the preview. */
+  private removeSupersededEngines(): void {
+    const completedAt = Date.parse(fs.readFileSync(this.completeMarker(), 'utf8'));
+    if (!(this.now() - completedAt >= ENGINE_RETENTION_MS)) return;
+    for (const name of fs.readdirSync(this.enginesDir())) {
+      if (name === this.manifestHash) continue;
+      const entry = path.join(this.enginesDir(), name);
+      if (!(lastWrittenAt(entry) < completedAt)) continue;
+      try {
+        this.removeDir(entry);
+      } catch (e) {
+        this.log(`[setup] could not remove old engine folder ${name}: ${(e as Error).message}`);
+      }
+    }
   }
 
   cacheState(): CacheReport {
