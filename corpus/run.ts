@@ -54,6 +54,9 @@ interface FixtureSpec {
   docPath: string;
   roots: string[];
   goldenDir: string;
+  /** Another fixture's id: this one is compared against that fixture's goldens and never writes
+   * one of its own (the same layout saved with other bytes, such as CRLF line endings). */
+  goldenOf?: string;
   configs: FixtureConfigSpec[];
 }
 
@@ -75,7 +78,7 @@ function docKindOf(kind: FixtureSpec['kind']): string {
 }
 
 function goldenPath(fixture: FixtureSpec, configId: string): string {
-  const safeId = fixture.id.replace(/\//g, '-');
+  const safeId = (fixture.goldenOf ?? fixture.id).replace(/\//g, '-');
   return path.join(REPO_ROOT, fixture.goldenDir, 'golden', `${safeId}__${configId}.png`);
 }
 
@@ -147,6 +150,12 @@ async function main(): Promise<void> {
           continue;
         }
 
+        if (updateGoldens && fixture.goldenOf) {
+          results.push({ fixtureId: fixture.id, configId: cfg.id, status: 'ok', actualPngPath: response.pngPath, goldenPngPath: golden });
+          console.log(`[corpus] kept the golden of ${fixture.goldenOf} for ${fixture.id} :: ${cfg.id}`);
+          continue;
+        }
+
         if (updateGoldens) {
           updateGolden(response.pngPath, golden);
           results.push({ fixtureId: fixture.id, configId: cfg.id, status: 'ok', actualPngPath: response.pngPath, goldenPngPath: golden });
@@ -171,7 +180,9 @@ async function main(): Promise<void> {
         });
         console.log(
           `[corpus] ${diff.pass ? 'PASS' : 'FAIL'}  ${fixture.id} :: ${cfg.id}` +
-            (diff.goldenMissing ? ' (golden generated)' : ` (${(diff.diffRatio * 100).toFixed(3)}% diff)`),
+            (diff.goldenMissing
+              ? ' (golden generated)'
+              : ` (${(diff.diffRatio * 100).toFixed(3)}% diff${fixture.goldenOf ? ` vs ${fixture.goldenOf}` : ''})`),
         );
       } catch (e) {
         results.push({
