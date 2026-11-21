@@ -12,6 +12,7 @@ import {
   ManifestArtifact,
   OfflineError,
   computeManifestHash,
+  defaultGenerate,
   hostArchFor,
   selectRelevantArtifacts,
   unsupportedPlatformMessage,
@@ -518,6 +519,42 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     expect(paths.classpathJars.some((p) => p.endsWith('R-classes.jar'))).toBe(true);
     expect(paths.classpathJars.some((p) => p.endsWith('framework-delegates.jar'))).toBe(true);
     expect(paths.libraryPackages).toContain('com.example.withrtxt');
+  });
+});
+
+describe('defaultGenerate', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-generate-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('runs FrameworkDelegateGeneratorKt and RClassGeneratorKt with windowsHide', () => {
+    const calls: Array<{ mainClass: string; windowsHide: boolean | undefined }> = [];
+
+    defaultGenerate(
+      {
+        javaBin: 'java',
+        hostJarPath: 'host.jar',
+        layoutlibJarPath: 'layoutlib.jar',
+        rTxtDir: 'rtxt',
+        workDir: path.join(tempRoot, 'work'),
+        rClassesJarPath: 'R-classes.jar',
+        rPackagesPath: 'r-packages.txt',
+        frameworkDelegatesJarPath: 'framework-delegates.jar',
+        rClassToolsJars: [],
+      },
+      (_file, args, options) => calls.push({ mainClass: args[2], windowsHide: options.windowsHide }),
+    );
+
+    expect(calls).toEqual([
+      { mainClass: 'engine.FrameworkDelegateGeneratorKt', windowsHide: true },
+      { mainClass: 'engine.RClassGeneratorKt', windowsHide: true },
+    ]);
   });
 });
 

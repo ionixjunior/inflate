@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, SpawnOptions, spawn } from 'child_process';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HostManager, IllegalStateError, RenderTimeoutError, SpawnFn, buildJavaCommand } from './host';
@@ -60,6 +60,21 @@ describe('HostManager (T17) — lifecycle state machine against a real fake-host
     await Promise.all(managers.map((m) => m.dispose().catch(() => undefined)));
     managers.length = 0;
     spawnedChildren.length = 0;
+  });
+
+  it('spawns the host JVM with windowsHide', async () => {
+    const spawnOptions: Array<SpawnOptions | undefined> = [];
+    const manager = makeManager('normal', {
+      spawnFn: (command, args, options) => {
+        spawnOptions.push(options);
+        return spawn(command, args, options ?? {});
+      },
+    });
+
+    await manager.ensureReady();
+
+    expect(spawnOptions).toHaveLength(1);
+    expect(spawnOptions[0]?.windowsHide).toBe(true);
   });
 
   it('follows the legal transition sequence stopped -> starting -> ready -> rendering -> ready', async () => {

@@ -253,7 +253,7 @@ export class HostManager {
 
   private async spawnAndInitialize(): Promise<void> {
     this.setState('starting');
-    const child = this.spawnFn(this.opts.command, this.opts.args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = this.spawnFn(this.opts.command, this.opts.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.child = child;
     this.stderrLines = [];
     child.stderr?.on('data', (buf: Buffer) => this.appendStderr(buf.toString()));

@@ -22,7 +22,7 @@
  */
 
 import AdmZip from 'adm-zip';
-import { execFileSync } from 'child_process';
+import { ExecFileSyncOptions, execFileSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -136,15 +136,18 @@ export interface GenerateContext {
 
 export type GenerateFn = (ctx: GenerateContext) => void;
 
+export type ExecFileSyncFn = (file: string, args: string[], options: ExecFileSyncOptions) => unknown;
+
 /** Real default generator: spawns the bundled host fat-jar's own generator entry points (T38b/T39
  * moved to setup time — the ASM/AGP-symbol machinery is host-side Kotlin; the extension can't run it
  * itself). Synchronous (`execFileSync`) — this runs once, during the one-time engine setup, never on
  * the render hot path. */
-export function defaultGenerate(ctx: GenerateContext): void {
-  execFileSync(ctx.javaBin, ['-cp', ctx.hostJarPath, 'engine.FrameworkDelegateGeneratorKt', ctx.layoutlibJarPath, ctx.frameworkDelegatesJarPath]);
+export function defaultGenerate(ctx: GenerateContext, exec: ExecFileSyncFn = execFileSync): void {
+  const options: ExecFileSyncOptions = { windowsHide: true };
+  exec(ctx.javaBin, ['-cp', ctx.hostJarPath, 'engine.FrameworkDelegateGeneratorKt', ctx.layoutlibJarPath, ctx.frameworkDelegatesJarPath], options);
   fs.mkdirSync(ctx.workDir, { recursive: true });
   const rClassCp = [ctx.hostJarPath, ...ctx.rClassToolsJars].join(path.delimiter);
-  execFileSync(ctx.javaBin, ['-cp', rClassCp, 'engine.RClassGeneratorKt', ctx.rTxtDir, ctx.workDir, ctx.rClassesJarPath, ctx.rPackagesPath]);
+  exec(ctx.javaBin, ['-cp', rClassCp, 'engine.RClassGeneratorKt', ctx.rTxtDir, ctx.workDir, ctx.rClassesJarPath, ctx.rPackagesPath], options);
 }
 
 export interface ArtifactManagerOptions {
