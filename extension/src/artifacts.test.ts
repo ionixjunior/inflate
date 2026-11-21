@@ -767,7 +767,7 @@ describe('ArtifactManager — old engine folders', () => {
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
-      now: () => Date.parse('2026-11-08T00:00:00.000Z'),
+      now: () => Date.parse('2026-12-01T00:00:00.000Z'),
     });
 
     await manager.ensureInstalled();
