@@ -125,7 +125,8 @@ jobs:
         working-directory: extension
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            echo "Running the integration tests under xvfb-run"
+            display=xvfb-run
+            echo "Running the integration tests under $display"
             command -v xvfb-run >/dev/null || { sudo apt-get update && sudo apt-get install -y xvfb; }
             xvfb-run -a npm run test:integration
           else
@@ -166,12 +167,14 @@ jobs:
 
       - name: Check the packaged host.jar and VSIX
         run: |
-          win32=$(jar tf extension/host.jar | grep -c '^com/sun/jna/platform/win32/' || true)
+          prefix=com/sun/jna/platform/win32/
+          limit=50000000
+          win32=$(jar tf extension/host.jar | grep -c "^$prefix" || true)
           vsix=$(ls extension/*.vsix)
           size=$(wc -c < "$vsix" | tr -d ' ')
-          echo "host.jar holds com/sun/jna/platform/win32/ classes: ${win32}"
-          echo "VSIX size at most 50000000 bytes: ${size} bytes (${vsix})"
-          [ "$win32" -gt 0 ] && [ "$size" -le 50000000 ]
+          echo "host.jar holds $prefix classes: ${win32}"
+          echo "VSIX size at most ${limit} bytes: ${size} bytes (${vsix})"
+          [ "$win32" -gt 0 ] && [ "$size" -le "$limit" ]
 
       # The packaged host.jar, the real manifest and a real download into an empty profile, then a
       # second setup that must not touch the network. On Windows the profile folder is 100
