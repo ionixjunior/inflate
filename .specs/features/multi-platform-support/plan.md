@@ -1,6 +1,6 @@
 # Multi-platform support (Windows x64 and Linux x64)
 
-**Approved**: 2026-11-20 - user: "approved, commit the plan. I'll start the implementation in a new context."
+**Approved**: 2026-11-21 - user: "Sure. Make it, approve the plan and commit it"
 
 > Build this with **tlc-implement**. Every criterion becomes a check with a proof; nothing under
 > the open questions is settled while building.
@@ -69,7 +69,7 @@ flowchart TD
 | stored data | `globalStorage/engine/<hash>` gets a new hash: nothing is migrated, every install downloads once more; older folders are deleted 7 days after the new one completes |
 | build | `host/build.gradle.kts`: the fat jar stops excluding `com/sun/jna/platform/win32/**`; the engine cache location can be overridden by `INFLATE_ENGINE_CACHE_DIR` (test use only) |
 | tests | Measured on `windows-2025` (run 44854949195): 21 integration tests time out because they look up `lastApplied(path.join(os.tmpdir(), ...))`, which starts with `C:\`, while panels are keyed by `path.resolve(uri.fsPath)`, which VS Code gives as `c:\`; 10 `jdk.test.ts` tests use POSIX paths and macOS-only sources; 1 `pngTokenOf` test gets a `D:` drive from `path.resolve` |
-| CI | `ci.yml` runs on `macos-26`, `windows-2025`, `ubuntu-26.04`; `release.yml` calls it, so a release now needs all three green |
+| CI | `ci.yml` runs one job on `macos-26`, `windows-2025` and `ubuntu-26.04`, replacing the two jobs of `c73ccbe` (`build-and-test-arm64`, `build-and-test-multi-os`); the macOS cache key gains `runner.os`, so its first run downloads the engine once, and its report artifact becomes `corpus-report-macOS` (nothing else references the old names); `release.yml` calls it, so a release now needs all three green |
 
 ```mermaid
 erDiagram
@@ -106,7 +106,7 @@ bundled and read only by the extension.
 | 1. Manifest with four runtime classifiers; the cache folder stays named by the SHA-256 of the whole manifest | `layoutlib-runtime` entries `mac-arm`, `mac`, `win`, `linux`; every existing install downloads about 170 MB once into `engine/<new hash>/` | Hash only the platform's own subset: today's macOS key hashed both macOS runtimes, so it changes anyway, and it rewrites the cache-key rule for every future pin bump |
 | 2. First code path that deletes cache without a command (AD-029) | At the first preview whose current `engine/<hash>/.complete` is at least 7 days old, delete every other child of `globalStorage/engine/`; never the current folder, never outside `engine/` | Delete right after install: a window still on the old version breaks until it reloads (user: "It's important the extension not broke, even if the problem is solved reloading VS Code"); 30 days: user chose 7 |
 | 3. Supported platforms (AD-028 supersedes AD-004) | macOS arm64 and x64, Windows x64, Linux x64; Windows and Linux on any other CPU are refused before download | Windows on Arm through an x64 JDK under emulation: user chose to refuse (option 1a) |
-| 4. Release gate on three pinned runners with the clean-profile smoke on every run | `macos-26`, `windows-2025`, `ubuntu-26.04` | `-latest` labels: user wants pins; smoke at release only: user chose every run |
+| 4. Release gate on three pinned runners with the clean-profile smoke on every run | One CI job, matrix `macos-26`, `windows-2025`, `ubuntu-26.04` | `-latest` labels: user wants pins; smoke at release only: user chose every run |
 
 - Nothing else in this change is hard to reverse
 
@@ -129,8 +129,8 @@ The first preview on Windows x64 downloads the Windows engine and renders what m
 6. WHILE the render host or the engine generator steps run on Windows THEN the extension SHALL start every child process it owns (host JVM, `FrameworkDelegateGeneratorKt`, `RClassGeneratorKt`) with `windowsHide: true`, so no console window appears
 7. The system SHALL package a `host.jar` that contains `com/sun/jna/platform/win32/` classes, in a VSIX of at most 50 MB
 8. IF a layout file uses CRLF line endings THEN its preview SHALL match the golden of the same layout with LF endings at 0.000% under the corpus comparison on all three runners
-9. WHEN CI runs THEN the `windows-2025` job SHALL pass every step: extension unit tests, extension integration tests (33), host build and unit tests, engineTest, the corpus, and the clean-profile smoke
-10. WHILE the `windows-2025` job runs THEN the host engine cache SHALL live in `INFLATE_ENGINE_CACHE_DIR`, a folder of 177 characters, so its longest file path is 280 characters
+9. WHEN CI runs THEN the `windows-2025` runner SHALL pass every step: extension unit tests, extension integration tests (33), host build and unit tests, engineTest, the corpus, and the clean-profile smoke
+10. WHILE CI runs on `windows-2025` THEN the host engine cache SHALL live in `INFLATE_ENGINE_CACHE_DIR`, a folder of 177 characters, so its longest file path is 280 characters
 
 ### S2: A Linux x64 user previews a layout (P1)
 
@@ -142,7 +142,7 @@ The first preview on Linux x64 downloads the Linux engine and renders what macOS
 12. WHEN `JdkLocator` runs on `linux` THEN it SHALL search, in this order, `inflate.javaHome`, `JAVA_HOME`, `PATH`, `/usr/lib/jvm/*`, `~/.sdkman/candidates/java/*` (skipping `current`), `/opt/android-studio/jbr`, `~/android-studio/jbr`, and return `javaBin` as `<home>/bin/java`
     - only `/usr/lib/jvm/java-17-openjdk-amd64` installed → that JDK; only `~/android-studio/jbr` (JDK 21) installed → that JDK
 13. WHILE `JdkLocator` runs on `darwin` THEN its sources and their order SHALL stay as on `main`: `inflate.javaHome`, `JAVA_HOME`, `PATH`, `/usr/libexec/java_home -V`, Homebrew, SDKMAN, Android Studio JBR, `/Library/Java/JavaVirtualMachines/*`
-14. WHEN CI runs THEN the `ubuntu-26.04` job SHALL pass every step, with the integration tests under a virtual display
+14. WHEN CI runs THEN the `ubuntu-26.04` runner SHALL pass every step, with the integration tests under a virtual display
 
 ### S3: Windows and Linux on Arm are refused before any download (P1)
 
@@ -176,6 +176,7 @@ Every CI run installs and renders through the same files a user downloads.
 21. WHILE the smoke runs on `windows-2025` THEN its clean-profile folder SHALL put the longest engine file path above 260 characters, so the extension's own Node unzip runs on long paths
 22. The system SHALL keep a corpus fixture `fonts/custom`: one layout applying `@font/dancing_script` through a `TextView`, a `MaterialTextView` and a `MaterialButton`, with a committed golden that passes at 0.000% on all three runners
 23. WHEN a CI job restores or saves the engine cache THEN the cache key SHALL contain `runner.os` and the hash of `extension/engine-manifest.json`
+24. The system SHALL run CI as one job whose matrix lists `macos-26`, `windows-2025` and `ubuntu-26.04`, with a single list of steps that runs on all three, and upload each runner's corpus report as `corpus-report-<runner.os>`
 
 ### S6: The release notes and the store page say what ships (P2)
 
@@ -183,7 +184,7 @@ What a user reads in the stores matches what 1.1.0 does.
 
 **Acceptance Criteria**
 
-24. The system SHALL open `extension/CHANGELOG.md` with this `## 1.1.0` section, which the Changelog tab of the VS Code Marketplace and Open VSX shows:
+25. The system SHALL open `extension/CHANGELOG.md` with this `## 1.1.0` section, which the Changelog tab of the VS Code Marketplace and Open VSX shows:
 
     ```markdown
     ## 1.1.0
@@ -202,9 +203,9 @@ What a user reads in the stores matches what 1.1.0 does.
     - After updating, the first preview downloads the rendering engine again (about 170 MB, one
       time). The previous engine folder is deleted automatically 7 days later.
     ```
-25. The system SHALL state in `extension/README.md` (the store page) and `README.md`: `Inflate runs on macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Windows on Arm and Linux on Arm are not supported.`, and their Quickstart SHALL name the Command Palette as `Cmd+Shift+P` on macOS and `Ctrl+Shift+P` on Windows and Linux
-26. The system SHALL list the JDK search order of each OS (criteria 5, 12 and 13) in `docs/troubleshooting.md`, and `docs/limitations.md` SHALL replace the "Windows and Linux are not supported in v1" bullet with the Arm limitation
-27. The system SHALL record AD-028 (supported platforms, supersedes AD-004) and AD-029 (7-day engine retention) in `.specs/STATE.md`, with AD-004's status set to `superseded by AD-028`
+26. The system SHALL state in `extension/README.md` (the store page) and `README.md`: `Inflate runs on macOS (Apple Silicon and Intel), Windows x64 and Linux x64. Windows on Arm and Linux on Arm are not supported.`, and their Quickstart SHALL name the Command Palette as `Cmd+Shift+P` on macOS and `Ctrl+Shift+P` on Windows and Linux
+27. The system SHALL list the JDK search order of each OS (criteria 5, 12 and 13) in `docs/troubleshooting.md`, and `docs/limitations.md` SHALL replace the "Windows and Linux are not supported in v1" bullet with the Arm limitation
+28. The system SHALL record AD-028 (supported platforms, supersedes AD-004) and AD-029 (7-day engine retention) in `.specs/STATE.md`, with AD-004's status set to `superseded by AD-028`
 
 ## Out of scope
 
@@ -230,8 +231,9 @@ What a user reads in the stores matches what 1.1.0 does.
 | Release | Normal minor release 1.1.0, no pre-release | User chose 5a | y |
 | Unsupported-platform notification | No buttons (criterion 15) | User chose "No buttons" | y |
 | Clean-profile smoke | On every CI run, on all three runners (criterion 20) | User chose "Every CI run" | y |
+| CI layout | One job for the three runners (criterion 24) | User: "Sure" to merging the macOS job with the Windows and Linux job, so every step is written once | y |
 | CI runners | `macos-26`, `windows-2025`, `ubuntu-26.04` | User: pinned versions, "windows-2025 and ubuntu-26.04" | y |
-| Release notes in the stores | `## 1.1.0` in `extension/CHANGELOG.md` (criterion 24) | User asked for the 1.1.0 release notes that stay in the stores; the Marketplace and Open VSX show the VSIX's CHANGELOG, while the GitHub Release keeps its auto-generated notes | n |
+| Release notes in the stores | `## 1.1.0` in `extension/CHANGELOG.md` (criterion 25) | User asked for the 1.1.0 release notes that stay in the stores; the Marketplace and Open VSX show the VSIX's CHANGELOG, while the GitHub Release keeps its auto-generated notes | n |
 | Decision numbers | AD-028 and AD-029 | `feature/custom-views` already uses AD-025 to AD-027; skipping them avoids two different decisions with one number | n |
 | Doctor platform section | Criterion 16 | Doctor is the first thing troubleshooting points to; it has no platform line today | n |
 | CRLF fixture | Criterion 8 | Windows checkouts default to CRLF; CI now checks out LF, so nothing else covers it | n |
