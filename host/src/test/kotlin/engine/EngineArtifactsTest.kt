@@ -17,14 +17,22 @@ class EngineArtifactsTest {
   fun `runtime classifier is per-arch`() {
     assertEquals("mac-arm", EngineArtifacts.runtimeClassifier(HostArch.MAC_ARM))
     assertEquals("mac", EngineArtifacts.runtimeClassifier(HostArch.MAC_X64))
+    assertEquals("win", EngineArtifacts.runtimeClassifier(HostArch.WINDOWS_X64))
+    assertEquals("linux", EngineArtifacts.runtimeClassifier(HostArch.LINUX_X64))
   }
 
   @Test
-  fun `os_arch maps to HostArch`() {
-    assertEquals(HostArch.MAC_ARM, EngineArtifacts.detectArch("aarch64"))
-    assertEquals(HostArch.MAC_ARM, EngineArtifacts.detectArch("arm64"))
-    assertEquals(HostArch.MAC_X64, EngineArtifacts.detectArch("x86_64"))
-    assertEquals(HostArch.MAC_X64, EngineArtifacts.detectArch("amd64"))
+  fun `os_arch on macOS maps to the mac HostArch`() {
+    assertEquals(HostArch.MAC_ARM, EngineArtifacts.detectArch("aarch64", "Mac OS X"))
+    assertEquals(HostArch.MAC_ARM, EngineArtifacts.detectArch("arm64", "Mac OS X"))
+    assertEquals(HostArch.MAC_X64, EngineArtifacts.detectArch("x86_64", "Mac OS X"))
+    assertEquals(HostArch.MAC_X64, EngineArtifacts.detectArch("amd64", "Mac OS X"))
+  }
+
+  @Test
+  fun `os_name on Windows and Linux maps to their x64 HostArch`() {
+    assertEquals(HostArch.WINDOWS_X64, EngineArtifacts.detectArch("amd64", "Windows Server 2025"))
+    assertEquals(HostArch.LINUX_X64, EngineArtifacts.detectArch("amd64", "Linux"))
   }
 
   @Test

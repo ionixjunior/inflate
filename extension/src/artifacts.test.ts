@@ -12,6 +12,7 @@ import {
   ManifestArtifact,
   OfflineError,
   computeManifestHash,
+  hostArchFor,
   selectRelevantArtifacts,
 } from './artifacts';
 
@@ -550,5 +551,20 @@ describe('selectRelevantArtifacts', () => {
     const relevant = selectRelevantArtifacts(manifest, 'mac-arm');
     expect(relevant).toHaveLength(2);
     expect(relevant.find((a) => a.name === 'layoutlib-runtime')?.classifier).toBe('mac-arm');
+  });
+});
+
+describe('hostArchFor', () => {
+  it('maps macOS to the classifier of its CPU architecture', () => {
+    expect(hostArchFor('darwin', 'arm64')).toBe('mac-arm');
+    expect(hostArchFor('darwin', 'x64')).toBe('mac');
+  });
+
+  it('maps Windows to the win classifier', () => {
+    expect(hostArchFor('win32', 'x64')).toBe('win');
+  });
+
+  it('maps Linux to the linux classifier', () => {
+    expect(hostArchFor('linux', 'x64')).toBe('linux');
   });
 });

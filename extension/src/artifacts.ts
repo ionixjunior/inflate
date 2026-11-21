@@ -31,8 +31,17 @@ import * as path from 'path';
 
 export type ArtifactKind = 'jar' | 'aar' | 'unzip';
 
-/** Matches the layoutlib-runtime classifier values in engine-manifest.json (AD-004: macOS only). */
-export type HostArch = 'mac-arm' | 'mac';
+/** Matches the layoutlib-runtime classifier values in engine-manifest.json. */
+export type HostArch = 'mac-arm' | 'mac' | 'win' | 'linux';
+
+/** Maps a Node `process.platform` + `process.arch` pair onto the layoutlib-runtime classifier.
+ * Google publishes Windows and Linux natives for x64 only, so those platforms always map to their
+ * x64 classifier. */
+export function hostArchFor(platform: NodeJS.Platform, arch: string): HostArch {
+  if (platform === 'win32') return 'win';
+  if (platform === 'linux') return 'linux';
+  return arch === 'arm64' ? 'mac-arm' : 'mac';
+}
 
 export interface ManifestArtifact {
   group: string;
@@ -151,8 +160,8 @@ function jarFileName(a: ManifestArtifact): string {
   return a.classifier ? `${base}-${a.classifier}.jar` : `${base}.jar`;
 }
 
-/** Only one `layoutlib-runtime` classifier (the host's own arch) is ever needed at runtime — the
- * manifest carries both so a single bundled manifest works on either Mac architecture (AD-004). */
+/** Only one `layoutlib-runtime` classifier (the host's own OS/arch) is ever needed at runtime — the
+ * manifest carries every classifier so a single bundled manifest works on every supported platform. */
 export function selectRelevantArtifacts(manifest: EngineManifest, arch: HostArch): ManifestArtifact[] {
   return manifest.artifacts.filter((a) => a.name !== 'layoutlib-runtime' || a.classifier === arch);
 }

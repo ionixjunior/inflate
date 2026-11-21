@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { ArtifactManager, EngineManifest, HostArch } from './artifacts';
+import { ArtifactManager, EngineManifest, HostArch, hostArchFor } from './artifacts';
 import { classify, isEligible } from './classifier';
 import { ConfigStore, PreviewConfigPatch } from './config';
 import { assembleDoctorReport, DoctorRenderTimings, formatDoctorReport } from './doctor';
@@ -383,10 +383,10 @@ function resolveHostCommandOrDeferred(output: vscode.OutputChannel): { command: 
   }
 }
 
-/** Detects the current process's macOS architecture as the `HostArch` the manifest/ArtifactManager
- * understand (AD-004: macOS arm64/x64 only in v1). */
+/** Detects the current process's OS/architecture as the `HostArch` the manifest/ArtifactManager
+ * understand. */
 function detectHostArch(): HostArch {
-  return process.arch === 'arm64' ? 'mac-arm' : 'mac';
+  return hostArchFor(process.platform, process.arch);
 }
 
 /** The bundled engine manifest (T15/AD-011) — read once; a small, static JSON file shipped in the
