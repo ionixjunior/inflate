@@ -455,9 +455,6 @@ tasks.shadowJar {
     // is deterministic and safe: nothing in the render path constructs or reflects on analytics protos.
     exclude(dependency("com.android.tools.analytics-library:protos:.*"))
   }
-  // AD-004: v1 is macOS-only — JNA's Windows-specific platform bindings (bundled inside jna-platform,
-  // which also carries the macOS bindings EngineAdapter/layoutlib actually use) are dead weight.
-  exclude("com/sun/jna/platform/win32/**")
   // SPEC_DEVIATION (T60, AD-011 size estimate): `minimize()` was also tried, to shrink further toward
   // AD-011's ~25-40 MB estimate, but its static reachability analysis broke the REAL engine twice in
   // a row when smoke-tested end to end — first stripping kotlin-reflect (moshi-kotlin's Kotlin
@@ -468,7 +465,7 @@ tasks.shadowJar {
   // ServiceLoader-based layoutlib providers). Shipping an unverified minimized jar risks a broken
   // render host in production, which is a far worse outcome than a smaller VSIX — so minimize() is
   // NOT used; only the specific, well-understood exclusions above (downloaded-separately Google-Maven
-  // coordinates, analytics protos, Windows-only JNA bindings) are applied. Real measured size: ~40 MB
+  // coordinates, analytics protos) are applied. Real measured size: ~40 MB
   // (see docs/release-checklist.md) — smoke-tested end to end (real corpus renders) after every change.
 }
 
