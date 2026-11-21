@@ -28,8 +28,9 @@ suite('Inflate hot reload (T37)', () => {
     fs.writeFileSync(colorsFile, '<resources><color name="bg">#FFFFFF</color></resources>');
   });
 
-  suiteTeardown(() => {
-    fs.rmSync(rootDir, { recursive: true, force: true });
+  suiteTeardown(async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    fs.rmSync(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   async function api(): Promise<InflateApi> {
