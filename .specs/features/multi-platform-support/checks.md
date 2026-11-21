@@ -247,5 +247,5 @@ Proof: `grep -q '^### AD-028' .specs/STATE.md && grep -q '^### AD-029' .specs/ST
 
 - **Settled mid-build:** 2026-11-21, user: push and run CI "Yes, push and run CI" (fast-forward pushes of this branch, on-demand CI runs, no force); integration count "Yes, 34 is fine (Recommended)" (criterion 9 reads all integration tests, now 34, with the new refusal test); panel text for the Arm refusal "Keep the prefix" (the panel shows `Render host error: Inflate does not support ...`, same path as the missing-JDK message)
 - **Dispatched:** none
-- **Boundary:** none closed yet
+- **Boundary:** C1-C29 closed at `a22cdd7`. CI run 44862527604 at `94a4c4f`: macOS and Linux green; Windows failed 2 suite cleanups (EPERM deleting fixtures saved through VS Code) and the crash-limit chaos test past its 90 s budget (51 s macOS/Linux, 78 s Windows in the spike run), fixed in `c6e1294` and `5f31c1c`; CI echoes made discriminating in `a22cdd7` (GitHub prints each step's script into the log). CI run 44863585240 at `a22cdd7`: all three green; its Linux job was re-run once after Maven Central answered HTTP 429 while Gradle resolved the Shadow plugin. `proofs/ci.sh` prints the run's job names in the run's own matrix order, because a re-run changes the API's job order
 - **Abandoned:** none

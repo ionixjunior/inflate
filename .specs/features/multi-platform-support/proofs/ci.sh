@@ -29,7 +29,16 @@ if [ -z "$run_id" ]; then
 fi
 
 echo "CI run $run_id at $run_sha: code identical to HEAD $head"
-gh run view "$run_id" --json jobs --jq '"run jobs: " + ([.jobs[].name] | join(", "))'
+# The API lists jobs in creation order, which a re-run changes; print the run's job names in the
+# order the run's own ci.yml matrix declares them (a name the API does not return is not printed).
+job_names=$(gh run view "$run_id" --json jobs --jq '.jobs[].name')
+matrix=$(git show "${run_sha}:.github/workflows/ci.yml" | sed -n 's/^ *runner: \[\(.*\)\]$/\1/p' | tr -d ' ' | tr ',' ' ')
+ordered=""
+for label in $matrix; do
+  name=$(printf '%s\n' "$job_names" | grep -F "($label)")
+  [ -n "$name" ] && ordered="${ordered:+$ordered, }$name"
+done
+echo "run jobs: $ordered"
 gh api "repos/{owner}/{repo}/actions/runs/$run_id/artifacts" --jq '.artifacts[] | "artifact: " + .name'
 
 job_line=$(gh run view "$run_id" --json jobs \
