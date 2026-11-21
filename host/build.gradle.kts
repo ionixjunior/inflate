@@ -105,11 +105,14 @@ val manifestAndroidxNotations = listOf(
   "androidx.viewpager2:viewpager2:1.1.0",
 )
 
-// Layoutlib triple (both macOS arches) + tools jars (design §D6) — mirrors EngineArtifacts too.
+// Layoutlib triple (every published runtime classifier, AD-028) + tools jars (design §D6) — mirrors
+// EngineArtifacts too.
 val manifestFixedNotations = listOf(
   "com.android.tools.layoutlib:layoutlib:14.0.11",
   "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:mac-arm@jar",
   "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:mac@jar",
+  "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:win@jar",
+  "com.android.tools.layoutlib:layoutlib-runtime:14.0.11:linux@jar",
   "com.android.tools.layoutlib:layoutlib-resources:14.0.11",
   "com.android.tools.layoutlib:layoutlib-api:31.4.2",
   "com.android.tools:common:31.4.2",

@@ -9,6 +9,7 @@ import {
   ArtifactManager,
   EngineManifest,
   GenerateContext,
+  HostArch,
   ManifestArtifact,
   OfflineError,
   computeManifestHash,
@@ -519,6 +520,81 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     expect(paths.classpathJars.some((p) => p.endsWith('R-classes.jar'))).toBe(true);
     expect(paths.classpathJars.some((p) => p.endsWith('framework-delegates.jar'))).toBe(true);
     expect(paths.libraryPackages).toContain('com.example.withrtxt');
+  });
+});
+
+const BUNDLED_MANIFEST: EngineManifest = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'engine-manifest.json'), 'utf8'),
+);
+
+describe('engine-manifest.json', () => {
+  it('lists exactly the mac-arm, mac, win and linux layoutlib-runtime entries', () => {
+    const runtimes = BUNDLED_MANIFEST.artifacts.filter((a) => a.name === 'layoutlib-runtime');
+
+    expect(runtimes.map((a) => a.classifier)).toEqual(['mac-arm', 'mac', 'win', 'linux']);
+  });
+
+  it('pins layoutlib-runtime-14.0.11-win.jar at 75218785 bytes and SHA-256 3e26acb000bd2c10bf44da72303622e059febbdd5f9facb461ea77f4151e63bd', () => {
+    const win = BUNDLED_MANIFEST.artifacts.find((a) => a.name === 'layoutlib-runtime' && a.classifier === 'win');
+
+    expect(win).toMatchObject({
+      url: 'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-win.jar',
+      sizeBytes: 75218785,
+      sha256: '3e26acb000bd2c10bf44da72303622e059febbdd5f9facb461ea77f4151e63bd',
+    });
+  });
+
+  it('has a hash other than the 1.0.x engine folder 0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903', () => {
+    expect(computeManifestHash(BUNDLED_MANIFEST)).not.toBe('0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903');
+  });
+});
+
+describe('ArtifactManager — runtime per platform', () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inflate-artifacts-platform-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  /** Installs every artifact of the bundled manifest with a recording downloader (each download
+   * writes the same few bytes, whose SHA-256 replaces the real one) and returns the runtime URLs. */
+  async function runtimeUrlsDownloadedOn(arch: HostArch): Promise<string[]> {
+    const bytes = Buffer.from('tiny-fake-artifact');
+    const manifest: EngineManifest = {
+      ...BUNDLED_MANIFEST,
+      artifacts: BUNDLED_MANIFEST.artifacts.map((a) => ({ ...a, sha256: sha256(bytes) })),
+    };
+    const urls: string[] = [];
+    const manager = new ArtifactManager({
+      manifest,
+      globalStorageDir: tempRoot,
+      arch,
+      download: async (url, dest) => {
+        urls.push(url);
+        fs.writeFileSync(dest, bytes);
+      },
+      unzip: () => undefined,
+    });
+
+    await manager.ensureInstalled();
+
+    return urls.filter((u) => u.includes('/layoutlib-runtime/'));
+  }
+
+  it('downloads layoutlib-runtime-14.0.11-win.jar and no other runtime on win', async () => {
+    expect(await runtimeUrlsDownloadedOn('win')).toEqual([
+      'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-win.jar',
+    ]);
+  });
+
+  it('downloads layoutlib-runtime-14.0.11-linux.jar and no other runtime on linux', async () => {
+    expect(await runtimeUrlsDownloadedOn('linux')).toEqual([
+      'https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-runtime/14.0.11/layoutlib-runtime-14.0.11-linux.jar',
+    ]);
   });
 });
 
