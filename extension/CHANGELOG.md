@@ -3,6 +3,22 @@
 Notable changes to the Inflate extension. Per-release notes (with merged PRs) are also published on
 the [GitHub Releases page](https://github.com/ionixjunior/inflate/releases).
 
+## 1.1.0
+
+Windows and Linux support.
+
+- New: Inflate now runs on Windows x64 and Linux x64, in addition to macOS (Apple Silicon and
+  Intel). Previews on Windows and Linux render the same images as on macOS.
+- New: the JDK is found automatically on Windows (`JAVA_HOME`, `PATH`, and the standard install
+  folders of Oracle, Microsoft, Eclipse Adoptium, Zulu and Android Studio's bundled JBR) and on
+  Linux (`JAVA_HOME`, `PATH`, `/usr/lib/jvm`, SDKMAN and Android Studio's bundled JBR).
+- Fixed: on Windows, the first preview failed with `Failed to init Bridge` because Inflate
+  downloaded the macOS rendering engine.
+- Windows on Arm and Linux on Arm are not supported: Google publishes the rendering engine for
+  x64 only on those systems. Inflate now says so before downloading anything.
+- After updating, the first preview downloads the rendering engine again (about 170 MB, one
+  time). The previous engine folder is deleted automatically 7 days later.
+
 ## 1.0.3
 
 Bug fixes — no new capability.
