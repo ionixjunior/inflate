@@ -187,6 +187,7 @@
 - **Scope**: `extension/src/artifacts.ts` (`ArtifactManager`). First code path that deletes cache without a user command.
 - **Date**: 2026-11-20
 - **Status**: active
+- **Amendment (2026-11-21)**: only folders last written before the current `.complete` are deleted (their own `.complete` time, or their latest change when they have none); a newer folder, finished or still downloading, is never deleted. Reason: the independent Verifier showed that a window still running an older version, left open across an update, would delete the newer version's folder at its next preview and keep doing so after every re-download. User: "Delete only older folders".
 
 ## Handoff
 

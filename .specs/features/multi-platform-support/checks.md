@@ -9,7 +9,7 @@ Run ci-windows: `bash .specs/features/multi-platform-support/proofs/ci.sh window
 Run ci-linux: `bash .specs/features/multi-platform-support/proofs/ci.sh ubuntu-26.04`
 Plan: `.specs/features/multi-platform-support/plan.md`
 
-29 checks in 6 slices · 4 one-way doors · 0 open, of which 0 block
+30 checks in 6 slices · 4 one-way doors · 0 open, of which 0 block
 
 The `ci-*` runs read the newest completed `ci.yml` run on `feature/multi-platform-support` whose
 code (everything outside `.specs/`) is identical to `HEAD`, and print its jobs, artifacts, the
@@ -141,7 +141,7 @@ Proof: run unit | ✓ src/doctor.test.ts > formatDoctorReport — platform > pri
 Proof: run unit | ✓ src/artifacts.test.ts > engine-manifest.json > has a hash other than the 1.0.x engine folder 0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > installs into engine/<new hash>/ and leaves the 1.0.x folder in place
 
-**C18** - When the current `engine/<hash>/.complete` is at least 7 days old, engine setup deletes every other child of `globalStorage/engine/`, never the current folder and nothing outside `engine/` (AC 18)
+**C18** - When the current `engine/<hash>/.complete` is at least 7 days old, engine setup deletes every other child of `globalStorage/engine/` last written before it, never the current folder and nothing outside `engine/` (AC 18, amended 2026-11-21)
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > deletes nothing when the current folder completed 6 days 23 hours ago
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > deletes every other folder when the current folder completed exactly 7 days ago
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > does nothing when no other folder exists
@@ -151,6 +151,9 @@ Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine fol
 **C29** - On an unsupported platform `Inflate: Clear Engine Cache` still deletes the current `engine/<hash>/` folder, and an `ArtifactManager` with no platform classifier refuses to install (plan: Changes underneath, `HostArch` readers)
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — unsupported platform > clears the current engine folder
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — unsupported platform > refuses to install
+
+**C30** - Engine setup never deletes a folder written after the current `.complete`: a newer version's folder, finished or still downloading, is kept (AC 18 amended 2026-11-21, Verifier finding)
+Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > keeps a folder written after the current one completed, finished or still downloading
 
 **C19** - When deleting an old engine folder fails, engine setup still returns the engine paths, logs `[setup] could not remove old engine folder <folder name>: <error message>`, and the next setup tries again (AC 19)
 Proof: run unit | ✓ src/artifacts.test.ts > ArtifactManager — old engine folders > logs a failed delete, still returns the engine paths and retries at the next setup
@@ -225,10 +228,10 @@ Proof: `grep -q '^### AD-028' .specs/STATE.md && grep -q '^### AD-029' .specs/ST
 | child processes the extension owns, AC 6 (3) | host JVM C6 · `FrameworkDelegateGeneratorKt` C6 · `RClassGeneratorKt` C6 | - |
 | unsupported-pair examples, AC 15 (3) | `win32/arm64` C15 · `linux/arm64` C15 · `freebsd/x64` C15 | - |
 | Doctor platform lines, AC 16 (2) | `darwin arm64` C16 · `win32 arm64` C16 | - |
-| retention rule examples, AC 18 (4) | 6 days 23 hours C18 · exactly 7 days C18 · no other folder C18 · only `tmp/` C18 | - |
+| retention rule examples, AC 18 (5) | 6 days 23 hours C18 · exactly 7 days C18 · no other folder C18 · only `tmp/` C18 · newer folder C30 | - |
 | engine folder transitions this feature adds, plan state diagram (3) | Complete -> Superseded C17 · Superseded -> Deleted C18 · Superseded -> Superseded on a failed delete C19 | - |
 | CI runners, AC 9/14/20/24 (3) | `macos-26` C24, C20, C8, C22 · `windows-2025` C9, C10, C21, C20, C8, C22 · `ubuntu-26.04` C14, C20, C8, C22 | - |
-| Landing doors (4) | door 1 manifest and hash C3, C17 · door 2 retention C18, C19 · door 3 platforms C1, C15 · door 4 release gate C24, C20 | - |
+| Landing doors (4) | door 1 manifest and hash C3, C17 · door 2 retention C18, C19, C30 · door 3 platforms C1, C15 · door 4 release gate C24, C20 | - |
 | docs and decisions, AC 25-28 (6 files) | `extension/CHANGELOG.md` C25 · `extension/README.md` C26 · `README.md` C26 · `docs/troubleshooting.md` C27 · `docs/limitations.md` C27 · `.specs/STATE.md` C28 | - |
 
 ## Swept
@@ -237,7 +240,7 @@ Proof: `grep -q '^### AD-028' .specs/STATE.md && grep -q '^### AD-029' .specs/ST
 - failure modes: C19 (old folder delete fails), C15 (unsupported platform stops before any work)
 - idempotency: C3 (generator rerun is byte-identical), C20 (second `ensureInstalled` makes no network call)
 - authorization: n/a - no account, permission or network-facing surface changes
-- concurrency: C18 - the 7-day grace leaves the old folder to a window still on the previous version; a second window pruning the same folder at once hits `rmSync` with `force`, and a failure is C19
+- concurrency: C18 - the 7-day grace leaves the old folder to a window still on the previous version; C30 - a window still on an older version never deletes a newer version's folder; a second window pruning the same folder at once hits `rmSync` with `force`, and a failure is C19
 - data lifecycle: C17 (new hash, old folder kept), C18 (old folders deleted 7 days after the new one completes)
 - dependency failure: existing - `OfflineError` when Google Maven is unreachable (`artifacts.test.ts`), `GuidedError` when no JDK 17 is found (`jdk.test.ts`)
 - state transitions: C17, C18, C19; the unchanged Downloading -> Complete and Downloading -> Downloading transitions stay on the existing `artifacts.test.ts` install and half-installed-cache tests
@@ -245,7 +248,7 @@ Proof: `grep -q '^### AD-028' .specs/STATE.md && grep -q '^### AD-029' .specs/ST
 
 ## Handoff
 
-- **Settled mid-build:** 2026-11-21, user: push and run CI "Yes, push and run CI" (fast-forward pushes of this branch, on-demand CI runs, no force); integration count "Yes, 34 is fine (Recommended)" (criterion 9 reads all integration tests, now 34, with the new refusal test); panel text for the Arm refusal "Keep the prefix" (the panel shows `Render host error: Inflate does not support ...`, same path as the missing-JDK message)
-- **Dispatched:** none
+- **Settled mid-build:** 2026-11-21, user: push and run CI "Yes, push and run CI" (fast-forward pushes of this branch, on-demand CI runs, no force); integration count "Yes, 34 is fine (Recommended)" (criterion 9 reads all integration tests, now 34, with the new refusal test); panel text for the Arm refusal "Keep the prefix" (the panel shows `Render host error: Inflate does not support ...`, same path as the missing-JDK message); Verifier finding on the 7-day cleanup (an older window deletes a newer version's folder) "Delete only older folders" (delete another folder only when it was last written before the current `.complete`: its own `.complete` time, or its latest change when it has none; amends AD-029, door 2 and criterion 18); Verifier finding on the C19 log wiring: "What's the best think to do here? I think is make the log required, but I don't want to make overengineering." (answered: `log` becomes a required `ArtifactManagerOptions` field, no new abstraction)
+- **Dispatched:** Verifier at `4b36b17` (proofs.md 127/127 at `4b36b17`, diff `main..4b36b17`), sent 2026-11-21, returned FAIL with 3 findings; no screens sub-agent (no criterion cites a capture)
 - **Boundary:** C1-C29 closed at `a22cdd7`. CI run 44862527604 at `94a4c4f`: macOS and Linux green; Windows failed 2 suite cleanups (EPERM deleting fixtures saved through VS Code) and the crash-limit chaos test past its 90 s budget (51 s macOS/Linux, 78 s Windows in the spike run), fixed in `c6e1294` and `5f31c1c`; CI echoes made discriminating in `a22cdd7` (GitHub prints each step's script into the log). CI run 44863585240 at `a22cdd7`: all three green; its Linux job was re-run once after Maven Central answered HTTP 429 while Gradle resolved the Shadow plugin. `proofs/ci.sh` prints the run's job names in the run's own matrix order, because a re-run changes the API's job order
 - **Abandoned:** none
