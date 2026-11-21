@@ -734,6 +734,26 @@
           "orientation": "portrait"
         }
       ]
+    },
+    {
+      "id": "fonts/custom",
+      "ecosystem": "gradle",
+      "kind": "layout",
+      "docPath": "fixtures/galleries/fonts/res/layout/custom_fonts.xml",
+      "roots": [
+        "fixtures/galleries/fonts/res"
+      ],
+      "goldenDir": "fixtures/galleries/fonts",
+      "configs": [
+        {
+          "id": "default",
+          "theme": "Theme.Material3.DayNight",
+          "night": false,
+          "device": "phone",
+          "density": "xhdpi",
+          "orientation": "portrait"
+        }
+      ]
     }
   ]
 }
