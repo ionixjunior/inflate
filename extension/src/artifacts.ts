@@ -166,7 +166,7 @@ export interface ArtifactManagerOptions {
   hostJarPath?: string;
   generate?: GenerateFn;
   /** Receives the `[setup]` lines engine setup writes to the "Inflate" output channel. */
-  log?: (line: string) => void;
+  log: (line: string) => void;
   /** Injectable clock: the `.complete` timestamp and the retention window (AD-029) read it. */
   now?: () => number;
   /** Injectable folder removal for superseded engine folders; defaults to a recursive `rmSync`. */
@@ -304,7 +304,7 @@ export class ArtifactManager {
     this.download = opts.download ?? defaultDownload;
     this.unzip = opts.unzip ?? defaultUnzip;
     this.generate = opts.generate ?? defaultGenerate;
-    this.log = opts.log ?? (() => undefined);
+    this.log = opts.log;
     this.now = opts.now ?? Date.now;
     this.removeDir = opts.removeDir ?? ((dir) => fs.rmSync(dir, { recursive: true, force: true }));
   }

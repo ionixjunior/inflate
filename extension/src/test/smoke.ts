@@ -131,6 +131,7 @@ async function main(): Promise<void> {
     arch,
     javaBin: jdkResult.javaBin,
     hostJarPath,
+    log,
   });
 
   log('Run 1 (clean profile): downloading + verifying + generating engine artifacts (real ~170 MB from Google Maven)...');
@@ -192,6 +193,7 @@ async function main(): Promise<void> {
     manifest,
     globalStorageDir: cleanProfileDir,
     arch,
+    log,
     download: async (url) => {
       networkCalls.push(url);
       throw new Error(`network call on a warm cache: ${url}`);

@@ -19,6 +19,9 @@ import {
   unsupportedPlatformMessage,
 } from './artifacts';
 
+/** For the managers whose test does not read the `[setup]` log. */
+const ignoreLog = (): void => undefined;
+
 // ---- tiny local HTTP fixture server (real networking, real tiny artifacts — never the real ~170 MB engine) ----
 
 type RouteHandler = Buffer | ((req: http.IncomingMessage, res: http.ServerResponse) => void);
@@ -157,7 +160,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     server = fresh.server;
     const manifest = fresh.manifest;
 
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     expect(manager.isReady()).toBe(false);
 
     const paths = await manager.ensureInstalled();
@@ -180,7 +183,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
     const fixture = await startFullFixture();
     server = fixture.server;
 
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     await manager.ensureInstalled();
     const countsAfterFirst = { ...fixture.requestCounts };
 
@@ -208,7 +211,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
       ],
     };
 
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toThrow(/checksum mismatch/);
     expect(fixture.requestCounts['/bad.jar']).toBe(3); // discarded + retried up to the retry cap
@@ -241,7 +244,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toThrow();
 
@@ -266,7 +269,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toBeInstanceOf(OfflineError);
   });
@@ -286,7 +289,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
     fs.mkdirSync(path.join(engineDir, 'jars'), { recursive: true });
     fs.writeFileSync(path.join(engineDir, 'jars', 'already-installed-1.0.jar'), 'x');
@@ -300,7 +303,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('clear() removes the whole engine cache directory', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     await manager.ensureInstalled();
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(fixture.manifest));
     expect(fs.existsSync(engineDir)).toBe(true);
@@ -333,7 +336,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await manager.ensureInstalled();
 
@@ -344,7 +347,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('reports a res-bearing AAR as installed after extraction, unchanged (regression, HOST-04 AC5)', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     await manager.ensureInstalled();
 
@@ -355,7 +358,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
   it('reports an AAR as not installed before it is ever extracted (HOST-04 AC5)', async () => {
     const fixture = await startFullFixture();
     server = fixture.server;
-    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest: fixture.manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
 
     const status = manager.cacheState().artifacts.find((a) => a.key.includes('material'));
     expect(status?.installed).toBe(false);
@@ -376,7 +379,7 @@ describe('ArtifactManager (T16) — verified installs against a local HTTP fixtu
         },
       ],
     };
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm' });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: 'mac-arm', log: ignoreLog });
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
     fs.mkdirSync(path.join(engineDir, 'jars'), { recursive: true });
     fs.writeFileSync(path.join(engineDir, 'jars', 'half-1.0.jar'), 'x'); // artifact file present...
@@ -462,6 +465,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     server = fixture.server;
     const calls: GenerateContext[] = [];
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -487,6 +491,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     server = fixture.server;
     const calls: GenerateContext[] = [];
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -502,6 +507,7 @@ describe('ArtifactManager — generated-artifact wiring (T60, closes debt #1 gen
     const fixture = await startFixtureAndManifest();
     server = fixture.server;
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: fixture.manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -570,6 +576,7 @@ describe('ArtifactManager — runtime per platform', () => {
     };
     const urls: string[] = [];
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch,
@@ -632,6 +639,7 @@ describe('ArtifactManager — old engine folders', () => {
     const oldDir = seedEngineFolder('0bd4cefe7c97ece892dd21ac76094d2297943c1c1cdb5ee5be8500ee5f5ef903', '2026-07-30T00:00:00.000Z');
     const bytes = Buffer.from('tiny-fake-layoutlib-jar-bytes');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest: {
         pinName: 'test-pin',
         artifacts: [
@@ -662,6 +670,7 @@ describe('ArtifactManager — old engine folders', () => {
     seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
     const oldDir = seedEngineFolder('old-hash', '2026-07-30T00:00:00.000Z');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -679,6 +688,7 @@ describe('ArtifactManager — old engine folders', () => {
     const olderDir = seedEngineFolder('older-hash');
     lastWritten(olderDir, '2026-07-01T00:00:00.000Z');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -694,6 +704,7 @@ describe('ArtifactManager — old engine folders', () => {
   it('does nothing when no other folder exists', async () => {
     seedEngineFolder(currentHash, '2026-11-01T00:00:00.000Z');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -712,6 +723,7 @@ describe('ArtifactManager — old engine folders', () => {
     fs.writeFileSync(path.join(partialDir, 'tmp', 'layoutlib-runtime.part'), 'half');
     lastWritten(partialDir, '2026-07-01T00:00:00.000Z');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -729,6 +741,7 @@ describe('ArtifactManager — old engine folders', () => {
     fs.mkdirSync(path.join(tempRoot, 'renders'));
     fs.writeFileSync(path.join(tempRoot, 'renders', 'render__1.png'), 'png');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -750,6 +763,7 @@ describe('ArtifactManager — old engine folders', () => {
     fs.writeFileSync(path.join(downloadingDir, 'tmp', 'layoutlib-runtime.part'), 'half');
     lastWritten(downloadingDir, '2026-11-07T12:00:00.000Z');
     const manager = new ArtifactManager({
+      log: ignoreLog,
       manifest,
       globalStorageDir: tempRoot,
       arch: 'mac-arm',
@@ -918,7 +932,7 @@ describe('ArtifactManager — unsupported platform', () => {
     const engineDir = path.join(tempRoot, 'engine', computeManifestHash(manifest));
     fs.mkdirSync(engineDir, { recursive: true });
     fs.writeFileSync(path.join(engineDir, '.complete'), '2026-11-01T00:00:00.000Z');
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined, log: ignoreLog });
 
     manager.clear();
 
@@ -926,7 +940,7 @@ describe('ArtifactManager — unsupported platform', () => {
   });
 
   it('refuses to install', async () => {
-    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined });
+    const manager = new ArtifactManager({ manifest, globalStorageDir: tempRoot, arch: undefined, log: ignoreLog });
 
     await expect(manager.ensureInstalled()).rejects.toThrow(
       'Inflate cannot install the render engine on an unsupported platform.',

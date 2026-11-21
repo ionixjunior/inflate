@@ -357,6 +357,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
         manifest,
         globalStorageDir: context.globalStorageUri.fsPath,
         arch: hostArchFor(api.platform.platform, api.platform.arch),
+        log: (line) => output.appendLine(line),
       });
       const report = assembleDoctorReport({
         platform: api.platform,
@@ -381,6 +382,7 @@ export function activate(context: vscode.ExtensionContext): InflateApi {
         manifest,
         globalStorageDir: context.globalStorageUri.fsPath,
         arch: hostArchFor(api.platform.platform, api.platform.arch),
+        log: (line) => output.appendLine(line),
       });
       artifactManager.clear();
       output.appendLine('[clearEngineCache] done — the next preview re-downloads and re-verifies the engine.');
