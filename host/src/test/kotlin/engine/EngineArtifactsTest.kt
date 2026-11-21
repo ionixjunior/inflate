@@ -33,6 +33,8 @@ class EngineArtifactsTest {
   fun `os_name on Windows and Linux maps to their x64 HostArch`() {
     assertEquals(HostArch.WINDOWS_X64, EngineArtifacts.detectArch("amd64", "Windows Server 2025"))
     assertEquals(HostArch.LINUX_X64, EngineArtifacts.detectArch("amd64", "Linux"))
+    assertEquals(HostArch.WINDOWS_X64, EngineArtifacts.detectArch("aarch64", "Windows 11"))
+    assertEquals(HostArch.LINUX_X64, EngineArtifacts.detectArch("aarch64", "Linux"))
   }
 
   @Test
