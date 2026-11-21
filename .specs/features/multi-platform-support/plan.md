@@ -40,8 +40,8 @@ engine folders get deleted) run in `hostArchFor`, `JdkLocator` and `ArtifactMana
 on all three runners) and in the host's `EngineArtifacts` (JUnit); the corpus, the integration
 suite and the clean-profile smoke prove them end to end on each runner.
 
-1. `Inflate: Open Preview` -> `activation.ts` `openPreviewFor` (exists) -> `ensureRealHostConfigured` (exists) -> `prepareRealHost` (exists)
-2. `prepareRealHost` (exists) asks `hostArchFor(process.platform, process.arch)` (exists, changes): `mac-arm`, `mac`, `win`, `linux`, or unsupported. Unsupported: error in the panel and a warning notification with no buttons, then stop (door 3)
+1. `Inflate: Open Preview` -> `activation.ts` `openPreviewFor` (exists) -> `ensureRealHostConfigured` (exists)
+2. `ensureRealHostConfigured` (exists, changes) asks `hostArchFor(platform, arch)` (exists, changes) with the pair on `InflateApi.platform` (`process.platform`, `process.arch`), before the fake-host shortcut and before `prepareRealHost`: `mac-arm`, `mac`, `win`, `linux`, or unsupported. Unsupported: error in the panel and a warning notification with no buttons, then stop (door 3); supported: `prepareRealHost` (exists) receives the classifier
 3. `JdkLocator.resolveJdk` (exists, changes) walks the source list of the running OS and returns `JdkInfo` (`javaBin` is `bin\java.exe` on Windows) or the existing `GuidedError`
 4. `ArtifactManager.ensureInstalled` (exists) reads `engine-manifest.json` (exists, four runtime classifiers, door 1), keeps the one runtime for the platform, downloads, verifies SHA-256, unzips into `globalStorage/engine/<manifestHash>/`, runs the two generator JVMs hidden, writes `.complete`
 5. `ArtifactManager` (exists) deletes the other `globalStorage/engine/*` folders once the current `.complete` is at least 7 days old, best effort (door 2)
@@ -50,9 +50,9 @@ suite and the clean-profile smoke prove them end to end on each runner.
 
 ```mermaid
 flowchart TD
-    A["1. openPreviewFor, ensureRealHostConfigured, prepareRealHost (exists)"] --> B{"2. prepareRealHost asks hostArchFor (exists)"}
+    A["1. openPreviewFor, ensureRealHostConfigured (exists)"] --> B{"2. ensureRealHostConfigured asks hostArchFor (exists)"}
     B -- "unsupported" --> X["2. panel error and warning, no download (door 3)"]
-    B -- "mac-arm, mac, win, linux" --> C["3. JdkLocator.resolveJdk (exists)"]
+    B -- "mac-arm, mac, win, linux" --> C["3. prepareRealHost, JdkLocator.resolveJdk (exists)"]
     C -- "GuidedError" --> G["3. guided JDK setup in ensureRealHostConfigured (exists)"]
     C -- "JdkInfo" --> D["4. ArtifactManager.ensureInstalled reads engine-manifest.json (door 1)"]
     D --> E["5. ArtifactManager deletes old engine folders (door 2)"]
@@ -64,7 +64,7 @@ flowchart TD
 
 | Front | What changes |
 | --- | --- |
-| domain | `HostArch` meant a macOS CPU (`mac-arm`, `mac`); it now names OS plus CPU (`mac-arm`, `mac`, `win`, `linux`) and `hostArchFor` can answer unsupported. Readers: `selectRelevantArtifacts`, `prepareRealHost`, `Inflate: Doctor`, `Inflate: Clear Engine Cache`, `smoke.ts`. Already on the branch: `bca9b70` maps `win32` to `win` for every CPU, which criterion 1 changes |
+| domain | `HostArch` meant a macOS CPU (`mac-arm`, `mac`); it now names OS plus CPU (`mac-arm`, `mac`, `win`, `linux`) and `hostArchFor` can answer unsupported. Readers: `selectRelevantArtifacts`, `ensureRealHostConfigured`, `Inflate: Doctor`, `Inflate: Clear Engine Cache`, `smoke.ts`; `ArtifactManager` takes `undefined` on an unsupported platform (reports and clears, refuses to install). Already on the branch: `bca9b70` maps `win32` to `win` for every CPU, which criterion 1 changes |
 | domain | `JdkSource` gains the Windows and Linux sources; reader: Doctor's `source:` line |
 | stored data | `globalStorage/engine/<hash>` gets a new hash: nothing is migrated, every install downloads once more; older folders are deleted 7 days after the new one completes |
 | build | `host/build.gradle.kts`: the fat jar stops excluding `com/sun/jna/platform/win32/**`; the engine cache location can be overridden by `INFLATE_ENGINE_CACHE_DIR` (test use only) |
